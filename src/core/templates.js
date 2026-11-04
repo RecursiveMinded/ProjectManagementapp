@@ -18,10 +18,12 @@ const TEMPLATES = {
     groups: [{ name: 'Planning', color: 'indigo' }, { name: 'Execution', color: 'tangerine' }, { name: 'Launch', color: 'mint' }],
     columns: [
       { title: 'Owner', type: 'people' },
+      { title: 'Team', type: 'team' },
       { title: 'Status', type: 'status' },
       { title: 'Priority', type: 'priority' },
       { title: 'Timeline', type: 'timeline' },
       { title: 'Depends on', type: 'dependency', settings: { dateColumnTitle: 'Timeline', mode: 'flexible', type: 'fs' } },
+      { title: 'Waiting on team', type: 'team', settings: { role: 'waiting' }, description: 'Teams this task depends on. Recorded only: nobody is contacted.' },
       { title: 'Effort (h)', type: 'numbers', settings: { unit: 'h', summary: 'sum' } },
       { title: 'Budget', type: 'numbers', settings: { unit: '$', unitSide: 'left', summary: 'sum' } },
       { title: 'Spent', type: 'numbers', settings: { unit: '$', unitSide: 'left', summary: 'sum' } },
@@ -111,7 +113,7 @@ function build(store, automations, key, { workspaceId, name, sample = false } = 
     for (const c of t.columns) {
       const s = { ...(c.settings || {}) };
       delete s.dateColumnTitle;
-      titles[c.title] = store.addColumn(boardId, { title: c.title, type: c.type, settings: s });
+      titles[c.title] = store.addColumn(boardId, { title: c.title, type: c.type, settings: s, description: c.description || '' });
     }
     for (const c of t.subColumns || []) titles[`sub:${c.title}`] = store.addColumn(boardId, { title: c.title, type: c.type, scope: 'sub', settings: c.settings });
     for (const c of t.columns) if (c.settings && c.settings.dateColumnTitle) store.updateColumn(titles[c.title], { settings: { dateColumn: titles[c.settings.dateColumnTitle] } });
@@ -161,15 +163,16 @@ function fillSample(store, boardId, key, T, G) {
     }
     return id;
   };
+  const TM = (...names) => names.map((n) => store.teamByName(n, true).id);
   if (key === 'project') {
-    const a = add('Planning', 'Define goals and scope', { Owner: P(0), Status: 'done', Priority: 'high', Timeline: tl(-14, -10), 'Effort (h)': 12, Budget: 2000, Spent: 1800 });
-    const b = add('Planning', 'Research users', { Owner: P(1), Status: 'done', Priority: 'medium', Timeline: tl(-9, -4), 'Effort (h)': 20, Budget: 3000, Spent: 3400 },
+    const a = add('Planning', 'Define goals and scope', { Owner: P(0), Team: TM('Product'), Status: 'done', Priority: 'high', Timeline: tl(-14, -10), 'Effort (h)': 12, Budget: 2000, Spent: 1800 });
+    const b = add('Planning', 'Research users', { Owner: P(1), Team: TM('Design'), Status: 'done', Priority: 'medium', Timeline: tl(-9, -4), 'Effort (h)': 20, Budget: 3000, Spent: 3400 },
       [{ name: 'Interview 5 customers', values: { Status: 'done', Owner: P(1) } }, { name: 'Summarise findings', values: { Status: 'done', Owner: P(0) } }]);
-    const c = add('Execution', 'Design the solution', { Owner: P(2), Status: 'working', Priority: 'high', Timeline: tl(-3, 4), 'Effort (h)': 30, Budget: 5000, Spent: 2100 },
+    const c = add('Execution', 'Design the solution', { Owner: P(2), Team: TM('Design'), Status: 'working', Priority: 'high', Timeline: tl(-3, 4), 'Effort (h)': 30, Budget: 5000, Spent: 2100 },
       [{ name: 'Wireframes', values: { Status: 'done', Owner: P(2) } }, { name: 'Visual design', values: { Status: 'working', Owner: P(2), 'Due date': d(2) } }, { name: 'Design review', values: { Status: 'todo', Owner: P(0), 'Due date': d(4) } }]);
-    const e = add('Execution', 'Build first release', { Owner: P(3), Status: 'todo', Priority: 'critical', Timeline: tl(5, 18), 'Effort (h)': 80, Budget: 12000 });
-    const f = add('Execution', 'Test with pilot customers', { Owner: P(1), Status: 'todo', Priority: 'medium', Timeline: tl(19, 25), 'Effort (h)': 24, Budget: 1500 });
-    add('Launch', 'Launch announcement', { Owner: P(0), Status: 'todo', Priority: 'low', Timeline: tl(26, 28), 'Effort (h)': 6, Budget: 800 });
+    const e = add('Execution', 'Build first release', { Owner: P(3), Team: TM('Engineering'), 'Waiting on team': TM('IT Security'), Status: 'todo', Priority: 'critical', Timeline: tl(5, 18), 'Effort (h)': 80, Budget: 12000 });
+    const f = add('Execution', 'Test with pilot customers', { Owner: P(1), Team: TM('Product'), Status: 'todo', Priority: 'medium', Timeline: tl(19, 25), 'Effort (h)': 24, Budget: 1500 });
+    add('Launch', 'Launch announcement', { Owner: P(0), Team: TM('Product'), 'Waiting on team': TM('Legal'), Status: 'todo', Priority: 'low', Timeline: tl(26, 28), 'Effort (h)': 6, Budget: 800 });
     for (const [x, y] of [[b, a], [c, b], [e, c], [f, e]]) store.setValue(x, T['Depends on'], [y], { source: 'sample', noDeps: true });
   } else if (key === 'tasks') {
     add('This week', 'Prepare weekly report', { Owner: P(0), Status: 'working', Priority: 'high', 'Due date': d(1), Tags: ['reporting'] });
@@ -207,6 +210,8 @@ function sampleWorkspace(store, automations, dashboards) {
       store.savePerson({ name: 'Sam Patel', email: 'sam@example.com', team: 'Engineering', capacity: 32 });
       store.savePerson({ name: 'Riley Chen', email: 'riley@example.com', team: 'Engineering', capacity: 40 });
     }
+    if (!store.teamByName('Legal')) store.saveTeam({ name: 'Legal', color: 'slate', external: true, description: 'Reviews launch copy, terms and contracts. Not in Boardenda.' });
+    if (!store.teamByName('IT Security')) store.saveTeam({ name: 'IT Security', color: 'night', external: true, description: 'Approves new systems before go-live. Not in Boardenda.' });
     ws = store.saveWorkspace({ name: 'Sample workspace', color: 'indigo' });
     const project = build(store, automations, 'project', { workspaceId: ws, name: 'Website relaunch', sample: true });
     const tasks = build(store, automations, 'tasks', { workspaceId: ws, name: 'Team tasks', sample: true });

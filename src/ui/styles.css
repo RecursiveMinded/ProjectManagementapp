@@ -173,7 +173,7 @@ label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .tbl .stripe { width: 6px; min-width: 6px; background: var(--sec) !important; border-right: 0; border-bottom-color: transparent; }
 .tbl tr:first-child .stripe { border-top-left-radius: 8px; }
 .tbl tr:last-child .stripe { border-bottom-left-radius: 8px; }
-.tbl .sel { width: 36px; text-align: center; }
+.tbl .sel-cell { width: 36px; text-align: center; }
 .tbl .name-cell { position: sticky; left: 0; z-index: 1; text-align: left; }
 .tbl th.name-cell { z-index: 3; text-align: left; }
 .tbl tr:hover td { background: var(--hover); }
@@ -476,3 +476,16 @@ button.cal-more:hover { color: var(--brand); }
 .ag-row { display: grid; grid-template-columns: 10px minmax(160px, 2fr) minmax(120px, 1.5fr) 110px 110px 70px; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
 .ag-row:hover { background: var(--hover); }
 .ag-row .dot { width: 10px; height: 10px; border-radius: 3px; }
+.team-chips { display: inline-flex; gap: 4px; align-items: center; min-width: 0; overflow: hidden; }
+.team-chip { --tc: #5a55d6; display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; background: color-mix(in srgb, var(--tc) 16%, transparent); color: var(--tc); border: 1px solid color-mix(in srgb, var(--tc) 35%, transparent); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.team-chip.waiting { border-style: dashed; }
+.dep-matrix th, .dep-matrix td { text-align: center; padding: 6px 10px; }
+.dep-matrix tbody th { text-align: left; }
+.dep-n { min-width: 34px; height: 28px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--panel); font-weight: 700; cursor: pointer; }
+.dep-n.bad { background: #e2445c; border-color: #e2445c; color: #fff; }
+.dep-n.sel { outline: 3px solid var(--brand-soft); border-color: var(--brand); }
+.dep-row { display: grid; grid-template-columns: 90px minmax(220px, 1fr) minmax(260px, 1.6fr); gap: 14px; align-items: center; padding: 10px 6px; border-bottom: 1px solid var(--line); }
+.dep-row:last-child { border-bottom: 0; }
+.dep-row .lbl { justify-content: center; }
+.dep-teams { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dep-items a { cursor: pointer; }

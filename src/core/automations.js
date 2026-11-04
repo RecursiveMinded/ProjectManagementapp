@@ -203,7 +203,7 @@ class Automations {
         case 'is_not': if (matches(col, v, c.value)) return false; break;
         case 'gt': if (!(Number(v) > Number(c.value))) return false; break;
         case 'lt': if (!(Number(v) < Number(c.value))) return false; break;
-        case 'contains': if (!C.textOf(col, v, { people: this.store.peopleMap() }).toLowerCase().includes(String(c.value || '').toLowerCase())) return false; break;
+        case 'contains': if (!C.textOf(col, v, { people: this.store.peopleMap(), teams: this.store.teamsMap() }).toLowerCase().includes(String(c.value || '').toLowerCase())) return false; break;
         default: break;
       }
     }
@@ -322,7 +322,7 @@ class Automations {
     if (!item) return String(text).replace(/\{[^}]+\}/g, '');
     const s = this.store;
     const cols = s.columns(item.board_id);
-    const ctx = { people: s.peopleMap() };
+    const ctx = { people: s.peopleMap(), teams: s.teamsMap() };
     const fresh = s.itemRow(item.id);
     return String(text).replace(/\{([^}]+)\}/g, (m, key) => {
       const k = key.trim().toLowerCase();

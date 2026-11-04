@@ -179,7 +179,7 @@ function Toolbar({ B, cfg, setCfg, view, reload, count }) {
     ${ga ? html`<${Menu} anchor=${ga} onClose=${closeG} items=${[
       { label: 'Board groups', icon: 'group', active: !cfg.groupBy, onClick: () => setCfg({ ...cfg, groupBy: null }) },
       { sep: true },
-      ...itemCols.filter((c) => C.LABEL_TYPES.has(c.type) || ['people', 'date', 'timeline', 'dropdown', 'text', 'rating', 'formula', 'country', 'checkbox', 'numbers', 'mirror', 'connect'].includes(c.type))
+      ...itemCols.filter((c) => C.LABEL_TYPES.has(c.type) || ['people', 'team', 'date', 'timeline', 'dropdown', 'text', 'rating', 'formula', 'country', 'checkbox', 'numbers', 'mirror', 'connect'].includes(c.type))
         .map((c) => ({ label: c.title, icon: C.TYPES[c.type].icon, active: cfg.groupBy === c.id, onClick: () => setCfg({ ...cfg, groupBy: c.id }) })),
     ]} />` : null}
   </div>`;
@@ -215,6 +215,7 @@ function FilterBuilder({ B, cfg, setCfg }) {
     const multi = (opts) => html`<select class="input" value=${Array.isArray(f.value) ? f.value[0] || '' : f.value || ''} onChange=${(e) => setF(i, { value: e.target.value ? [e.target.value] : [] })}><option value="">Choose…</option>${opts.map((o) => html`<option value=${o.value}>${o.label}</option>`)}</select>`;
     if (C.LABEL_TYPES.has(col.type)) return multi([...(col.settings.labels || []).map((l) => ({ value: l.id, label: l.label })), { value: '__empty', label: '(empty)' }]);
     if (col.type === 'people') return multi([{ value: '__me', label: 'Me' }, ...B.people.map((p) => ({ value: p.id, label: p.name }))]);
+    if (col.type === 'team') return multi((B.teams || []).map((t) => ({ value: t.id, label: t.name })));
     if (col.type === 'dropdown') return multi((col.settings.options || []).map((o) => ({ value: o.id, label: o.label })));
     if (col.type === 'country') return multi(C.COUNTRIES.map(([k, n]) => ({ value: k, label: n })));
     if (['before', 'after'].includes(f.op)) return html`<input class="input" type="date" value=${f.value || ''} onInput=${(e) => setF(i, { value: e.target.value })} />`;

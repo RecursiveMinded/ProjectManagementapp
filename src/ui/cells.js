@@ -47,7 +47,7 @@ export function Cell({ col, item, B, ctx, onSet, reload, compact = false, readon
 }
 
 function cellAlign(T) {
-  return ['status', 'priority', 'people', 'date', 'timeline', 'progress', 'week', 'color', 'country', 'world_clock', 'item_id', 'auto_number', 'subitems_count', 'last_updated', 'creation_log'].includes(T) ? 'center' : '';
+  return ['status', 'priority', 'people', 'team', 'date', 'timeline', 'progress', 'week', 'color', 'country', 'world_clock', 'item_id', 'auto_number', 'subitems_count', 'last_updated', 'creation_log'].includes(T) ? 'center' : '';
 }
 
 export function renderValue(col, v, B, ctx, compact, item) {
@@ -55,6 +55,11 @@ export function renderValue(col, v, B, ctx, compact, item) {
   switch (T) {
     case 'status': case 'priority': return html`<${LabelPill} label=${C.labelOf(col, v)} />`;
     case 'people': return html`<${Avatars} ids=${v} people=${ctx.people} size=${compact ? 22 : 26} />`;
+    case 'team': {
+      const list = (v || []).map((id) => ctx.teams && ctx.teams[id]).filter(Boolean);
+      if (!list.length) return html`<span class="placeholder"><${Icon} name="group" size="15" /></span>`;
+      return html`<span class="team-chips">${list.slice(0, compact ? 1 : 2).map((t) => html`<span key=${t.id} class=${`team-chip ${col.settings.role === 'waiting' ? 'waiting' : ''}`} style=${`--tc:${C.colorHex(t.color)}`} title=${t.external ? `${t.name} (outside Boardenda)` : t.name}>${col.settings.role === 'waiting' ? '⏳ ' : ''}${t.name}</span>`)}${list.length > (compact ? 1 : 2) ? html`<span class="small muted">+${list.length - (compact ? 1 : 2)}</span>` : null}</span>`;
+    }
     case 'date': {
       if (!v) return html`<span class="placeholder"><${Icon} name="calendar" size="15" /></span>`;
       const d = String(v).slice(0, 10);
@@ -148,6 +153,7 @@ function Editor({ anchor, close, col, item, v, set, B, ctx, reload }) {
   let width = 260;
   if (C.LABEL_TYPES.has(T)) body = html`<${LabelEditor} ...${props} />`;
   else if (T === 'people') body = html`<${PeopleEditor} ...${props} />`;
+  else if (T === 'team') body = html`<${TeamEditor} ...${props} />`;
   else if (T === 'date') body = html`<${DateEditor} ...${props} />`;
   else if (T === 'timeline') { body = html`<${TimelineEditor} ...${props} />`; width = 300; }
   else if (T === 'week') body = html`<${DateEditor} ...${props} week />`;
@@ -214,6 +220,22 @@ function PeopleEditor({ col, v, set, B }) {
     <input class="input" autoFocus placeholder="Search people" value=${q} onInput=${(e) => setQ(e.target.value)} />
     <div class="pick-list">${list.map((p) => html`<button key=${p.id} class=${`mi ${cur.includes(p.id) ? 'active' : ''}`} onClick=${() => toggle(p.id)}><${Avatar} person=${p} size="22" /><span class="grow">${p.name}${p.is_me ? ' (you)' : ''}</span><span class="faint small">${p.team || ''}</span></button>`)}</div>
     ${q && !list.length ? html`<button class="btn small" onClick=${async () => { try { const id = await call('savePerson', { name: q }); B.people.push({ id, name: q, color: '#5a55d6' }); set([...cur, id]); setQ(''); } catch (e) { toastError(e); } }}>Add “${q}” to the team</button>` : null}
+  </div>`;
+}
+
+function TeamEditor({ col, v, set, B }) {
+  const [q, setQ] = useState('');
+  const cur = v || [];
+  const teams = B.teams || [];
+  const list = teams.filter((t) => t.name.toLowerCase().includes(q.toLowerCase()));
+  const toggle = (id) => set(cur.includes(id) ? cur.filter((x) => x !== id) : col.settings.max === 1 ? [id] : [...cur, id]);
+  return html`<div class="pad col" style="gap:6px">
+    ${col.settings.role === 'waiting' ? html`<div class="small muted">Teams this depends on. This is a record only; nobody is contacted.</div>` : null}
+    <input class="input" autoFocus placeholder="Search teams" value=${q} onInput=${(e) => setQ(e.target.value)} />
+    <div class="pick-list">${list.map((t) => html`<button key=${t.id} class=${`mi ${cur.includes(t.id) ? 'active' : ''}`} onClick=${() => toggle(t.id)}>
+      <span class="color-dot" style=${`background:${C.colorHex(t.color)}`}></span><span class="grow">${t.name}</span>${t.external ? html`<span class="faint small">outside</span>` : html`<span class="faint small">${t.members.length}</span>`}${cur.includes(t.id) ? html`<${Icon} name="check" size="14" />` : null}</button>`)}</div>
+    ${q && !list.some((t) => t.name.toLowerCase() === q.toLowerCase()) ? html`<button class="btn small" onClick=${async () => { try { const id = await call('saveTeam', { name: q, external: col.settings.role === 'waiting' }); B.teams = [...teams, { id, name: q, color: 'indigo', members: [], external: col.settings.role === 'waiting' }]; set([...cur, id]); setQ(''); } catch (e) { toastError(e); } }}>Create team “${q}”</button>` : null}
+    ${!teams.length && !q ? html`<div class="small muted">Type a name to create your first team.</div>` : null}
   </div>`;
 }
 

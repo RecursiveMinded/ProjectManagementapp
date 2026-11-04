@@ -62,6 +62,11 @@ function TypeSettings({ T, s, up, col, B, sameScope, setErr }) {
       <label class="field">Group summary<select class="input" value=${s.summary || 'sum'} onChange=${(e) => up({ summary: e.target.value })}>${[['sum', 'Sum'], ['avg', 'Average'], ['min', 'Minimum'], ['max', 'Maximum'], ['count', 'Count'], ['none', 'None']].map(([v, l]) => html`<option value=${v}>${l}</option>`)}</select></label>
     </div>`;
   }
+  if (T === 'team') return html`<div class="col" style="gap:8px">
+    <label class="field">This column records<select class="input" value=${s.role || 'owner'} onChange=${(e) => up({ role: e.target.value })}>
+      <option value="owner">The team that owns the item</option><option value="waiting">Teams the item is waiting on (a dependency)</option></select></label>
+    <div class="small muted">${(s.role || 'owner') === 'waiting' ? 'Marks a dependency on another team, inside or outside Boardenda. It shows on the Dependencies page. Nobody is contacted.' : 'Used to work out which team is waiting on which on the Dependencies page. Items with no team use their people’s teams.'}</div>
+    <label class="check"><input type="checkbox" checked=${s.max === 1} onChange=${(e) => up({ max: e.target.checked ? 1 : 0 })} /> Only one team per item</label></div>`;
   if (T === 'people') return html`<label class="check"><input type="checkbox" checked=${s.max === 1} onChange=${(e) => up({ max: e.target.checked ? 1 : 0 })} /> Only one person per item</label>`;
   if (T === 'date') return html`<label class="check"><input type="checkbox" checked=${!!s.time} onChange=${(e) => up({ time: e.target.checked })} /> Include a time</label>`;
   if (T === 'rating') return html`<label class="field">Maximum<select class="input" value=${s.max || 5} onChange=${(e) => up({ max: Number(e.target.value) })}>${[3, 4, 5, 6, 7, 8, 9, 10].map((n) => html`<option value=${n}>${n}</option>`)}</select></label>`;

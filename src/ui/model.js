@@ -9,7 +9,8 @@ export function ctxOf(B) {
   const people = Object.fromEntries((B.people || []).map((p) => [p.id, p]));
   const itemNames = Object.fromEntries(Object.entries(B.linked || {}).map(([k, v]) => [k, v.name]));
   for (const it of [...(B.items || []), ...(B.subitems || [])]) itemNames[it.id] = it.name;
-  return { people, files: B.files || {}, itemNames };
+  const teams = Object.fromEntries((B.teams || []).map((t) => [t.id, t]));
+  return { people, teams, files: B.files || {}, itemNames };
 }
 
 export const FILTER_OPS = {
@@ -19,7 +20,7 @@ export const FILTER_OPS = {
 
 export function opsFor(col) {
   if (!col) return ['contains', 'empty', 'not_empty'];
-  if (C.LABEL_TYPES.has(col.type) || ['people', 'dropdown', 'connect', 'vote', 'country'].includes(col.type)) return ['is', 'is_not', 'empty', 'not_empty'];
+  if (C.LABEL_TYPES.has(col.type) || ['people', 'team', 'dropdown', 'connect', 'vote', 'country'].includes(col.type)) return ['is', 'is_not', 'empty', 'not_empty'];
   if (['numbers', 'rating', 'progress', 'auto_number', 'item_id'].includes(col.type)) return ['is', 'gt', 'lt', 'empty', 'not_empty'];
   if (['date', 'timeline', 'week'].includes(col.type)) return ['before', 'after', 'today', 'this_week', 'overdue', 'empty', 'not_empty'];
   if (col.type === 'checkbox') return ['not_empty', 'empty'];
@@ -133,6 +134,7 @@ export function sections(B, cfg, items, ctx) {
   for (const it of items) {
     const v = it.values[by.id];
     if (C.LABEL_TYPES.has(by.type)) { const l = C.labelOf(by, v); if (l) put(l.id, l.label, C.colorHex(l.color), it); else put('__empty', 'No value', '#9aa3b2', it); }
+    else if (by.type === 'team') { const tid = (v || [])[0]; const tm = tid && ctx.teams[tid]; put(tid || '__empty', tm ? tm.name : 'No team', tm ? C.colorHex(tm.color) : '#9aa3b2', it); }
     else if (by.type === 'people') { const p = (v || [])[0]; put(p || '__empty', p && ctx.people[p] ? ctx.people[p].name : 'Unassigned', p && ctx.people[p] ? ctx.people[p].color : '#9aa3b2', it); }
     else if (by.type === 'date') { const d = v ? String(v).slice(0, 7) : ''; put(d || '__empty', d ? monthName(d) : 'No date', '#3aa0e8', it); }
     else if (by.type === 'timeline') { const d = v && v.start ? v.start.slice(0, 7) : ''; put(d || '__empty', d ? monthName(d) : 'No date', '#3aa0e8', it); }

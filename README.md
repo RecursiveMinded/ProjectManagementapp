@@ -13,9 +13,9 @@ The feature set was mapped from the public help documentation of a leading hoste
 - Selecting several items brings up bulk actions: set a value, move, duplicate, archive or delete.
 - Each item has an updates feed with replies, pins and @mentions, plus a files tab and a full activity log.
 
-**35 column types**
+**36 column types**
 - Basic values: text, long text, numbers (with unit and summary), checkbox, rating, vote.
-- Labels and people: status, priority, dropdown, tags, people.
+- Labels, people and teams: status, priority, dropdown, tags, people, team.
 - Dates and time: date, timeline, week, hour, world clock, time tracking.
 - Contact and place: link, email, phone, location, country, colour.
 - Files and links between items: files, connect boards, mirror (list, sum, average, min, max, count, earliest or latest), dependency.
@@ -28,6 +28,8 @@ The feature set was mapped from the public help documentation of a leading hoste
 - Errors are reported as you type.
 
 **Dependencies**
+- Teams: group people into teams, and add teams outside Boardenda (other departments, vendors). A **Team** column records which team owns an item, or which teams it is waiting on.
+- The **Dependencies** page shows who is waiting on whom across every board. It has a team-by-team matrix and a list marked blocked, at risk, waiting or on track. It is a record only: nobody is contacted.
 - Link types: finish to start, start to start, finish to finish and start to finish, with optional lag.
 - Flexible mode pushes dependent items later only when they would overlap. Strict mode keeps the gap. "None" turns shifting off.
 

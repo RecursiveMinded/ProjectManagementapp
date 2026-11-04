@@ -61,6 +61,7 @@ class AppApi {
     return {
       workspaces: ws,
       people: this.store.people(),
+      teams: this.store.teams(),
       me: this.store.me(),
       settings: this.getSettings(),
       dashboards: this.dashboards.list(),
@@ -206,6 +207,94 @@ class AppApi {
       for (const s of B.subitems) consider(s, true);
     }
     return out.sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')));
+  }
+
+  // ----------------------------------------------------------------- teams
+  teams() { return this.store.teams(); }
+  saveTeam(t) { return this.store.saveTeam(t); }
+  deleteTeam(id) { return this.store.deleteTeam(id); }
+
+  /**
+   * Who is waiting on whom. Two kinds of link:
+   *  - item: an item's Dependency column points at a predecessor item; the
+   *    teams are each item's Team column (role owner), or its people's teams.
+   *  - team: an item's "waiting on" Team column marks a team it depends on,
+   *    with no item on their side (e.g. another department or a vendor).
+   * Nothing is sent to anyone; this only records and reports.
+   */
+  dependencies() {
+    const t = today();
+    const teams = this.store.teams();
+    const personTeams = {};
+    for (const tm of teams) for (const pid of tm.members) (personTeams[pid] = personTeams[pid] || []).push(tm.id);
+    const info = {};
+    const raw = [];
+    for (const b of this.db.all('SELECT id FROM boards WHERE archived=0')) {
+      const B = this.store.getBoard(b.id);
+      for (const scope of ['item', 'sub']) {
+        const cols = B.columns.filter((c) => c.scope === scope);
+        const status = cols.find((c) => c.type === 'status');
+        const dateCol = cols.find((c) => c.type === 'timeline') || cols.find((c) => c.type === 'date');
+        const owners = cols.filter((c) => c.type === 'team' && (c.settings.role || 'owner') === 'owner');
+        const waits = cols.filter((c) => c.type === 'team' && c.settings.role === 'waiting');
+        const people = cols.filter((c) => c.type === 'people');
+        const deps = cols.filter((c) => c.type === 'dependency');
+        for (const it of scope === 'item' ? B.items : B.subitems) {
+          let tms = [...new Set(owners.flatMap((c) => it.values[c.id] || []))];
+          if (!tms.length) tms = [...new Set(people.flatMap((c) => it.values[c.id] || []).flatMap((pid) => personTeams[pid] || []))];
+          const dv = dateCol && it.values[dateCol.id];
+          const l = status && C.labelOf(status, it.values[status.id]);
+          const parent = it.parent_id ? B.items.find((x) => x.id === it.parent_id) : null;
+          const g = B.groups.find((x) => x.id === (parent ? parent.group_id : it.group_id));
+          info[it.id] = {
+            id: it.id, name: it.name, parentName: parent ? parent.name : null, boardId: b.id, boardName: B.board.name, groupName: g ? g.name : '',
+            start: dv ? (dateCol.type === 'timeline' ? dv.start : String(dv).slice(0, 10)) : null,
+            due: dv ? (dateCol.type === 'timeline' ? dv.end : String(dv).slice(0, 10)) : null,
+            done: !!(l && l.done), status: l ? { label: l.label, color: C.colorHex(l.color) } : null, teams: tms,
+          };
+          for (const c of deps) for (const pid of it.values[c.id] || []) raw.push({ kind: 'item', from: pid, to: it.id, column: c.title });
+          for (const c of waits) for (const tid of it.values[c.id] || []) raw.push({ kind: 'team', team: tid, to: it.id, column: c.title });
+        }
+      }
+    }
+    const links = [];
+    for (const r of raw) {
+      const S = info[r.to];
+      if (!S) continue;
+      if (r.kind === 'item') {
+        const P = info[r.from];
+        if (!P) continue;
+        let state = 'on_track';
+        if (P.done) state = 'done';
+        else if ((P.due && P.due < t) || (S.start && S.start <= t)) state = 'blocked';
+        else if (P.due && S.start && P.due >= S.start) state = 'at_risk';
+        const cross = P.teams.length > 0 && S.teams.length > 0 && P.teams.join() !== S.teams.join();
+        links.push({ key: `${P.id}>${S.id}`, kind: 'item', providers: P.teams, waiting: S.teams, predecessor: P, successor: S, state, cross, column: r.column });
+      } else {
+        let state = 'waiting';
+        if (S.done) state = 'done';
+        else if ((S.start && S.start <= t) || (S.due && S.due < t)) state = 'blocked';
+        links.push({ key: `${r.team}>${S.id}`, kind: 'team', providers: [r.team], waiting: S.teams, predecessor: null, successor: S, state, cross: !S.teams.includes(r.team), column: r.column });
+      }
+    }
+    const rank = { blocked: 0, at_risk: 1, waiting: 2, on_track: 3, done: 4 };
+    links.sort((a, b) => rank[a.state] - rank[b.state] || String(a.successor.start || '9').localeCompare(String(b.successor.start || '9')));
+    const matrix = {};
+    for (const l of links) {
+      if (l.state === 'done' || !l.cross) continue;
+      for (const w of l.waiting.length ? l.waiting : ['']) for (const p of l.providers.length ? l.providers : ['']) {
+        if (w === p) continue;
+        const k = `${w}|${p}`;
+        matrix[k] = matrix[k] || { waiting: w, provider: p, open: 0, blocked: 0 };
+        matrix[k].open++;
+        if (l.state === 'blocked') matrix[k].blocked++;
+      }
+    }
+    const openCross = links.filter((l) => l.cross && l.state !== 'done');
+    return {
+      teams, links, matrix: Object.values(matrix),
+      summary: { open: openCross.length, blocked: openCross.filter((l) => l.state === 'blocked').length, atRisk: openCross.filter((l) => l.state === 'at_risk').length, external: openCross.filter((l) => l.kind === 'team').length },
+    };
   }
 
   // -------------------------------------------------------------- calendar

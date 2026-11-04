@@ -45,7 +45,7 @@ export function TableView({ B, cfg, setCfg, items, ctx, reload, openItem, select
         ${isCollapsed ? html`<${CollapsedRow} s=${s} cols=${cols} ctx=${ctx} />` : html`
         <table class="tbl" onDragOver=${(e) => e.preventDefault()} onDrop=${(e) => { e.preventDefault(); dropOn(null, s); }}>
           <colgroup><col style="width:6px" /><col style="width:36px" /><col style="width:${cfg.nameWidth || 340}px" />${cols.map((c) => html`<col key=${c.id} style=${`width:${widthOf(c)}px`} />`)}<col style="width:44px" /></colgroup>
-          <thead><tr><th class="stripe"></th><th class="sel"><${SelectAll} items=${s.items} selected=${selected} setSelected=${setSelected} /></th>
+          <thead><tr><th class="stripe"></th><th class="sel-cell"><${SelectAll} items=${s.items} selected=${selected} setSelected=${setSelected} /></th>
             <th class="name-cell"><div class="th" style="justify-content:flex-start;padding-left:12px">${B.board.item_noun ? cap(B.board.item_noun) : 'Item'}</div></th>
             ${cols.map((c) => html`<${ColumnHead} key=${c.id} col=${c} B=${B} cfg=${cfg} setCfg=${setCfg} reload=${reload} />`)}
             <th class="add-col"><${AddColumn} B=${B} reload=${reload} scope="item" /></th></tr></thead>
@@ -59,7 +59,7 @@ export function TableView({ B, cfg, setCfg, items, ctx, reload, openItem, select
                 onDragOver=${(e) => { e.preventDefault(); e.currentTarget.classList.add('drop-before'); }} onDragLeave=${(e) => e.currentTarget.classList.remove('drop-before')}
                 onDrop=${(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('drop-before'); dropOn(it, s); }}>
                 <td class="stripe"></td>
-                <td class="sel"><input type="checkbox" aria-label="Select" checked=${selected.has(it.id)} onChange=${() => { const n = new Set(selected); if (n.has(it.id)) n.delete(it.id); else n.add(it.id); setSelected(n); }} /></td>
+                <td class="sel-cell"><input type="checkbox" aria-label="Select" checked=${selected.has(it.id)} onChange=${() => { const n = new Set(selected); if (n.has(it.id)) n.delete(it.id); else n.add(it.id); setSelected(n); }} /></td>
                 <td class="name-cell"><div class="item-name">
                   <button class=${`sub-toggle ${subs.length ? 'has' : ''} ${open ? 'open' : ''}`} title=${subs.length ? plural(subs.length, 'subitem') : 'Add subitems'} onClick=${() => setOpenSubs({ ...openSubs, [it.id]: !open })}><${Icon} name="chev" size="14" />${subs.length ? subs.length : ''}</button>
                   <span class="nm"><${InlineText} value=${it.name} onSave=${(v) => call('renameItem', it.id, v).then(reload, toastError)} /></span>

@@ -55,7 +55,7 @@ const SHOTS = process.env.SHOTS_DIR || '';
     });
     await step('set a status', async () => {
       const row = page.locator('tr:has-text("Smoke test task")').first();
-      await row.locator('.cell.click').nth(1).click();
+      await row.locator('.cell.click:has(.lbl)').first().click();
       await page.click('.pop .label-opt:has-text("Done")');
       await page.waitForSelector('tr:has-text("Smoke test task") .lbl:has-text("Done")');
     });
@@ -97,6 +97,11 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.seg button:has-text("Agenda")');
       await page.waitForSelector('.ag-row');
       await page.click('.seg button:has-text("Month")');
+    });
+    await step('team dependencies', async () => {
+      await page.click('.side .nav a:has-text("Dependencies")');
+      await page.waitForSelector('.dep-row');
+      await page.click('.dep-n >> nth=0');
     });
     await step('my work', async () => { await page.click('.side .nav a:has-text("My work")'); await page.waitForSelector('h1:has-text("My work")'); });
     await step('inbox', async () => { await page.click('.side .nav a:has-text("Inbox")'); await page.waitForSelector('h1:has-text("Inbox")'); });

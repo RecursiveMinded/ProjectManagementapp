@@ -80,6 +80,7 @@ function inferColumns(header, rows) {
     if (/^(group|section|phase)$/.test(t)) type = '__group';
     else if (/status|stage|state/.test(t) && new Set(vals).size <= 12) type = 'status';
     else if (/priority|severity/.test(t) && new Set(vals).size <= 8) type = 'priority';
+    else if (/^(team|teams|department|squad|owning team)$/.test(t)) type = 'team';
     else if (/owner|assignee|assigned|person|people|responsible/.test(t)) type = 'people';
     else if (/email/.test(t) || all(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)) type = 'email';
     else if (/phone|mobile/.test(t)) type = 'phone';
@@ -136,7 +137,9 @@ async function importTable(store, { name, bytes, workspaceId, boardId, boardName
         const raw = String(r[idx] || '').trim();
         if (!raw) continue;
         const col = colRows[cid];
-        if (col.type === 'people') {
+        if (col.type === 'team') {
+          values[cid] = raw.split(/[,;]/).map((n) => n.trim()).filter(Boolean).map((n) => store.teamByName(n, true).id);
+        } else if (col.type === 'people') {
           values[cid] = raw.split(/[,;]/).map((n) => n.trim()).filter(Boolean).map((n) => (store.personByName(n) || { id: store.savePerson({ name: n }) }).id);
         } else if (col.type === 'date') values[cid] = toIsoDate(raw);
         else if (col.type === 'dropdown') {
@@ -157,7 +160,7 @@ async function importTable(store, { name, bytes, workspaceId, boardId, boardName
 /** Rows for export: one per item and subitem, with every column as text. */
 function exportRows(store, boardId) {
   const B = store.getBoard(boardId);
-  const ctx = { people: Object.fromEntries(B.people.map((p) => [p.id, p])), files: B.files, itemNames: Object.fromEntries(Object.entries(B.linked).map(([k, v]) => [k, v.name])) };
+  const ctx = { people: Object.fromEntries(B.people.map((p) => [p.id, p])), teams: Object.fromEntries((B.teams || []).map((t) => [t.id, t])), files: B.files, itemNames: Object.fromEntries(Object.entries(B.linked).map(([k, v]) => [k, v.name])) };
   for (const it of [...B.items, ...B.subitems]) ctx.itemNames[it.id] = it.name;
   const cols = B.columns.filter((c) => c.scope === 'item' && c.type !== 'button');
   const subCols = B.columns.filter((c) => c.scope === 'sub' && c.type !== 'button');
@@ -216,6 +219,7 @@ function exportBoardFile(store, boardId) {
     automations: db.all('SELECT * FROM automations WHERE board_id=?', [boardId]),
     updates: db.all('SELECT u.* FROM updates u JOIN items i ON i.id=u.item_id WHERE i.board_id=?', [boardId]),
     people: db.all('SELECT id, name, email, team, color FROM people'),
+    teams: db.all('SELECT id, name, color, description, external FROM teams'),
   }, null, 1);
 }
 
@@ -226,7 +230,8 @@ function importBoardFile(store, text, { workspaceId } = {}) {
   const map = {};
   const id = (old, p) => { if (!map[old]) map[old] = uid(p); return map[old]; };
   // People are matched by name; unknown people are added.
-  for (const p of f.people || []) map[p.id] = (store.personByName(p.name) || { id: store.savePerson(p) }).id;
+  for (const p of f.people || []) map[p.id] = (store.personByName(p.name) || { id: store.savePerson({ ...p, team: '' }) }).id;
+  for (const t of f.teams || []) map[t.id] = (store.teamByName(t.name) || { id: store.saveTeam({ ...t, id: null }) }).id;
   const remap = (json) => JSON.stringify(parseJson(json, {}), (k, v) => (typeof v === 'string' && map[v] ? map[v] : v));
   let nb;
   db.tx(() => {

@@ -215,3 +215,40 @@ test('calendar: dated work across boards within a range', async () => {
   assert.ok(narrow.entries.some((x) => x.key === e.key), 'an overlapping timeline is included');
   assert.ok(narrow.entries.every((x) => x.start <= e.end && x.end >= e.end));
 });
+
+test('teams: membership, team column, and cross-team dependencies (record only)', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const teams = api.teams();
+  const eng = teams.find((t) => t.name === 'Engineering');
+  assert.equal(eng.members.length, 2, 'people were placed in their teams');
+  assert.ok(teams.find((t) => t.name === 'Legal').external);
+  const d = api.dependencies();
+  assert.ok(d.links.some((l) => l.kind === 'item' && l.cross), 'item dependency between two teams');
+  assert.ok(d.links.some((l) => l.kind === 'team' && l.state === 'waiting'), 'a waiting-on-team mark');
+  assert.ok(d.matrix.length >= 3);
+  // Marking a new team dependency on an item.
+  const pb = api.bootstrap().workspaces[0].boards.find((b) => b.name === 'Website relaunch');
+  const B = api.getBoard(pb.id);
+  const wait = col(B, 'Waiting on team');
+  const vendor = api.saveTeam({ name: 'Print vendor', external: true });
+  const it = B.items.find((i) => i.name === 'Test with pilot customers');
+  api.setValue(it.id, wait.id, [vendor]);
+  const after = api.dependencies();
+  assert.ok(after.links.some((l) => l.kind === 'team' && l.providers[0] === vendor && l.successor.id === it.id));
+  assert.equal(api.notifications({}).filter((n) => /Print vendor/.test(n.title + n.body)).length, 0, 'nobody is notified');
+  // Deleting a team keeps its members.
+  api.deleteTeam(eng.id);
+  assert.equal(api.bootstrap().people.length, 4);
+});
+
+test('upgrading a version 1 database turns free-text teams into teams', async () => {
+  const api = await fresh();
+  api.db.run("INSERT INTO people(id,name,team,created_at) VALUES('p1','Kim','Ops','2026-01-01'),('p2','Lee','Ops','2026-01-01')");
+  api.db.run("UPDATE settings SET value='1' WHERE key='schema_version'");
+  api.db.run('DELETE FROM teams');
+  api.db.migrate();
+  const ops = api.teams().find((t) => t.name === 'Ops');
+  assert.ok(ops);
+  assert.deepEqual(ops.members.sort(), ['p1', 'p2']);
+});

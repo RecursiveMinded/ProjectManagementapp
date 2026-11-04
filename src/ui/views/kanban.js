@@ -6,13 +6,14 @@ import { C, firstCol } from '../model.js';
 import { renderValue } from '../cells.js';
 
 export function KanbanView({ B, cfg, setCfg, items, ctx, reload, openItem }) {
-  const laneCols = B.columns.filter((c) => c.scope === 'item' && (C.LABEL_TYPES.has(c.type) || c.type === 'people' || c.type === 'dropdown'));
+  const laneCols = B.columns.filter((c) => c.scope === 'item' && (C.LABEL_TYPES.has(c.type) || c.type === 'people' || c.type === 'team' || c.type === 'dropdown'));
   const col = laneCols.find((c) => c.id === cfg.column) || laneCols[0];
   const [over, setOver] = useState(null);
   const [drag, setDrag] = useState(null);
   if (!col) return html`<div class="empty"><h3>Add a status column to use Kanban</h3></div>`;
   let lanes;
   if (C.LABEL_TYPES.has(col.type)) lanes = [...(col.settings.labels || []).map((l) => ({ id: l.id, name: l.label, color: C.colorHex(l.color) })), { id: '__none', name: 'No value', color: '#9aa3b2' }];
+  else if (col.type === 'team') lanes = [...(B.teams || []).map((t) => ({ id: t.id, name: t.name, color: C.colorHex(t.color) })), { id: '__none', name: 'No team', color: '#9aa3b2' }];
   else if (col.type === 'people') lanes = [...B.people.map((p) => ({ id: p.id, name: p.name, color: p.color })), { id: '__none', name: 'Unassigned', color: '#9aa3b2' }];
   else lanes = [...(col.settings.options || []).map((o, i) => ({ id: o.id, name: o.label, color: C.PALETTE[(i * 3) % C.PALETTE.length].hex })), { id: '__none', name: 'No value', color: '#9aa3b2' }];
   const laneOf = (it) => {
@@ -27,12 +28,12 @@ export function KanbanView({ B, cfg, setCfg, items, ctx, reload, openItem }) {
     const id = drag;
     setDrag(null);
     if (!id) return;
-    const value = lane.id === '__none' ? null : col.type === 'people' || col.type === 'dropdown' ? [lane.id] : lane.id;
+    const value = lane.id === '__none' ? null : ['people', 'team', 'dropdown'].includes(col.type) ? [lane.id] : lane.id;
     try { await call('setValue', id, col.id, value); reload(); } catch (e) { toastError(e); }
   };
   const addIn = async (lane) => {
     try {
-      const id = await call('addItem', B.board.id, { name: `New ${B.board.item_noun || 'item'}`, values: lane.id === '__none' ? {} : { [col.id]: col.type === 'people' || col.type === 'dropdown' ? [lane.id] : lane.id } });
+      const id = await call('addItem', B.board.id, { name: `New ${B.board.item_noun || 'item'}`, values: lane.id === '__none' ? {} : { [col.id]: ['people', 'team', 'dropdown'].includes(col.type) ? [lane.id] : lane.id } });
       reload();
       openItem(id);
     } catch (e) { toastError(e); }

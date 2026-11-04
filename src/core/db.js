@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 // Everything on a board is stored relationally except cell values, which are
 // one JSON object per item keyed by column id (typed by the column).
@@ -20,6 +20,20 @@ CREATE TABLE IF NOT EXISTS people (
   is_me INTEGER DEFAULT 0,
   capacity REAL DEFAULT 0,
   created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS teams (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT DEFAULT 'indigo',
+  description TEXT DEFAULT '',
+  external INTEGER DEFAULT 0,
+  position REAL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS team_members (
+  team_id TEXT NOT NULL,
+  person_id TEXT NOT NULL,
+  PRIMARY KEY (team_id, person_id)
 );
 CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT PRIMARY KEY,
@@ -214,9 +228,22 @@ class Database {
     return d;
   }
 
+  /** v2: teams. Turn the free-text team on each person into real teams. */
+  upgradeTo2() {
+    const names = this.all("SELECT DISTINCT team FROM people WHERE team<>''").map((r) => r.team);
+    let pos = 0;
+    for (const name of names) {
+      const id = `t${Date.now().toString(36)}${Math.random().toString(16).slice(2, 10)}`;
+      this.run('INSERT INTO teams(id,name,color,position,created_at) VALUES(?,?,?,?,?)', [id, name, ['indigo', 'teal', 'tangerine', 'grape', 'mint', 'rose'][pos % 6], ++pos, new Date().toISOString()]);
+      this.run('INSERT OR IGNORE INTO team_members(team_id,person_id) SELECT ?, id FROM people WHERE team=?', [id, name]);
+    }
+  }
+
   migrate() {
     this.db.exec(SCHEMA);
     const v = this.get("SELECT value FROM settings WHERE key='schema_version'");
+    const from = v ? Number(JSON.parse(v.value)) : SCHEMA_VERSION;
+    if (from < 2) this.upgradeTo2();
     const ver = JSON.stringify(SCHEMA_VERSION);
     if (!v) this.run("INSERT INTO settings(key,value) VALUES('schema_version', ?)", [ver]);
     else if (v.value !== ver) this.run("UPDATE settings SET value=? WHERE key='schema_version'", [ver]);

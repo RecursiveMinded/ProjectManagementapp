@@ -46,20 +46,82 @@ class Store {
   savePerson(p) {
     const name = String(p.name || '').trim();
     if (!name) throw new Error('A name is required');
-    if (p.id && this.db.get('SELECT id FROM people WHERE id=?', [p.id])) {
-      this.db.run('UPDATE people SET name=?, email=?, team=?, color=?, capacity=? WHERE id=?', [name, p.email || '', p.team || '', p.color || '', Number(p.capacity) || 0, p.id]);
-      return p.id;
+    let id = p.id;
+    if (id && this.db.get('SELECT id FROM people WHERE id=?', [id])) {
+      this.db.run('UPDATE people SET name=?, email=?, color=?, capacity=? WHERE id=?', [name, p.email || '', p.color || '', Number(p.capacity) || 0, id]);
+    } else {
+      id = uid('p');
+      const n = this.db.get('SELECT COUNT(*) AS n FROM people').n;
+      this.db.run('INSERT INTO people(id,name,email,team,color,is_me,capacity,created_at) VALUES(?,?,?,?,?,0,?,?)', [id, name, p.email || '', '', p.color || PERSON_COLORS[n % PERSON_COLORS.length], Number(p.capacity) || 0, now()]);
     }
-    const id = uid('p');
-    const n = this.db.get('SELECT COUNT(*) AS n FROM people').n;
-    this.db.run('INSERT INTO people(id,name,email,team,color,is_me,capacity,created_at) VALUES(?,?,?,?,?,0,?,?)', [id, name, p.email || '', p.team || '', p.color || PERSON_COLORS[n % PERSON_COLORS.length], Number(p.capacity) || 0, now()]);
+    // Team membership: explicit ids, or a team name (created if new).
+    let teamIds = Array.isArray(p.teamIds) ? p.teamIds : null;
+    if (!teamIds && typeof p.team === 'string' && p.team.trim()) teamIds = [this.teamByName(p.team, true).id];
+    if (teamIds) this.setPersonTeams(id, teamIds);
     return id;
+  }
+  setPersonTeams(personId, teamIds) {
+    this.db.run('DELETE FROM team_members WHERE person_id=?', [personId]);
+    for (const t of teamIds) this.db.run('INSERT OR IGNORE INTO team_members(team_id,person_id) VALUES(?,?)', [t, personId]);
+    this.syncTeamText(personId);
+  }
+  syncTeamText(personId) {
+    const names = this.db.all('SELECT t.name FROM team_members m JOIN teams t ON t.id=m.team_id WHERE m.person_id=? ORDER BY t.position, t.name', [personId]).map((r) => r.name);
+    this.db.run('UPDATE people SET team=? WHERE id=?', [names.join(', '), personId]);
+  }
+
+  // ----------------------------------------------------------------- teams
+  teams() {
+    const members = this.db.all('SELECT * FROM team_members');
+    return this.db.all('SELECT * FROM teams ORDER BY position, name COLLATE NOCASE').map((t) => ({
+      ...t, external: !!t.external, members: members.filter((m) => m.team_id === t.id).map((m) => m.person_id),
+    }));
+  }
+  teamsMap() { return Object.fromEntries(this.teams().map((t) => [t.id, t])); }
+  teamByName(name, create = false) {
+    const n = String(name || '').trim();
+    const hit = this.db.get('SELECT * FROM teams WHERE lower(name)=lower(?)', [n]);
+    if (hit || !create || !n) return hit || null;
+    return { id: this.saveTeam({ name: n }) };
+  }
+  saveTeam(t) {
+    const name = String(t.name || '').trim();
+    if (!name) throw new Error('A team name is required');
+    const dup = this.db.get('SELECT id FROM teams WHERE lower(name)=lower(?) AND id<>?', [name, t.id || '']);
+    if (dup) throw new Error(`There is already a team called ${name}`);
+    let id = t.id;
+    if (id && this.db.get('SELECT id FROM teams WHERE id=?', [id])) {
+      const old = this.db.get('SELECT * FROM teams WHERE id=?', [id]);
+      this.db.run('UPDATE teams SET name=?, color=?, description=?, external=? WHERE id=?',
+        [name, t.color || old.color, t.description != null ? t.description : old.description, t.external != null ? (t.external ? 1 : 0) : old.external, id]);
+    } else {
+      id = uid('t');
+      const n = this.db.get('SELECT COUNT(*) AS n, MAX(position) AS m FROM teams');
+      this.db.run('INSERT INTO teams(id,name,color,description,external,position,created_at) VALUES(?,?,?,?,?,?,?)',
+        [id, name, t.color || GROUP_COLORS[n.n % GROUP_COLORS.length], t.description || '', t.external ? 1 : 0, (n.m || 0) + 1, now()]);
+    }
+    if (Array.isArray(t.members)) {
+      const before = this.db.all('SELECT person_id FROM team_members WHERE team_id=?', [id]).map((r) => r.person_id);
+      this.db.run('DELETE FROM team_members WHERE team_id=?', [id]);
+      for (const pid of t.members) this.db.run('INSERT OR IGNORE INTO team_members(team_id,person_id) VALUES(?,?)', [id, pid]);
+      for (const pid of new Set([...before, ...t.members])) this.syncTeamText(pid);
+    } else {
+      for (const r of this.db.all('SELECT person_id FROM team_members WHERE team_id=?', [id])) this.syncTeamText(r.person_id);
+    }
+    return id;
+  }
+  deleteTeam(id) {
+    const members = this.db.all('SELECT person_id FROM team_members WHERE team_id=?', [id]).map((r) => r.person_id);
+    this.db.run('DELETE FROM team_members WHERE team_id=?', [id]);
+    this.db.run('DELETE FROM teams WHERE id=?', [id]);
+    for (const pid of members) this.syncTeamText(pid);
   }
   deletePerson(id) {
     const p = this.db.get('SELECT * FROM people WHERE id=?', [id]);
     if (!p) return;
     if (p.is_me) throw new Error('You cannot remove yourself');
     this.db.run('DELETE FROM people WHERE id=?', [id]);
+    this.db.run('DELETE FROM team_members WHERE person_id=?', [id]);
   }
   personByName(name) {
     const n = String(name || '').trim().toLowerCase();
@@ -278,7 +340,7 @@ class Store {
   }
   /** Change a column's type, carrying values across as text where possible. */
   convertValues(col, type, settings) {
-    const ctx = { people: this.peopleMap() };
+    const ctx = { people: this.peopleMap(), teams: this.teamsMap() };
     const target = { ...col, type, settings };
     const items = this.db.all('SELECT id, data FROM items WHERE board_id=?', [col.board_id]);
     for (const it of items) {
@@ -395,7 +457,7 @@ class Store {
     if (v == null) delete it.data[columnId]; else it.data[columnId] = v;
     this.db.tx(() => {
       this.db.run('UPDATE items SET data=?, updated_at=? WHERE id=?', [JSON.stringify(it.data), now(), itemId]);
-      const ctx = { people: this.peopleMap(), itemNames: this.namesFor([...(Array.isArray(old) ? old : []), ...(Array.isArray(v) ? v : [])]) };
+      const ctx = { people: this.peopleMap(), teams: this.teamsMap(), itemNames: this.namesFor([...(Array.isArray(old) ? old : []), ...(Array.isArray(v) ? v : [])]) };
       if (col.type !== 'time_tracking') {
         this.log({ boardId: it.board_id, itemId, action: 'value', columnId, oldValue: C.textOf(col, old, ctx), newValue: C.textOf(col, v, ctx), source });
       }
@@ -778,7 +840,7 @@ class Store {
     const ws = this.db.get('SELECT id, name FROM workspaces WHERE id=?', [board.workspace_id]);
     return {
       board, workspace: ws, groups, columns, items, subitems, files, updateCounts,
-      linked: ctx.linked, people: this.people(), views: this.views(id),
+      linked: ctx.linked, people: this.people(), teams: this.teams(), views: this.views(id),
       automations: this.db.get('SELECT COUNT(*) AS n FROM automations WHERE board_id=? AND enabled=1', [id]).n,
     };
   }
@@ -801,7 +863,7 @@ class Store {
     }
     const boardCols = {};
     for (const b of Object.keys(extBoards)) boardCols[b] = this.columns(b);
-    return { linked, boardCols, people: this.peopleMap() };
+    return { linked, boardCols, people: this.peopleMap(), teams: this.teamsMap() };
   }
 
   compute(board, columns, items, subitems, ctx) {
