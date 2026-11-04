@@ -203,3 +203,15 @@ test('persistence: data survives a restart, backups restore', async () => {
   api.db.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('calendar: dated work across boards within a range', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const all = api.calendar({});
+  assert.ok(all.entries.length > 5);
+  assert.ok(new Set(all.entries.map((e) => e.boardId)).size >= 3, 'several boards contribute');
+  const e = all.entries.find((x) => x.type === 'timeline');
+  const narrow = api.calendar({ from: e.end, to: e.end });
+  assert.ok(narrow.entries.some((x) => x.key === e.key), 'an overlapping timeline is included');
+  assert.ok(narrow.entries.every((x) => x.start <= e.end && x.end >= e.end));
+});

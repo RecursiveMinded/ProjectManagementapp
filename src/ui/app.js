@@ -8,6 +8,7 @@ import { ItemPanel } from './item.js';
 import { DashboardPage } from './dashboards-ui.js';
 import { Home, MyWork, Inbox, Archive, SearchPalette, NewBoard } from './pages.js';
 import { Settings } from './settings.js';
+import { CalendarPage } from './calendar.js';
 import { useUpdate, installUpdate, checkForUpdates } from './update.js';
 import { selfTest } from './selftest.js';
 import { C } from './model.js';
@@ -83,6 +84,7 @@ function App() {
   let page;
   if (r.name === 'board') page = html`<${BoardPage} key=${r.id} boardId=${r.id} openItem=${openItem} refreshShell=${reloadShell} nav=${nav} version=${version} />`;
   else if (r.name === 'dashboard') page = html`<${DashboardPage} key=${r.id} id=${r.id} boot=${boot} nav=${nav} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
+  else if (r.name === 'calendar') page = html`<${CalendarPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'mywork') page = html`<${MyWork} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'inbox') page = html`<${Inbox} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
   else if (r.name === 'archive') page = html`<${Archive} refreshShell=${reloadShell} />`;
@@ -98,6 +100,7 @@ function App() {
       <nav class="nav">
         ${navLink('home', 'Home', 'home')}
         ${navLink('mywork', 'My work', 'check')}
+        ${navLink('calendar', 'Calendar', 'calendar')}
         ${navLink('inbox', 'Inbox', 'inbox', boot.unread || null)}
       </nav>
       <div class="scroll">

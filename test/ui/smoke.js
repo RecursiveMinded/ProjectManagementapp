@@ -90,6 +90,14 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.waitForSelector('.widget');
       if ((await page.$$('.widget')).length < 6) throw new Error('widgets missing');
     });
+    await step('main calendar: month, week, agenda', async () => {
+      await page.click('.side .nav a:has-text("Calendar")');
+      await page.waitForSelector('.cal-item');
+      await page.click('.seg button:has-text("Week")');
+      await page.click('.seg button:has-text("Agenda")');
+      await page.waitForSelector('.ag-row');
+      await page.click('.seg button:has-text("Month")');
+    });
     await step('my work', async () => { await page.click('.side .nav a:has-text("My work")'); await page.waitForSelector('h1:has-text("My work")'); });
     await step('inbox', async () => { await page.click('.side .nav a:has-text("Inbox")'); await page.waitForSelector('h1:has-text("Inbox")'); });
     await step('search palette', async () => {

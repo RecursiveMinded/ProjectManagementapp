@@ -208,6 +208,48 @@ class AppApi {
     return out.sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')));
   }
 
+  // -------------------------------------------------------------- calendar
+  /**
+   * Dated work across every board between two days (inclusive), for the main
+   * calendar. Each entry is one item on one date or timeline column.
+   */
+  calendar({ from, to, includeSubitems = true } = {}) {
+    const out = [];
+    const boards = [];
+    for (const b of this.db.all('SELECT id FROM boards WHERE archived=0 ORDER BY position, name')) {
+      const has = this.db.get("SELECT COUNT(*) AS n FROM columns WHERE board_id=? AND type IN ('date','timeline')", [b.id]).n;
+      if (!has) continue;
+      const B = this.store.getBoard(b.id);
+      const dateCols = B.columns.filter((c) => c.type === 'date' || c.type === 'timeline');
+      boards.push({ id: b.id, name: B.board.name, noun: B.board.item_noun || 'item', dateColumns: dateCols.filter((c) => c.scope === 'item').map((c) => ({ id: c.id, title: c.title, type: c.type })) });
+      const status = { item: B.columns.find((c) => c.scope === 'item' && c.type === 'status'), sub: B.columns.find((c) => c.scope === 'sub' && c.type === 'status') };
+      const consider = (it, scope) => {
+        const sc = status[scope];
+        const l = sc && C.labelOf(sc, it.values[sc.id]);
+        const parent = scope === 'sub' ? B.items.find((p) => p.id === it.parent_id) : null;
+        const g = B.groups.find((x) => x.id === (parent ? parent.group_id : it.group_id));
+        const people = [...new Set(B.columns.filter((c) => c.scope === scope && c.type === 'people').flatMap((c) => it.values[c.id] || []))];
+        for (const c of dateCols.filter((x) => x.scope === scope)) {
+          const v = it.values[c.id];
+          if (!v) continue;
+          const start = c.type === 'timeline' ? v.start : String(v).slice(0, 10);
+          const end = c.type === 'timeline' ? (v.end || v.start) : start;
+          if (!start || (to && start > to) || (from && end < from)) continue;
+          out.push({
+            key: `${it.id}:${c.id}`, id: it.id, name: it.name, parentName: parent ? parent.name : null, boardId: b.id, boardName: B.board.name,
+            groupName: g ? g.name : '', columnId: c.id, columnTitle: c.title, type: c.type, start, end, time: c.type === 'date' && String(v).length > 10 ? String(v).slice(11, 16) : null,
+            raw: v, people, done: !!(l && l.done), status: l ? { label: l.label, color: C.colorHex(l.color) } : null,
+            color: l ? C.colorHex(l.color) : g ? C.colorHex(g.color) : '#5a55d6',
+          });
+        }
+      };
+      for (const it of B.items) consider(it, 'item');
+      if (includeSubitems) for (const s of B.subitems) consider(s, 'sub');
+    }
+    out.sort((a, b) => a.start.localeCompare(b.start) || String(a.time || '').localeCompare(String(b.time || '')) || a.name.localeCompare(b.name));
+    return { entries: out, boards };
+  }
+
   // --------------------------------------------------------- notifications
   notifications(q) { return this.store.notifications(q); }
   markRead(ids, read) { return this.store.markRead(ids, read); }

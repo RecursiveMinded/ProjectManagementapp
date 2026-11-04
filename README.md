@@ -59,6 +59,7 @@ The feature set was mapped from the public help documentation of a leading hoste
 **Personal**
 - Home page.
 - My work: overdue, today, this week and later, across all boards.
+- Calendar: dated work from every board in month, week or agenda form, with drag to reschedule, person and board filters, quick add, and export to `.ics` for Outlook or Google Calendar.
 - Inbox for mentions, assignments and automation notices.
 - Ctrl+K search and command palette.
 - Windows notifications and an optional daily digest.
