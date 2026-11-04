@@ -1,0 +1,9 @@
+node_modules/
+dist/
+release/
+.devdata/
+*.log
+# Local data and exports never go in the repository.
+*.db
+corpus/
+data/
