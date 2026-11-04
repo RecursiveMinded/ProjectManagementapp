@@ -69,11 +69,13 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.waitForSelector('.drawer >> text=Checked by the smoke test');
       for (const t of ['Details', 'Subitems', 'Files', 'Activity log']) await page.click(`.drawer .tab:has-text("${t}")`);
       await page.keyboard.press('Escape');
+      await page.waitForSelector('.drawer', { state: 'detached' });
     });
     await step('automation center', async () => {
       await page.click('button:has-text("Automate")');
       await page.waitForSelector('.modal >> text=Automations on');
-      await page.keyboard.press('Escape');
+      await page.click('.modal button[aria-label="Close"]');
+      await page.waitForSelector('.scrim', { state: 'detached' });
     });
     await step('calendar view', async () => { await page.click('.ws-board:has-text("Team tasks")'); await page.click('.tabs .tab:has-text("Calendar")'); await page.waitForSelector('.cal'); });
     await step('chart and form views', async () => {
