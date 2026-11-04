@@ -489,3 +489,4 @@ button.cal-more:hover { color: var(--brand); }
 .dep-row .lbl { justify-content: center; }
 .dep-teams { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .dep-items a { cursor: pointer; }
+.toast-act { margin-left: 12px; background: none; border: 1px solid rgba(255,255,255,.4); color: inherit; border-radius: 6px; padding: 2px 10px; font-weight: 700; cursor: pointer; }

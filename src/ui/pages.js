@@ -143,14 +143,28 @@ export function Archive({ refreshShell }) {
   const [d, reload] = useLoad(() => call('archived'), []);
   const act = (p) => p.then(() => { reload(); refreshShell(); }, toastError);
   if (!d) return html`<div class="page"><${Spinner} /></div>`;
-  return html`<div class="page"><div class="page-head"><h1 class="grow">Archive</h1></div>
+  return html`<div class="page"><div class="page-head"><h1 class="grow">Archive and trash</h1></div>
+    <${Trash} refreshShell=${refreshShell} />
     <div class="card"><div class="hd"><h3>Boards</h3></div><div class="bd">${d.boards.length ? html`<table class="plain"><tbody>${d.boards.map((b) => html`<tr key=${b.id}><td><b>${b.name}</b></td><td class="muted small">${b.workspace}</td><td class="small faint">${relTime(b.updated_at)}</td>
-      <td style="text-align:right"><button class="btn small" onClick=${() => act(call('archiveBoard', b.id, false))}>Restore</button> <button class="btn small ghost" style="color:var(--bad)" onClick=${async () => { if (await ask({ title: 'Delete board permanently?', body: b.name })) act(call('deleteBoard', b.id)); }}>Delete</button></td></tr>`)}</tbody></table>` : html`<div class="muted small">No archived boards.</div>`}</div></div>
+      <td style="text-align:right"><button class="btn small" onClick=${() => act(call('archiveBoard', b.id, false))}>Restore</button> <button class="btn small ghost" style="color:var(--bad)" onClick=${async () => { if (await ask({ title: 'Move board to the trash?', body: `${b.name} can be restored for 30 days.` })) act(call('deleteBoard', b.id)); }}>Delete</button></td></tr>`)}</tbody></table>` : html`<div class="muted small">No archived boards.</div>`}</div></div>
     <div class="card mt2" style="margin-top:16px"><div class="hd"><h3>Groups</h3></div><div class="bd">${d.groups.length ? html`<table class="plain"><tbody>${d.groups.map((g) => html`<tr key=${g.id}><td><b>${g.name}</b></td><td class="muted small">${g.board}</td>
       <td style="text-align:right"><button class="btn small" onClick=${() => act(call('archiveGroup', g.id, false))}>Restore</button> <button class="btn small ghost" style="color:var(--bad)" onClick=${() => act(call('deleteGroup', g.id))}>Delete</button></td></tr>`)}</tbody></table>` : html`<div class="muted small">No archived groups.</div>`}</div></div>
     <div class="card mt2" style="margin-top:16px"><div class="hd"><h3>Items</h3></div><div class="bd">${d.items.length ? html`<table class="plain"><tbody>${d.items.map((i) => html`<tr key=${i.id}><td><b>${i.name}</b></td><td class="muted small">${i.board}</td><td class="small faint">${relTime(i.updated_at)}</td>
       <td style="text-align:right"><button class="btn small" onClick=${() => act(call('archiveItem', i.id, false))}>Restore</button> <button class="btn small ghost" style="color:var(--bad)" onClick=${() => act(call('deleteItem', i.id))}>Delete</button></td></tr>`)}</tbody></table>` : html`<div class="muted small">No archived items.</div>`}</div></div>
   </div>`;
+}
+
+const KIND = { board: 'Board', group: 'Group', column: 'Column', item: 'Item', subitem: 'Subitem' };
+function Trash({ refreshShell }) {
+  const [list, reload] = useLoad(() => call('trash'), []);
+  const act = (p, msg) => p.then(() => { reload(); refreshShell(); if (msg) toast(msg); }, toastError);
+  if (!list) return null;
+  return html`<div class="card mb"><div class="hd row between"><h3>Trash</h3>
+    ${list.length ? html`<button class="btn small ghost" style="color:var(--bad)" onClick=${async () => { if (await ask({ title: 'Empty the trash?', body: `${list.length} deleted things and their files are removed for good.`, ok: 'Empty trash' })) act(call('purgeTrash'), 'Trash emptied'); }}>Empty trash</button>` : null}</div>
+    <div class="bd">${list.length ? html`<div class="small muted mb">Deleted boards, groups, columns and items stay here for 30 days.</div><table class="plain"><tbody>${list.map((t) => html`<tr key=${t.id}>
+      <td><span class="chip">${KIND[t.kind] || t.kind}</span> <b>${t.name}</b></td><td class="muted small">${t.kind === 'board' ? '' : t.board_name}</td><td class="small faint">${relTime(t.deleted_at)}</td>
+      <td style="text-align:right"><button class="btn small" onClick=${() => act(call('restoreTrash', t.id), `Restored ${t.name}`)}>Restore</button> <button class="btn small ghost" style="color:var(--bad)" onClick=${async () => { if (await ask({ title: 'Delete forever?', body: `${t.name} cannot be restored after this.` })) act(call('purgeTrash', t.id)); }}>Delete forever</button></td></tr>`)}</tbody></table>`
+      : html`<div class="muted small">The trash is empty.</div>`}</div></div>`;
 }
 
 export function SearchPalette({ onClose, nav, openItem, boot }) {

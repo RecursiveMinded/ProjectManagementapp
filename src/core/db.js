@@ -35,6 +35,15 @@ CREATE TABLE IF NOT EXISTS team_members (
   person_id TEXT NOT NULL,
   PRIMARY KEY (team_id, person_id)
 );
+CREATE TABLE IF NOT EXISTS trash (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  board_id TEXT,
+  board_name TEXT DEFAULT '',
+  payload TEXT NOT NULL,
+  deleted_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

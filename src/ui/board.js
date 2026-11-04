@@ -113,7 +113,7 @@ function BoardHeader({ B, reload, view, setViewId, openAutos, openActivity, nav 
       { label: 'Board settings', icon: 'gear', hint: `items: ${b.item_noun}`, onClick: () => setMoveWs('settings') },
       { sep: true },
       { label: 'Archive board', icon: 'archive', onClick: () => call('archiveBoard', b.id, true).then(() => { toast('Board archived. Restore it from Archive.'); nav('home'); }, toastError) },
-      { label: 'Delete board', icon: 'trash', danger: true, onClick: async () => { if (await ask({ title: 'Delete board?', body: `“${b.name}”, its items, updates and files will be deleted permanently.` })) call('deleteBoard', b.id).then(() => nav('home'), toastError); } },
+      { label: 'Delete board', icon: 'trash', danger: true, onClick: async () => { if (await ask({ title: 'Delete board?', body: `“${b.name}” moves to the trash with its items, updates and files. You can restore it for 30 days.` })) call('deleteBoard', b.id).then(() => nav('home'), toastError); } },
     ]} />` : null}
     ${moveWs ? html`<${BoardSettings} B=${B} mode=${moveWs} onClose=${() => setMoveWs(false)} reload=${reload} />` : null}
   </div>`;

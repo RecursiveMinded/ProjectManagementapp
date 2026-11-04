@@ -170,19 +170,19 @@ function useEsc(fn) {
 
 // ------------------------------------------------------------------ toasts
 let pushToast = () => {};
-export function toast(msg, kind = '') { pushToast(msg, kind); }
+export function toast(msg, kind = '', action = null) { pushToast(msg, kind, action); }
 export function toastError(e) { pushToast(e && e.message ? e.message : String(e), 'err'); }
 
 export function Toasts() {
   const [list, setList] = useState([]);
   useEffect(() => {
-    pushToast = (msg, kind) => {
+    pushToast = (msg, kind, action) => {
       const id = Math.random();
-      setList((l) => [...l, { id, msg, kind }]);
-      setTimeout(() => setList((l) => l.filter((t) => t.id !== id)), kind === 'err' ? 7000 : 3800);
+      setList((l) => [...l, { id, msg, kind, action }]);
+      setTimeout(() => setList((l) => l.filter((t) => t.id !== id)), kind === 'err' ? 7000 : action ? 8000 : 3800);
     };
   }, []);
-  return html`<div class="toasts" role="status">${list.map((t) => html`<div class=${`toast ${t.kind}`} key=${t.id}>${t.msg}</div>`)}</div>`;
+  return html`<div class="toasts" role="status">${list.map((t) => html`<div class=${`toast ${t.kind}`} key=${t.id}>${t.msg}${t.action ? html`<button class="toast-act" onClick=${() => { setList((l) => l.filter((x) => x.id !== t.id)); t.action.run(); }}>${t.action.label}</button>` : null}</div>`)}</div>`;
 }
 
 // ------------------------------------------------------------------- hooks
@@ -321,7 +321,7 @@ export function Confirm({ title, body, ok = 'Delete', onOk, onClose, danger = tr
   return html`<${Modal} title=${title} onClose=${onClose}>
     <p class="muted">${body}</p>
     <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" onClick=${onClose}>Cancel</button>
-      <button class=${`btn ${danger ? 'danger' : 'primary'}`} onClick=${() => { onClose(); onOk(); }}>${ok}</button></div>
+      <button class=${`btn ${danger ? 'danger' : 'primary'}`} onClick=${() => onOk()}>${ok}</button></div>
   </${Modal}>`;
 }
 
@@ -331,7 +331,7 @@ export function ConfirmHost() {
   const [c, setC] = useState(null);
   useEffect(() => { confirmHost = setC; }, []);
   if (!c) return null;
-  return html`<${Confirm} ...${c} onOk=${() => c.resolve(true)} onClose=${() => { setC(null); c.resolve(false); }} />`;
+  return html`<${Confirm} ...${c} onOk=${() => { setC(null); c.resolve(true); }} onClose=${() => { setC(null); c.resolve(false); }} />`;
 }
 
 export function hexA(hex, a) {

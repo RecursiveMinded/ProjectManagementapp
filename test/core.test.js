@@ -252,3 +252,40 @@ test('upgrading a version 1 database turns free-text teams into teams', async ()
   assert.ok(ops);
   assert.deepEqual(ops.members.sort(), ['p1', 'p2']);
 });
+
+test('trash and undo: deleted boards, groups, columns and items come back', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const b = api.bootstrap().workspaces[0].boards.find((x) => x.name === 'Website relaunch');
+  const B = api.getBoard(b.id);
+  const status = col(B, 'Status');
+  const first = B.items[0];
+  const before = first.values[status.id];
+  api.setValue(first.id, status.id, 'stuck');
+  assert.match(api.undo(), /Changed Status/);
+  const byId = () => api.getBoard(b.id).items.find((i) => i.id === first.id);
+  assert.equal(byId().values[status.id], before);
+
+  api.deleteColumn(status.id);
+  api.undo();
+  assert.equal(byId().values[status.id], before, 'column values restored');
+
+  const withSubs = B.items.find((i) => B.subitems.some((s) => s.parent_id === i.id));
+  api.postUpdate(withSubs.id, 'keep me');
+  api.deleteItem(withSubs.id);
+  assert.equal(api.trash()[0].kind, 'item');
+  api.restoreTrash(api.trash()[0].id);
+  const back = api.getItem(withSubs.id);
+  assert.ok(back.subitems.length > 0 && back.updates.length === 1, 'subitems and updates restored');
+
+  const counts = (id) => { const x = api.getBoard(id); return [x.items.length, x.subitems.length, x.columns.length, x.views.length]; };
+  const full = counts(b.id);
+  api.deleteBoard(b.id);
+  assert.throws(() => api.getBoard(b.id));
+  api.undo();
+  assert.deepEqual(counts(b.id), full);
+
+  api.deleteGroup(B.groups[0].id);
+  assert.equal(api.purgeTrash(), 1);
+  assert.equal(api.trash().length, 0);
+});

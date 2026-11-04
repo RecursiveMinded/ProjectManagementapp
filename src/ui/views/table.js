@@ -265,7 +265,7 @@ export function BulkBar({ B, selected, setSelected, reload }) {
     <button class="btn ghost small" onClick=${open}><${Icon} name="arrowRight" size="14" /> Move to</button>
     <button class="btn ghost small" onClick=${openB}><${Icon} name="edit" size="14" /> Set</button>
     <button class="btn ghost small" onClick=${() => run('archive')}><${Icon} name="archive" size="14" /> Archive</button>
-    <button class="btn ghost small" style="color:var(--bad)" onClick=${async () => { if (await ask({ title: `Delete ${plural(ids.length, 'item')}?`, body: 'This cannot be undone. Archive keeps them restorable.' })) run('delete'); }}><${Icon} name="trash" size="14" /> Delete</button>
+    <button class="btn ghost small" style="color:var(--bad)" onClick=${async () => { if (await ask({ title: `Delete ${plural(ids.length, 'item')}?`, body: 'They move to the trash for 30 days. Press Ctrl+Z to undo.' })) run('delete'); }}><${Icon} name="trash" size="14" /> Delete</button>
     <button class="btn icon ghost small" aria-label="Clear selection" onClick=${() => setSelected(new Set())}><${Icon} name="x" size="14" /></button>
     ${a ? html`<${Menu} anchor=${a} onClose=${close} items=${B.groups.filter((g) => !g.archived).map((g) => ({ label: g.name, icon: 'group', onClick: () => run('move', { groupId: g.id }) }))} />` : null}
     ${b ? html`<${Menu} anchor=${b} onClose=${closeB} width=${260} items=${labelCols.flatMap((c) => [{ head: c.title }, ...(c.type === 'people'

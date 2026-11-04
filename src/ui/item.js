@@ -62,7 +62,7 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
       { sep: true },
       it.archived ? { label: 'Restore', icon: 'refresh', onClick: () => call('archiveItem', it.id, false).then(changed, toastError) }
         : { label: 'Archive', icon: 'archive', onClick: () => call('archiveItem', it.id, true).then(() => { toast('Archived'); onChanged && onChanged(); onClose(); }, toastError) },
-      { label: 'Delete', icon: 'trash', danger: true, onClick: async () => { if (await ask({ title: 'Delete this item?', body: 'The item, its subitems, updates and files are deleted permanently.' })) call('deleteItem', it.id).then(() => { onChanged && onChanged(); onClose(); }, toastError); } },
+      { label: 'Delete', icon: 'trash', danger: true, onClick: async () => { if (await ask({ title: 'Delete this item?', body: 'It moves to the trash with its subitems, updates and files. You can restore it for 30 days, or press Ctrl+Z.' })) call('deleteItem', it.id).then(() => { onChanged && onChanged(); onClose(); }, toastError); } },
     ]} />` : null}
     ${moveB ? html`<${Menu} anchor=${{ getBoundingClientRect: () => ({ left: window.innerWidth - 420, right: window.innerWidth - 120, top: 60, bottom: 80, width: 300 }) }} onClose=${() => setMoveB(null)} width=${300}
       items=${moveB.filter((b) => b.id !== d.board.id && !b.archived).map((b) => ({ label: b.name, hint: b.workspace, icon: 'table', onClick: () => call('moveItem', it.id, { boardId: b.id }).then(() => { toast(`Moved to ${b.name}`); changed(); }, toastError) }))} />` : null}

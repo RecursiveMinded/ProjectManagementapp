@@ -49,6 +49,19 @@ function App() {
   const nav = useCallback((name, id = null) => { setRoute({ name, id }); setItem(null); }, []);
   const openItem = useCallback((id, tab, reload) => { itemReload.current = reload || null; setItem({ id, tab: tab || null, t: Date.now() }); }, []);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
+  const doUndo = useCallback(async () => {
+    try {
+      const label = await call('undo');
+      if (!label) { toast('Nothing to undo'); return; }
+      toast(`Undone: ${label}`);
+      bump(); reloadShell(); if (itemReload.current) itemReload.current();
+    } catch (e) { toastError(e); }
+  }, []);
+  useEffect(() => {
+    const h = async () => { try { const label = await call('undoLabel'); if (label) toast(label, '', { label: 'Undo', run: doUndo }); } catch (_) { /* ignore */ } };
+    window.addEventListener('bd-undoable', h);
+    return () => window.removeEventListener('bd-undoable', h);
+  }, []);
 
   // Unread count and data changed by automations in the background.
   useEffect(() => {
@@ -61,6 +74,7 @@ function App() {
   useEffect(() => {
     const k = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(true); }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea, select, [contenteditable]')) { e.preventDefault(); doUndo(); }
       if (e.key === 'Escape' && item && !document.querySelector('.modal, .pop, .palette')) setItem(null);
     };
     window.addEventListener('keydown', k);
@@ -118,7 +132,7 @@ function App() {
       <${UpdateButton} update=${update} />
       <div class="foot">
         <div class="me" onClick=${() => nav('settings')} title="Profile and settings"><${Avatar} person=${boot.me} size=${26} /><span class="clip">${boot.me.name}</span></div>
-        <button title="Archive" aria-label="Archive" onClick=${() => nav('archive')}><${Icon} name="archive" /></button>
+        <button title="Archive and trash" aria-label="Archive and trash" onClick=${() => nav('archive')}><${Icon} name="archive" /></button>
         <button title="Settings" aria-label="Settings" onClick=${() => nav('settings')}><${Icon} name="gear" /></button>
       </div>
     </aside>

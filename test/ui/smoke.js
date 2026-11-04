@@ -59,6 +59,17 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.pop .label-opt:has-text("Done")');
       await page.waitForSelector('tr:has-text("Smoke test task") .lbl:has-text("Done")');
     });
+    await step('delete and undo', async () => {
+      const rows = () => page.locator('.tbl tbody tr .item-name').count();
+      const n = await rows();
+      await page.locator('tr:has-text("Smoke test task") .sel-cell input').first().check();
+      await page.click('.bulk-bar button:has-text("Delete")');
+      await page.click('.modal button:has-text("Delete")');
+      await page.waitForSelector('.toast-act');
+      if ((await rows()) !== n - 1) throw new Error('item was not deleted');
+      await page.click('.toast-act');
+      await page.waitForSelector('text=Smoke test task');
+    });
     await step('item panel with an update', async () => {
       const row = page.locator('tr:has-text("Smoke test task")').first();
       await row.hover();

@@ -37,8 +37,12 @@ export async function call(method, ...args) {
     out = decode(await res.json());
   }
   if (out && out.__error) throw new Error(out.message);
+  if (ANNOUNCE.has(method) && (method !== 'bulk' || ['delete', 'archive', 'move'].includes(args[1]))) {
+    try { window.dispatchEvent(new CustomEvent('bd-undoable', { detail: method })); } catch (_) { /* no window */ }
+  }
   return out;
 }
+const ANNOUNCE = new Set(['deleteItem', 'deleteGroup', 'deleteColumn', 'deleteBoard', 'bulk', 'archiveItem']);
 
 export async function native(op, args = {}) {
   if (bridge) {

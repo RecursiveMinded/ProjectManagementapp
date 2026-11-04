@@ -40,6 +40,7 @@ class AppApi {
     this.dashboards = new Dashboards(this.store);
     this.store.me();
     if (dataDir) this.autoBackup();
+    try { this.store.purgeTrash({ olderThanDays: 30 }); } catch (_) { /* never block start-up */ }
   }
 
   // ------------------------------------------------------------- settings
@@ -90,7 +91,7 @@ class AppApi {
   updateBoard(id, patch) { return this.store.updateBoard(id, patch); }
   duplicateBoard(id, opts) { return this.store.duplicateBoard(id, opts); }
   archiveBoard(id, archived) { return this.store.archiveBoard(id, archived); }
-  deleteBoard(id) { return this.store.deleteBoard(id); }
+  deleteBoard(id) { const n = this.store.boardRow(id).name; this.store.deleteBoard(id); this.lastTrash(`Deleted board “${n}”`); }
   moveBoardTo(id, workspaceId, position) { return this.store.moveBoardTo(id, workspaceId, position); }
   allBoards() {
     return this.db.all('SELECT b.id, b.name, b.workspace_id, b.archived, w.name AS workspace FROM boards b LEFT JOIN workspaces w ON w.id=b.workspace_id ORDER BY w.position, b.position');
@@ -107,24 +108,71 @@ class AppApi {
 
   addGroup(boardId, g) { return this.store.addGroup(boardId, g); }
   updateGroup(id, patch) { return this.store.updateGroup(id, patch); }
-  deleteGroup(id) { return this.store.deleteGroup(id); }
+  deleteGroup(id) { const g = this.db.get('SELECT name FROM groups WHERE id=?', [id]); this.store.deleteGroup(id); if (g) this.lastTrash(`Deleted group “${g.name}”`); }
   archiveGroup(id, a) { return this.store.archiveGroup(id, a); }
   duplicateGroup(id) { return this.store.duplicateGroup(id); }
 
   addColumn(boardId, c) { return this.store.addColumn(boardId, c); }
   updateColumn(id, patch) { return this.store.updateColumn(id, patch); }
-  deleteColumn(id) { return this.store.deleteColumn(id); }
+  deleteColumn(id) { const c = this.store.colRow(id); this.store.deleteColumn(id); this.lastTrash(`Deleted column “${c.title}”`); }
   duplicateColumn(id, o) { return this.store.duplicateColumn(id, o); }
 
   addItem(boardId, it) { return this.store.addItem(boardId, it); }
-  renameItem(id, name) { return this.store.renameItem(id, name); }
-  setValue(itemId, columnId, value) { return this.store.setValue(itemId, columnId, value); }
+  renameItem(id, name) { const old = this.store.itemRow(id).name; this.store.renameItem(id, name); this.pushUndo(`Renamed “${old}”`, () => this.store.renameItem(id, old)); }
+  setValue(itemId, columnId, value) {
+    const it = this.store.itemRow(itemId);
+    const old = it.data[columnId];
+    const changed = this.store.setValue(itemId, columnId, value);
+    if (changed) { const c = this.store.colRow(columnId); this.pushUndo(`Changed ${c.title} on “${it.name}”`, () => this.store.setValue(itemId, columnId, old === undefined ? null : old)); }
+    return changed;
+  }
   setValues(itemId, values) { return this.store.setValues(itemId, values); }
-  moveItem(id, to) { return this.store.moveItem(id, to); }
+  moveItem(id, to) {
+    const it = this.store.itemRow(id);
+    const r = this.store.moveItem(id, to);
+    if (!to || !to.boardId || to.boardId === it.board_id) this.pushUndo(`Moved “${it.name}”`, () => this.db.run('UPDATE items SET group_id=?, position=? WHERE id=?', [it.group_id, it.position, id]));
+    return r;
+  }
   duplicateItem(id, o) { return this.store.duplicateItem(id, o); }
-  archiveItem(id, a) { return this.store.archiveItem(id, a); }
-  deleteItem(id) { return this.store.deleteItem(id); }
-  bulk(ids, op, arg) { return this.store.bulk(ids, op, arg); }
+  archiveItem(id, a = true) { const it = this.store.itemRow(id); this.store.archiveItem(id, a); this.pushUndo(`${a ? 'Archived' : 'Restored'} “${it.name}”`, () => this.store.archiveItem(id, !a)); }
+  deleteItem(id) { const it = this.store.itemRow(id); this.store.deleteItem(id); this.lastTrash(`Deleted “${it.name}”`); }
+  bulk(ids, op, arg) {
+    const before = ids.map((id) => this.db.get('SELECT * FROM items WHERE id=?', [id])).filter(Boolean);
+    const trashBefore = this.db.get('SELECT COUNT(*) AS n FROM trash').n;
+    const r = this.store.bulk(ids, op, arg);
+    const n = before.length;
+    if (op === 'delete') {
+      const added = this.db.all('SELECT id FROM trash ORDER BY rowid DESC LIMIT ?', [this.db.get('SELECT COUNT(*) AS n FROM trash').n - trashBefore]).map((x) => x.id);
+      this.pushUndo(`Deleted ${n} items`, () => { for (const t of added.reverse()) this.store.restoreTrash(t); });
+    } else if (['archive', 'restore', 'set', 'move'].includes(op)) {
+      this.pushUndo(`${op === 'set' ? 'Changed' : op[0].toUpperCase() + op.slice(1)} ${n} items`, () => {
+        for (const b of before) this.db.run('UPDATE items SET archived=?, group_id=?, position=?, data=? WHERE id=?', [b.archived, b.group_id, b.position, b.data, b.id]);
+      });
+    }
+    return r;
+  }
+
+  // ------------------------------------------------------------ undo, trash
+  pushUndo(label, fn) {
+    this.undoStack = this.undoStack || [];
+    this.undoStack.push({ label, fn, at: Date.now() });
+    if (this.undoStack.length > 50) this.undoStack.shift();
+  }
+  lastTrash(label) {
+    const t = this.db.get('SELECT id FROM trash ORDER BY rowid DESC LIMIT 1');
+    if (t) this.pushUndo(label, () => this.store.restoreTrash(t.id));
+  }
+  /** Undo the most recent change made in this session. Returns its label, or null. */
+  undo() {
+    const u = (this.undoStack || []).pop();
+    if (!u) return null;
+    this.db.tx(() => u.fn());
+    return u.label;
+  }
+  undoLabel() { const s = this.undoStack || []; return s.length ? s[s.length - 1].label : null; }
+  trash() { return this.store.trash(); }
+  restoreTrash(id) { return this.store.restoreTrash(id); }
+  purgeTrash(id) { return this.store.purgeTrash(id ? { id } : {}); }
   toggleTimer(itemId, columnId) { return this.store.toggleTimer(itemId, columnId); }
   clickButton(itemId, columnId) { return this.store.clickButton(itemId, columnId); }
   /** One item with its subitems, updates, files and activity, for the item panel. */
@@ -421,6 +469,7 @@ class AppApi {
     this.db.db.close();
     this.db.db = restored;
     this.db.migrate();
+    this.undoStack = [];
     return true;
   }
   stats() {
@@ -434,7 +483,7 @@ class AppApi {
 }
 
 const PUBLIC_METHODS = Object.getOwnPropertyNames(AppApi.prototype).filter((m) => ![
-  'constructor', 'withLog', 'backupsDir', 'autoBackup', 'pruneBackups', 'filePath', 'takeUnshown', 'checkNotification',
+  'constructor', 'withLog', 'backupsDir', 'autoBackup', 'pruneBackups', 'filePath', 'takeUnshown', 'checkNotification', 'pushUndo', 'lastTrash',
 ].includes(m));
 
 module.exports = { AppApi, PUBLIC_METHODS, DEFAULT_SETTINGS };

@@ -199,9 +199,11 @@ class Store {
     this.db.run('UPDATE boards SET archived=?, updated_at=? WHERE id=?', [archived ? 1 : 0, now(), id]);
     this.log({ boardId: id, action: archived ? 'board_archived' : 'board_restored' });
   }
-  deleteBoard(id) {
+  deleteBoard(id, { trash = true } = {}) {
+    const b = this.boardRow(id);
     this.db.tx(() => {
-      for (const f of this.db.all('SELECT f.* FROM files f JOIN items i ON i.id=f.item_id WHERE i.board_id=?', [id])) this.unlinkFile(f);
+      if (trash) this.toTrash('board', b.name, id, b.name, this.snapshot({ boards: [id] }));
+      else for (const f of this.db.all('SELECT f.* FROM files f JOIN items i ON i.id=f.item_id WHERE i.board_id=?', [id])) this.unlinkFile(f);
       this.db.run('DELETE FROM items WHERE board_id=? AND parent_id IS NOT NULL', [id]);
       this.db.run('DELETE FROM boards WHERE id=?', [id]);
       this.db.run('DELETE FROM activity WHERE board_id=?', [id]);
@@ -267,9 +269,10 @@ class Store {
   deleteGroup(id) {
     const g = this.db.get('SELECT * FROM groups WHERE id=?', [id]);
     if (!g) return;
+    const b = this.boardRow(g.board_id);
     this.db.tx(() => {
-      const items = this.db.all('SELECT id FROM items WHERE group_id=?', [id]);
-      for (const it of items) this.deleteItem(it.id, { quiet: true });
+      this.toTrash('group', g.name, g.board_id, b.name, this.snapshot({ groups: [id] }));
+      this.db.run('DELETE FROM items WHERE group_id=? AND parent_id IS NULL AND id IN (SELECT id FROM items)', [id]);
       this.db.run('DELETE FROM groups WHERE id=?', [id]);
       this.log({ boardId: g.board_id, action: 'group_deleted', oldValue: g.name });
     });
@@ -368,12 +371,15 @@ class Store {
   }
   deleteColumn(id) {
     const c = this.colRow(id);
+    const b = this.boardRow(c.board_id);
     this.db.tx(() => {
-      this.db.run('DELETE FROM columns WHERE id=?', [id]);
+      const values = {};
       for (const it of this.db.all('SELECT id, data FROM items WHERE board_id=?', [c.board_id])) {
         const d = parseJson(it.data, {});
-        if (c.id in d) { delete d[c.id]; this.db.run('UPDATE items SET data=? WHERE id=?', [JSON.stringify(d), it.id]); }
+        if (c.id in d) { values[it.id] = d[c.id]; delete d[c.id]; this.db.run('UPDATE items SET data=? WHERE id=?', [JSON.stringify(d), it.id]); }
       }
+      this.toTrash('column', c.title, c.board_id, b.name, { columns: [this.db.get('SELECT * FROM columns WHERE id=?', [id])], values: { [id]: values } });
+      this.db.run('DELETE FROM columns WHERE id=?', [id]);
       this.log({ boardId: c.board_id, action: 'column_deleted', oldValue: c.title });
     });
   }
@@ -565,13 +571,98 @@ class Store {
   deleteItem(id, { quiet = false } = {}) {
     const it = this.db.get('SELECT * FROM items WHERE id=?', [id]);
     if (!it) return;
+    const b = this.boardRow(it.board_id);
     this.db.tx(() => {
-      for (const f of this.db.all('SELECT * FROM files WHERE item_id=? OR item_id IN (SELECT id FROM items WHERE parent_id=?)', [id, id])) this.unlinkFile(f);
+      this.toTrash(it.parent_id ? 'subitem' : 'item', it.name, it.board_id, b.name, this.snapshot({ items: [id] }));
       this.db.run('DELETE FROM items WHERE parent_id=?', [id]);
       this.db.run('DELETE FROM items WHERE id=?', [id]);
       if (!quiet) this.log({ boardId: it.board_id, itemId: null, action: 'item_deleted', oldValue: it.name });
     });
   }
+
+  // ----------------------------------------------------------------- trash
+  /** Every row that belongs to the given boards, groups or items. */
+  snapshot({ boards = [], groups = [], items = [] }) {
+    const q = (sql, ids) => (ids.length ? this.db.all(sql.replace('?*', ids.map(() => '?').join(',')), ids) : []);
+    const out = { boards: q('SELECT * FROM boards WHERE id IN (?*)', boards) };
+    out.groups = [...q('SELECT * FROM groups WHERE board_id IN (?*)', boards), ...q('SELECT * FROM groups WHERE id IN (?*)', groups)];
+    out.columns = q('SELECT * FROM columns WHERE board_id IN (?*)', boards);
+    out.views = q('SELECT * FROM views WHERE board_id IN (?*)', boards);
+    out.automations = q('SELECT * FROM automations WHERE board_id IN (?*)', boards);
+    const top = [...q('SELECT * FROM items WHERE board_id IN (?*)', boards), ...q('SELECT * FROM items WHERE group_id IN (?*) AND parent_id IS NULL', groups), ...q('SELECT * FROM items WHERE id IN (?*)', items)];
+    const seen = new Set(top.map((r) => r.id));
+    const kids = q('SELECT * FROM items WHERE parent_id IN (?*)', [...seen]).filter((r) => !seen.has(r.id));
+    out.items = [...top.filter((r) => !r.parent_id), ...top.filter((r) => r.parent_id), ...kids];
+    const ids = out.items.map((r) => r.id);
+    out.updates = q('SELECT * FROM updates WHERE item_id IN (?*)', ids);
+    out.files = q('SELECT * FROM files WHERE item_id IN (?*)', ids);
+    return out;
+  }
+  toTrash(kind, name, boardId, boardName, payload) {
+    const id = uid('x');
+    this.db.run('INSERT INTO trash(id,kind,name,board_id,board_name,payload,deleted_at) VALUES(?,?,?,?,?,?,?)', [id, kind, name, boardId || null, boardName || '', JSON.stringify(payload), now()]);
+    return id;
+  }
+  trash() {
+    return this.db.all('SELECT id, kind, name, board_id, board_name, deleted_at, length(payload) AS size FROM trash ORDER BY deleted_at DESC');
+  }
+  insertRows(table, rows) {
+    for (const r of rows || []) {
+      const keys = Object.keys(r);
+      this.db.run(`INSERT OR REPLACE INTO ${table}(${keys.join(',')}) VALUES(${keys.map(() => '?').join(',')})`, keys.map((k) => r[k]));
+    }
+  }
+  /** Put a deleted board, group, column or item back where it was. */
+  restoreTrash(id) {
+    const t = this.db.get('SELECT * FROM trash WHERE id=?', [id]);
+    if (!t) throw new Error('That is no longer in the trash');
+    const p = parseJson(t.payload, {});
+    this.db.tx(() => {
+      for (const b of p.boards || []) {
+        if (!this.db.get('SELECT id FROM workspaces WHERE id=?', [b.workspace_id])) b.workspace_id = (this.db.get('SELECT id FROM workspaces ORDER BY position LIMIT 1') || {}).id || this.saveWorkspace({ name: 'Restored' });
+      }
+      this.insertRows('boards', p.boards);
+      const boardId = t.board_id;
+      if (t.kind !== 'board' && !this.db.get('SELECT id FROM boards WHERE id=?', [boardId])) throw new Error(`Restore the board “${t.board_name}” first`);
+      this.insertRows('groups', p.groups);
+      this.insertRows('columns', p.columns);
+      for (const it of p.items || []) {
+        if (!it.parent_id && !this.db.get('SELECT id FROM groups WHERE id=?', [it.group_id])) {
+          it.group_id = (this.db.get('SELECT id FROM groups WHERE board_id=? ORDER BY position LIMIT 1', [it.board_id]) || {}).id || this.addGroup(it.board_id, { name: 'Restored' });
+        }
+        if (it.parent_id && !this.db.get('SELECT id FROM items WHERE id=?', [it.parent_id]) && !(p.items || []).some((x) => x.id === it.parent_id)) throw new Error('Restore its parent item first');
+      }
+      this.insertRows('items', p.items);
+      this.insertRows('updates', p.updates);
+      this.insertRows('files', p.files);
+      this.insertRows('views', p.views);
+      this.insertRows('automations', p.automations);
+      for (const [colId, vals] of Object.entries(p.values || {})) {
+        for (const [itemId, v] of Object.entries(vals)) {
+          const r = this.db.get('SELECT data FROM items WHERE id=?', [itemId]);
+          if (!r) continue;
+          const d = parseJson(r.data, {});
+          d[colId] = v;
+          this.db.run('UPDATE items SET data=? WHERE id=?', [JSON.stringify(d), itemId]);
+        }
+      }
+      this.db.run('DELETE FROM trash WHERE id=?', [id]);
+      if (boardId) this.log({ boardId, action: 'restored_from_trash', newValue: `${t.kind}: ${t.name}` });
+    });
+    return { kind: t.kind, boardId: t.board_id, itemId: t.kind === 'item' || t.kind === 'subitem' ? (p.items[0] || {}).id : null };
+  }
+  /** Permanently remove trash entries (and their stored files). */
+  purgeTrash({ id, olderThanDays } = {}) {
+    const rows = id ? this.db.all('SELECT * FROM trash WHERE id=?', [id])
+      : olderThanDays != null ? this.db.all('SELECT * FROM trash WHERE deleted_at < ?', [new Date(Date.now() - olderThanDays * 864e5).toISOString()])
+        : this.db.all('SELECT * FROM trash');
+    for (const t of rows) {
+      for (const f of parseJson(t.payload, {}).files || []) this.unlinkFile(f);
+      this.db.run('DELETE FROM trash WHERE id=?', [t.id]);
+    }
+    return rows.length;
+  }
+
   bulk(ids, op, arg = {}) {
     const out = [];
     this.db.tx(() => {

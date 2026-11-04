@@ -70,7 +70,8 @@ The feature set was mapped from the public help documentation of a leading hoste
 - Import from Excel or CSV. Column types are inferred and new groups are created from a "Group" column.
 - Export to Excel or CSV, and to a portable `.board.json` board file.
 - Daily automatic backups with one-click restore, and a movable data folder.
-- Archive and restore.
+- Archive and restore, plus a 30-day trash for deleted boards, groups, columns and items.
+- Undo: Ctrl+Z, or the Undo button on the notice after a delete, reverses recent changes made in the session.
 
 **Templates**
 - Blank, project plan, team tasks, sales pipeline, bug tracker and content calendar.
