@@ -8,7 +8,7 @@ import { ItemPanel } from './item.js';
 import { DashboardPage } from './dashboards-ui.js';
 import { Home, MyWork, Inbox, Archive, SearchPalette, NewBoard } from './pages.js';
 import { Settings } from './settings.js';
-import { useUpdate, installUpdate } from './update.js';
+import { useUpdate, installUpdate, checkForUpdates } from './update.js';
 import { selfTest } from './selftest.js';
 import { C } from './model.js';
 
@@ -109,6 +109,7 @@ function App() {
         <div class="sect">Dashboards<button title="New dashboard" aria-label="New dashboard" onClick=${createDashboard}><${Icon} name="plus" size=${14} /></button></div>
         ${boot.dashboards.map((d) => html`<a key=${d.id} class=${`ws-board ${r.name === 'dashboard' && r.id === d.id ? 'on' : ''}`} style="padding-left:10px" onClick=${() => nav('dashboard', d.id)}><${Icon} name="dashboard" size=${15} /><span class="clip">${d.name}</span></a>`)}
       </div>
+      <${UpdateButton} update=${update} />
       <div class="foot">
         <div class="me" onClick=${() => nav('settings')} title="Profile and settings"><${Avatar} person=${boot.me} size=${26} /><span class="clip">${boot.me.name}</span></div>
         <button title="Archive" aria-label="Archive" onClick=${() => nav('archive')}><${Icon} name="archive" /></button>
@@ -128,6 +129,28 @@ function App() {
     <${ConfirmHost} />
     <${Toasts} />
   </${Fragment}>`;
+}
+
+/** Always-visible update control: check, watch the download, restart to install. */
+function UpdateButton({ update }) {
+  const [busy, setBusy] = useState(false);
+  if (!update) return null;
+  const st = update.state;
+  const check = async () => {
+    setBusy(true);
+    try {
+      const r = await checkForUpdates();
+      if (r.state === 'current') toast(`You have the latest version (${r.current})`);
+      else if (r.state === 'error') toast(r.message, 'err');
+      else if (r.state === 'downloading') toast(`Downloading version ${r.version}…`);
+    } catch (e) { toastError(e); } finally { setBusy(false); }
+  };
+  if (st === 'unsupported') return html`<div class="upd-btn muted" title="The portable version does not update itself. Install with the Setup exe to get updates.">Version ${update.current} · portable</div>`;
+  if (st === 'ready') return html`<button class="upd-btn ready" onClick=${() => installUpdate().catch(toastError)}><${Icon} name="refresh" size=${15} />Restart to update to ${update.version}</button>`;
+  if (st === 'downloading') return html`<div class="upd-btn"><${Icon} name="download" size=${15} />Downloading ${update.version || 'update'}${update.percent ? ` · ${update.percent}%` : '…'}
+    <span class="upd-bar"><i style=${`width:${update.percent || 3}%`}></i></span></div>`;
+  return html`<button class="upd-btn" disabled=${busy || st === 'checking'} onClick=${check} title=${st === 'error' ? update.message : `Version ${update.current}`}>
+    <${Icon} name="refresh" size=${15} />${busy || st === 'checking' ? 'Checking for updates…' : 'Check for updates'}<span class="v">v${update.current}</span></button>`;
 }
 
 function Workspace({ w, route, nav, closed, toggle, reloadShell, newBoard }) {

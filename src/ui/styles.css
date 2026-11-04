@@ -449,3 +449,12 @@ table.plain th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .form-view .fv .placeholder { opacity: 1; }
 .form-view .fv .cell.click:hover { box-shadow: none; background: var(--hover); }
 .mb { margin-bottom: 16px; }
+.upd-btn { margin: 6px 8px 0; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--side-2); background: none; color: var(--side-text); font-size: 12.5px; cursor: pointer; text-align: left; position: relative; overflow: hidden; }
+.upd-btn:hover:not(:disabled) { background: var(--side-2); color: #fff; }
+.upd-btn:disabled { cursor: default; opacity: .8; }
+.upd-btn .v { margin-left: auto; color: #8584a3; font-size: 11px; }
+.upd-btn.ready { background: var(--accent); border-color: var(--accent); color: #1b1a2e; font-weight: 700; }
+.upd-btn.ready:hover { filter: brightness(1.05); color: #1b1a2e; background: var(--accent); }
+.upd-btn.muted { cursor: default; color: #8584a3; }
+.upd-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--side-2); }
+.upd-bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }

@@ -1,12 +1,12 @@
 'use strict';
 // Automatic updates for the installed app. New versions are published as
 // GitHub releases (see "publish" in package.json); the app checks
-// at start-up and every 12 hours, downloads in the background, and installs
+// at start-up and every hour, downloads in the background, and installs
 // when the user restarts (or on the next quit).
 
 const { app } = require('electron');
 
-const CHECK_EVERY = 12 * 3600 * 1000;
+const CHECK_EVERY = 3600 * 1000; // hourly, so new builds arrive the same day
 
 let updater = null;
 let status = { state: 'idle', current: app.getVersion(), version: null, message: '' };
