@@ -110,7 +110,7 @@ function createWindow() {
 function runSmokeTest() {
   const finish = (code, msg) => { console.log(`SMOKE ${code ? 'FAIL' : 'PASS'} ${msg}`); quitting = true; app.exit(code); };
   setTimeout(() => finish(1, 'timeout'), 120000);
-  win.webContents.on('console-message', (_e, level, message) => { if (level >= 2) console.log(`renderer: ${message}`); });
+  win.webContents.on('console-message', (e, level, message) => { const lv = e.level || level; if (lv === 'warning' || lv === 'error' || lv >= 2) console.log(`renderer: ${e.message || message}`); });
   win.webContents.on('did-finish-load', async () => {
     try {
       const r = await win.webContents.executeJavaScript(`new Promise((res) => { const t = setInterval(() => { if (window.__bdSelfTest && document.querySelector('.side')) { clearInterval(t); window.__bdSelfTest().then(res, (e) => res({ ok: false, error: String(e) })); } }, 200); })`);
@@ -204,7 +204,7 @@ function registerIpc() {
       const fixed = (args || []).map((a) => fixBinary(a));
       const out = await api[method](...fixed);
       if (method === 'setSettings') applyOsSettings();
-      return out;
+      return plain(out);
     } catch (e) {
       logError(e);
       return serializeError(e);
@@ -278,6 +278,16 @@ function registerIpc() {
       return serializeError(e);
     }
   });
+}
+
+/** IPC can only carry plain data: drop functions (e.g. column type defaults). */
+function plain(v) {
+  if (v == null || typeof v !== 'object') return typeof v === 'function' ? undefined : v;
+  if (v instanceof Uint8Array || v instanceof Date) return v;
+  if (Array.isArray(v)) return v.map(plain);
+  const out = {};
+  for (const [k, x] of Object.entries(v)) if (typeof x !== 'function') out[k] = plain(x);
+  return out;
 }
 
 function fixBinary(a) {
