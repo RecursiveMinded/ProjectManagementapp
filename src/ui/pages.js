@@ -186,6 +186,8 @@ export function SearchPalette({ onClose, nav, openItem, boot }) {
     ['Go to Home', () => nav('home')], ['Go to My work', () => nav('mywork')], ['Go to Calendar', () => nav('calendar')], ['Go to Team dependencies', () => nav('dependencies')], ['Go to Inbox', () => nav('inbox')], ['Go to Settings', () => nav('settings')],
     ...boot.workspaces.flatMap((w) => w.boards.map((b) => [`Open board: ${b.name}`, () => nav('board', b.id)])),
     ...boot.dashboards.map((d) => [`Open dashboard: ${d.name}`, () => nav('dashboard', d.id)]),
+    ...(boot.docs || []).map((d) => [`Open doc: ${d.title}`, () => nav('doc', d.id)]),
+    ['Keyboard shortcuts', () => setTimeout(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' })), 50)],
   ].filter(([l]) => !q || l.toLowerCase().includes(q.toLowerCase())).slice(0, q ? 6 : 8);
   const all = [...res.map((r) => ({ label: r.name, sub: r.kind === 'update' ? `Update: ${r.snippet}` : r.kind === 'doc' ? `Doc${r.snippet ? ` · ${r.snippet}` : ''}` : `${r.boardName}${r.groupName ? ` · ${r.groupName}` : ''}`, icon: r.kind === 'board' ? 'table' : r.kind === 'doc' ? 'para' : r.kind === 'update' ? 'msg' : r.kind === 'subitem' ? 'sub' : 'list', go: () => (r.kind === 'board' ? nav('board', r.id) : r.kind === 'doc' ? nav('doc', r.id) : openItem(r.subId || r.id)) })),
     ...commands.map(([l, go]) => ({ label: l, icon: 'arrowRight', go }))];

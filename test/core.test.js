@@ -368,3 +368,16 @@ test('docs: workspace docs, item Doc column, search, trash and cleaning', async 
   assert.match(api.undo(), /Deleted doc/);
   assert.equal(api.getDoc(id).title, 'Brief');
 });
+
+test('dashboard widgets: table, calendar and team ownership', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const d = api.getDashboard(api.bootstrap().dashboards[0].id);
+  const w = (t) => d.widgets.find((x) => x.type === t);
+  for (const t of ['table', 'calendar', 'teams']) assert.ok(w(t) && !w(t).error, t);
+  assert.ok(w('table').data.items.length > 3);
+  assert.ok(w('table').data.items.every((x) => !x.status || x.status.label !== 'Done'));
+  assert.ok(w('calendar').data.items.every((x) => x.start <= x.end));
+  const teams = w('teams').data.teams;
+  assert.ok(teams.some((t) => t.name === 'Legal' && t.waiting > 0), JSON.stringify(teams));
+});

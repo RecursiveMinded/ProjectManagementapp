@@ -70,6 +70,17 @@ function Widget({ w, onEdit, reload, openItem, nav }) {
     }
     case 'countdown': body = html`<div class="big-num">${Math.abs(D.days)}</div><div class="muted">${D.days >= 0 ? `day${D.days === 1 ? '' : 's'} to go` : 'days ago'} · ${shortDate(D.date)}</div>`; break;
     case 'note': body = html`<div style="white-space:pre-wrap">${D.text || html`<span class="muted">Empty note</span>`}</div>`; break;
+    case 'calendar': body = html`<${MiniCalendar} items=${D.items} openItem=${openItem} />`; break;
+    case 'table': body = D.items.length ? html`<div class="wtable-wrap"><table class="wtable"><thead><tr><th>Item</th><th>Board</th><th>Status</th><th>Owner</th><th>Due</th>${D.columns.map((c, i) => html`<th key=${i}>${c}</th>`)}</tr></thead><tbody>
+      ${D.items.map((x) => html`<tr key=${x.id} onClick=${() => openItem(x.id)}><td><span class="grp-dot" style=${`background:${x.groupColor || '#c4cad4'}`}></span>${x.name}</td><td class="muted">${x.boardName}</td>
+        <td>${x.status ? html`<span class="lbl" style=${`background:${x.status.color};color:#fff`}>${x.status.label}</span>` : null}</td>
+        <td><span class="avatars">${x.people.slice(0, 3).map((p) => html`<${Avatar} key=${p.id} person=${p} size=${20} />`)}</span></td>
+        <td style=${x.overdue ? 'color:var(--bad);font-weight:700' : ''}>${x.due ? shortDate(x.due) : ''}</td>${x.extra.map((v, i) => html`<td key=${i} class="clip">${v}</td>`)}</tr>`)}</tbody></table>
+      ${D.total > D.items.length ? html`<div class="small faint mt">Showing ${D.items.length} of ${D.total}</div>` : null}</div>` : html`<div class="muted small">No items match.</div>`; break;
+    case 'teams': body = D.teams.length ? html`<table class="wl"><thead><tr><th>Team</th><th>Owns (open)</th><th>Overdue</th><th>Done</th><th>Waited on</th></tr></thead><tbody>
+      ${D.teams.map((t) => html`<tr key=${t.id} style="cursor:pointer" onClick=${() => nav('dependencies')}><td><span class="row" style="gap:6px"><span class="swatch" style=${`background:${t.color};width:10px;height:10px`}></span>${t.name}${t.external ? html`<span class="chip small">outside</span>` : null}</span></td>
+        <td>${t.open}</td><td style=${t.overdue ? 'color:var(--bad);font-weight:700' : ''}>${t.overdue}</td><td>${t.done}</td><td style=${t.waiting ? 'color:#c77700;font-weight:700' : ''}>${t.waiting}</td></tr>`)}</tbody></table>`
+      : html`<div class="muted small">Add a Team column to these boards to see who owns what and who is waited on.</div>`; break;
     default: body = null;
   }
   return html`<div class=${`widget ${w.size || 'm'}`}>
@@ -85,7 +96,28 @@ function Widget({ w, onEdit, reload, openItem, nav }) {
       { label: 'Remove widget', icon: 'trash', danger: true, onClick: () => call('deleteWidget', w.id).then(reload, toastError) },
     ]} />` : null}
   </div>`;
-  void nav; void addDaysIso;
+  void addDaysIso;
+}
+
+const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function MiniCalendar({ items, openItem }) {
+  const t = todayIso();
+  const [ym, setYm] = useState(t.slice(0, 7));
+  const first = `${ym}-01`;
+  const dow = (new Date(`${first}T00:00:00Z`).getUTCDay() + 6) % 7;
+  const start = addDaysIso(first, -dow);
+  const days = Array.from({ length: 42 }, (_, i) => addDaysIso(start, i));
+  const shift = (n) => { const d = new Date(`${first}T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + n); setYm(d.toISOString().slice(0, 7)); };
+  const on = (d) => items.filter((x) => x.start <= d && x.end >= d);
+  return html`<div class="mini-cal">
+    <div class="row between" style="margin-bottom:6px"><button class="btn icon ghost small" aria-label="Previous month" onClick=${() => shift(-1)}><${Icon} name="arrowLeft" size="14" /></button>
+      <b class="small">${MONTHS[+ym.slice(5) - 1]} ${ym.slice(0, 4)}</b>
+      <button class="btn icon ghost small" aria-label="Next month" onClick=${() => shift(1)}><${Icon} name="arrowRight" size="14" /></button></div>
+    <div class="mc-grid">${WD.map((w) => html`<div class="mc-wd" key=${w}>${w}</div>`)}
+      ${days.map((d) => { const its = on(d); return html`<div key=${d} class=${`mc-day ${d.slice(0, 7) !== ym ? 'out' : ''} ${d === t ? 'today' : ''}`}><span class="mc-n">${+d.slice(8)}</span>
+        ${its.slice(0, 2).map((x) => html`<div key=${x.id} class="mc-item" title=${`${x.name} · ${x.boardName}`} style=${`background:${x.color};opacity:${x.done ? 0.5 : 1}`} onClick=${() => openItem(x.id)}>${x.name}</div>`)}
+        ${its.length > 2 ? html`<div class="mc-more">+${its.length - 2}</div>` : null}</div>`; })}</div></div>`;
 }
 
 function WidgetEditor({ w, d, allBoards, onClose, onSaved }) {
@@ -107,7 +139,7 @@ function WidgetEditor({ w, d, allBoards, onClose, onSaved }) {
   const save = async () => {
     try { await call('saveWidget', d.id, { id: w.id, type, title, size, config: cfg }); onSaved(); } catch (e) { toastError(e); }
   };
-  const TYPES = { numbers: 'Numbers', battery: 'Progress battery', chart: 'Chart', workload: 'Workload', list: 'Item list', timeline: 'Timeline', countdown: 'Countdown', note: 'Text note' };
+  const TYPES = { numbers: 'Numbers', battery: 'Progress battery', chart: 'Chart', workload: 'Workload', list: 'Item list', table: 'Table', calendar: 'Calendar', timeline: 'Timeline', teams: 'Team ownership', countdown: 'Countdown', note: 'Text note' };
   return html`<${Modal} title=${w.id ? 'Edit widget' : 'Add widget'} onClose=${onClose}>
     <div class="col" style="gap:12px">
       <div class="grid c2"><label class="field">Type<select class="input" value=${type} onChange=${(e) => setType(e.target.value)}>${Object.entries(TYPES).map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select></label>
@@ -123,6 +155,11 @@ function WidgetEditor({ w, d, allBoards, onClose, onSaved }) {
         ${cfg.measure === 'sum' ? html`<label class="field">Number column<select class="input" value=${cfg.value || ''} onChange=${(e) => setCfg({ ...cfg, value: e.target.value })}><option value="">Choose…</option>${numCols.map((c) => html`<option value=${c.id}>${c.title} (${c.boardName})</option>`)}</select></label>` : null}</div>` : null}
       ${type === 'list' ? html`<div class="grid c2"><label class="field">Due within (days, blank for all open items)<input class="input" type="number" value=${cfg.dueWithin || ''} onInput=${(e) => setCfg({ ...cfg, dueWithin: e.target.value ? Number(e.target.value) : null })} /></label>
         <label class="check small"><input type="checkbox" checked=${!!cfg.mine} onChange=${(e) => setCfg({ ...cfg, mine: e.target.checked })} /> Only mine</label></div>` : null}
+      ${type === 'table' ? html`<div class="grid c2"><label class="field">Sort by<select class="input" value=${cfg.sortBy || 'due'} onChange=${(e) => setCfg({ ...cfg, sortBy: e.target.value })}><option value="due">Due date</option><option value="name">Name</option><option value="board">Board</option></select></label>
+        <div class="field"><span>Extra columns (up to 4)</span><div class="row wrap">${cols.filter((c) => !['status', 'people'].includes(c.type)).map((c) => html`<label class="check small" key=${c.id}><input type="checkbox" checked=${(cfg.columns || []).includes(c.id)} disabled=${!(cfg.columns || []).includes(c.id) && (cfg.columns || []).length >= 4} onChange=${(e) => setCfg({ ...cfg, columns: e.target.checked ? [...(cfg.columns || []), c.id] : (cfg.columns || []).filter((x) => x !== c.id) })} />${c.title}</label>`)}</div></div>
+        <label class="check small"><input type="checkbox" checked=${!!cfg.notDone} onChange=${(e) => setCfg({ ...cfg, notDone: e.target.checked })} /> Hide items that are done</label>
+        <label class="check small"><input type="checkbox" checked=${!!cfg.mine} onChange=${(e) => setCfg({ ...cfg, mine: e.target.checked })} /> Only mine</label></div>` : null}
+      ${type === 'calendar' ? html`<label class="check small"><input type="checkbox" checked=${!!cfg.notDone} onChange=${(e) => setCfg({ ...cfg, notDone: e.target.checked })} /> Hide items that are done</label>` : null}
       ${type === 'countdown' ? html`<label class="field">Date<input class="input" type="date" value=${cfg.date || todayIso()} onInput=${(e) => setCfg({ ...cfg, date: e.target.value })} /></label>` : null}
       ${type === 'note' ? html`<label class="field">Text<textarea class="input" rows="5" value=${cfg.text || ''} onInput=${(e) => setCfg({ ...cfg, text: e.target.value })}></textarea></label>` : null}
       <div class="row" style="justify-content:flex-end"><button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" onClick=${save}>Save widget</button></div>

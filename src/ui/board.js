@@ -30,6 +30,12 @@ export function BoardPage({ boardId, openItem, refreshShell, nav, version }) {
   }, [boardId]);
   useEffect(() => { setB(null); setViewId(null); setCfgs({}); setSelected(new Set()); load(); }, [boardId]);
   useEffect(() => { if (version) load(); }, [version]);
+  const printRef = useRef(null);
+  useEffect(() => {
+    const h = () => printRef.current && printRef.current();
+    window.addEventListener('bd-print', h);
+    return () => window.removeEventListener('bd-print', h);
+  }, []);
 
   if (err) return html`<div class="page"><div class="empty"><h3>This board could not be opened</h3><div>${err.message}</div></div></div>`;
   if (!B) return html`<div class="page"><${Spinner} /></div>`;
@@ -47,10 +53,11 @@ export function BoardPage({ boardId, openItem, refreshShell, nav, version }) {
   const ctx = { ...ctxOf(B), meId: (B.people.find((p) => p.is_me) || {}).id };
   const filtered = applySort(B, cfg, applyFilters(B, cfg, ctx), ctx);
   const props = { B, cfg, setCfg, items: filtered, ctx, reload, openItem: (id, tab) => openItem(id, tab, reload), selected, setSelected };
+  printRef.current = () => printBoard(B, view, cfg, filtered, ctx);
   const V = { table: TableView, kanban: KanbanView, timeline: TimelineView, calendar: CalendarView, chart: ChartView, workload: WorkloadView, form: FormView, files: FilesView }[view.type] || TableView;
 
   return html`<div class="page flush">
-    <${BoardHeader} B=${B} reload=${reload} view=${view} setViewId=${setViewId} openAutos=${() => setAutos(true)} openActivity=${() => setActivity(true)} nav=${nav} />
+    <${BoardHeader} B=${B} printPdf=${() => printBoard(B, view, cfg, filtered, ctx)} reload=${reload} view=${view} setViewId=${setViewId} openAutos=${() => setAutos(true)} openActivity=${() => setActivity(true)} nav=${nav} />
     ${view.type !== 'form' ? html`<${Toolbar} B=${B} cfg=${cfg} setCfg=${setCfg} view=${view} reload=${reload} count=${filtered.length} />` : null}
     <div class="view-body">
       <${V} ...${props} />
@@ -61,7 +68,7 @@ export function BoardPage({ boardId, openItem, refreshShell, nav, version }) {
   </div>`;
 }
 
-function BoardHeader({ B, reload, view, setViewId, openAutos, openActivity, nav }) {
+function BoardHeader({ B, printPdf, reload, view, setViewId, openAutos, openActivity, nav }) {
   const [more, openMore, closeMore] = useAnchor();
   const [addV, openAddV, closeAddV] = useAnchor();
   const [vmenu, setVmenu] = useState(null);
@@ -111,6 +118,7 @@ function BoardHeader({ B, reload, view, setViewId, openAutos, openActivity, nav 
       { label: 'Export to Excel', icon: 'download', onClick: exportX },
       { label: 'Export to CSV', icon: 'download', onClick: exportC },
       { label: 'Save as board file', icon: 'file', hint: 'share or back up', onClick: exportB },
+      { label: 'Print or save as PDF', icon: 'print', hint: 'Ctrl+P', onClick: printPdf },
       { sep: true },
       { label: 'Duplicate with items', icon: 'copy', onClick: () => call('duplicateBoard', b.id, { withItems: true }).then((id) => { toast('Board duplicated'); nav('board', id); }, toastError) },
       { label: 'Duplicate structure only', icon: 'copy', onClick: () => call('duplicateBoard', b.id, { withItems: false }).then((id) => { toast('Board duplicated'); nav('board', id); }, toastError) },
@@ -124,7 +132,34 @@ function BoardHeader({ B, reload, view, setViewId, openAutos, openActivity, nav 
     ${moveWs ? html`<${BoardSettings} B=${B} mode=${moveWs} onClose=${() => setMoveWs(false)} reload=${reload} />` : null}
     ${saveTpl ? html`<${SaveTemplate} B=${B} onClose=${() => setSaveTpl(false)} reload=${reload} />` : null}
   </div>`;
-  void native;
+}
+
+const esc = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/** The current view's items as a printable page, saved as PDF in the desktop app. */
+export async function printBoard(B, view, cfg, items, ctx) {
+  const hidden = new Set(cfg.hidden || []);
+  const cols = B.columns.filter((c) => c.scope === 'item' && !hidden.has(c.id) && c.type !== 'button').slice(0, 9);
+  const groups = B.groups.filter((g) => !g.archived);
+  const cell = (c, it) => {
+    const v = it.values[c.id];
+    if (C.LABEL_TYPES.has(c.type)) { const l = C.labelOf(c, v); return l ? `<span class="l" style="background:${C.colorHex(l.color)}">${esc(l.label)}</span>` : ''; }
+    return esc(C.textOf(c, v, ctx));
+  };
+  const body = groups.map((g) => {
+    const its = items.filter((i) => i.group_id === g.id);
+    if (!its.length) return '';
+    return `<h2 style="color:${C.colorHex(g.color)}">${esc(g.name)} <small>${its.length}</small></h2><table><thead><tr><th>${esc(B.board.item_noun || 'Item')}</th>${cols.map((c) => `<th>${esc(c.title)}</th>`).join('')}</tr></thead>
+      <tbody>${its.map((it) => `<tr><td style="border-left:4px solid ${C.colorHex(g.color)}">${esc(it.name)}</td>${cols.map((c) => `<td>${cell(c, it)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  }).join('');
+  const page = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(B.board.name)}</title><style>
+    body{font:12px/1.4 "Segoe UI",system-ui,sans-serif;color:#1d1c2b;margin:28px}h1{font-size:22px;margin:0}p.d{color:#6b6a85;margin:4px 0 14px}
+    h2{font-size:14px;margin:18px 0 6px}h2 small{color:#8a89a3;font-weight:400}table{width:100%;border-collapse:collapse;page-break-inside:auto}tr{page-break-inside:avoid}
+    th{text-align:left;font-size:11px;color:#6b6a85;border-bottom:1px solid #ddd;padding:4px 6px}td{border-bottom:1px solid #eee;padding:4px 6px;vertical-align:top}
+    .l{color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;white-space:nowrap}footer{margin-top:18px;color:#8a89a3;font-size:10px}</style></head><body>
+    <h1>${esc(B.board.name)}</h1><p class="d">${esc(B.workspace ? B.workspace.name : '')} · ${esc(view.name)} · ${items.length} ${esc(B.board.item_noun || 'item')}s${(cfg.filters || []).length || cfg.search ? ' (filtered)' : ''}</p>
+    ${body}<footer>Printed from Boardenda on ${new Date().toLocaleString()}</footer></body></html>`;
+  try { await native('savePdf', { name: `${saveFileName(B.board.name)}.pdf`, html: page }); } catch (e) { toastError(e); }
 }
 
 function SaveTemplate({ B, onClose, reload }) {

@@ -68,19 +68,20 @@ The feature set was mapped from the public help documentation of a leading hoste
 - Time-based automations run from the tray and catch up on one missed day.
 
 **Dashboards**
-- Combine widgets across boards: numbers, battery (status mix), chart, workload, list, timeline, countdown and notes.
+- Combine widgets across boards: numbers, battery (status mix), chart, workload, item list, table, calendar, timeline, team ownership (who owns what and who is waited on), countdown and notes.
 
 **Personal**
 - Home page.
 - My work: overdue, today, this week and later, across all boards.
 - Calendar: dated work from every board in month, week or agenda form, with drag to reschedule, person and board filters, quick add, and export to `.ics` for Outlook or Google Calendar.
 - Inbox for mentions, assignments and automation notices.
-- Ctrl+K search and command palette.
+- Ctrl+K search and command palette. Press `?` for keyboard shortcuts (`g h` Home, `g c` Calendar, `n` new item, `/` search the board, Ctrl+P print).
 - Windows notifications and an optional daily digest.
 
 **Data**
 - Import from Excel or CSV. Column types are inferred and new groups are created from a "Group" column.
 - Export to Excel or CSV, and to a portable `.board.json` board file.
+- Print or save any board view or doc as PDF.
 - Daily automatic backups with one-click restore, and a movable data folder.
 - Archive and restore, plus a 30-day trash for deleted boards, groups, columns and items.
 - Undo: Ctrl+Z, or the Undo button on the notice after a delete, reverses recent changes made in the session.

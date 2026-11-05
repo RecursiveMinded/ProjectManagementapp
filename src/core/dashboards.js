@@ -8,7 +8,7 @@ const { uid, now, today, addDays, parseJson } = require('./util');
 
 const WIDGETS = {
   numbers: 'Numbers', battery: 'Progress battery', chart: 'Chart', workload: 'Workload', list: 'Item list',
-  timeline: 'Timeline', countdown: 'Countdown', note: 'Text note',
+  timeline: 'Timeline', countdown: 'Countdown', note: 'Text note', calendar: 'Calendar', table: 'Table', teams: 'Team ownership',
 };
 
 class Dashboards {
@@ -210,6 +210,67 @@ class Dashboards {
         return { date, days: Math.round(ms / 86400000) };
       }
       case 'note': return { text: cfg.text || '' };
+      case 'calendar': {
+        const out = [];
+        for (const { it, b } of rows) {
+          const dc = firstOf(b, ['date', 'timeline']);
+          if (!dc) continue;
+          const v = it.values[dc.id];
+          const start = dc.type === 'timeline' ? v && v.start : v && String(v).slice(0, 10);
+          if (!start) continue;
+          const end = dc.type === 'timeline' ? (v.end || v.start) : start;
+          if (cfg.notDone && isDone(b, it)) continue;
+          const sc = firstOf(b, 'status');
+          const l = sc && C.labelOf(sc, it.values[sc.id]);
+          out.push({ id: it.id, name: it.name, boardName: b.board.name, start: start.slice(0, 10), end: String(end).slice(0, 10), color: l ? C.colorHex(l.color) : '#5a55d6', done: !!(l && l.done) });
+        }
+        return { items: out.sort((a, b) => a.start.localeCompare(b.start)).slice(0, 1500) };
+      }
+      case 'table': {
+        const t = today();
+        const me = this.store.me().id;
+        const teams = this.store.teamsMap();
+        const extra = (cfg.columns || []).slice(0, 4);
+        const out = [];
+        for (const { it, b } of rows) {
+          if (cfg.notDone && isDone(b, it)) continue;
+          const pc = firstOf(b, 'people');
+          if (cfg.mine && (!pc || !(it.values[pc.id] || []).includes(me))) continue;
+          const sc = firstOf(b, 'status');
+          const l = sc && C.labelOf(sc, it.values[sc.id]);
+          const due = dueOf(b, it);
+          const g = b.groups.find((x) => x.id === it.group_id);
+          out.push({
+            id: it.id, name: it.name, boardName: b.board.name, group: g ? g.name : '', groupColor: g ? C.colorHex(g.color) : null,
+            status: l ? { label: l.label, color: C.colorHex(l.color) } : null,
+            people: pc ? (it.values[pc.id] || []).map((p) => people[p]).filter(Boolean).map((p) => ({ id: p.id, name: p.name, color: p.color })) : [],
+            due, overdue: !!(due && due < t && !isDone(b, it)),
+            extra: extra.map((ref) => { const c = colFor(b, ref); return c ? C.textOf(c, it.values[c.id], { people, teams }) : ''; }),
+          });
+        }
+        const titles = extra.map((ref) => { const c = boards.flatMap((x) => x.columns).find((x) => x.id === ref); return c ? c.title : ''; });
+        const key = cfg.sortBy || 'due';
+        out.sort((a, b) => (key === 'name' ? a.name.localeCompare(b.name) : key === 'board' ? a.boardName.localeCompare(b.boardName) || a.name.localeCompare(b.name) : String(a.due || '9').localeCompare(String(b.due || '9'))));
+        return { columns: titles, total: out.length, items: out.slice(0, 200) };
+      }
+      case 'teams': {
+        const teams = this.store.teams();
+        const per = Object.fromEntries(teams.map((tm) => [tm.id, { id: tm.id, name: tm.name, color: C.colorHex(tm.color), external: !!tm.external, open: 0, done: 0, overdue: 0, waiting: 0 }]));
+        const t = today();
+        for (const { it, b } of rows) {
+          const done = isDone(b, it);
+          const due = dueOf(b, it);
+          for (const c of b.columns.filter((x) => x.scope === 'item' && x.type === 'team')) {
+            for (const tid of it.values[c.id] || []) {
+              const r = per[tid];
+              if (!r) continue;
+              if (c.settings.role === 'waiting') { if (!done) r.waiting++; continue; }
+              if (done) r.done++; else { r.open++; if (due && due < t) r.overdue++; }
+            }
+          }
+        }
+        return { teams: Object.values(per).filter((r) => r.open + r.done + r.waiting).sort((a, b) => (b.open + b.waiting) - (a.open + a.waiting)) };
+      }
       default: throw new Error('Unknown widget');
     }
   }

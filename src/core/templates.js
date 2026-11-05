@@ -230,6 +230,9 @@ function sampleWorkspace(store, automations, dashboards) {
     dashboards.saveWidget(dash, { type: 'list', title: 'Due in the next 14 days', size: 'm', config: { boardIds: [project, tasks, crm], dueWithin: 14 } });
     dashboards.saveWidget(dash, { type: 'timeline', title: 'Project timeline', size: 'l', config: { boardIds: [project] } });
     dashboards.saveWidget(dash, { type: 'countdown', title: 'Launch day', size: 's', config: { date: addDays(today(), 28) } });
+    dashboards.saveWidget(dash, { type: 'teams', title: 'Who owns what, who we wait on', size: 'm', config: { boardIds: [project] } });
+    dashboards.saveWidget(dash, { type: 'calendar', title: 'This month', size: 'm', config: { boardIds: [project, tasks] } });
+    dashboards.saveWidget(dash, { type: 'table', title: 'All open work', size: 'l', config: { boardIds: [project, tasks], notDone: true } });
     const ts = new Date().toISOString();
     store.db.run('INSERT INTO docs(id,workspace_id,item_id,title,html,position,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)', [
       `d_sample_${ws}`, ws, null, 'Relaunch kickoff notes',

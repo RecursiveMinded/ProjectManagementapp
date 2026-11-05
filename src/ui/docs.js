@@ -148,6 +148,20 @@ export function DocEditor({ id, onTitle, onLoaded }) {
   </div>`;
 }
 
+export async function printDoc(d) {
+  if (!d) return;
+  const el = document.querySelector('.doc-body');
+  const title = (document.querySelector('.doc-title') || {}).value || d.title;
+  const esc = (x) => String(x).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const page = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+    body{font:14px/1.6 "Segoe UI",system-ui,sans-serif;color:#1d1c2b;margin:40px 48px}h1.t{font-size:28px;margin:0 0 4px}.m{color:#8a89a3;font-size:12px;margin-bottom:18px}
+    blockquote{border-left:3px solid #5a55d6;margin:8px 0;padding:2px 14px;color:#555}pre{background:#f4f4f8;padding:10px;border-radius:6px;white-space:pre-wrap}
+    ul.checklist{list-style:none;padding-left:4px}ul.checklist li:before{content:"☐ "}ul.checklist li.done:before{content:"☑ "}ul.checklist li.done{color:#888;text-decoration:line-through}
+    mark{background:#fff3a3}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:4px 8px}</style></head><body>
+    <h1 class="t">${esc(title)}</h1><div class="m">${d.workspace ? esc(d.workspace.name) : ''} · printed ${new Date().toLocaleDateString()}</div>${cleanDocHtml(el ? el.innerHTML : d.html)}</body></html>`;
+  try { await native('savePdf', { name: `${title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Doc'}.pdf`, html: page }); } catch (e) { toastError(e); }
+}
+
 /** A workspace doc as a full page. */
 export function DocPage({ id, nav, openItem, refreshShell }) {
   const [d, setD] = useState(null);
@@ -160,7 +174,7 @@ export function DocPage({ id, nav, openItem, refreshShell }) {
     <div class="row" style="margin-bottom:6px">
       <div class="crumbs grow">${d && d.workspace ? html`<a onClick=${() => nav('home')}>${d.workspace.name}</a><span>/ Docs</span>` : null}
         ${d && d.item ? html`<span>· for <a onClick=${() => openItem(d.item.id)}>${d.item.name}</a> on ${d.item.boardName}</span>` : null}</div>
-      <button class="btn small" onClick=${() => window.print()}><${Icon} name="print" size="14" /> Print or PDF</button>
+      <button class="btn small" onClick=${() => printDoc(d)}><${Icon} name="print" size="14" /> Print or PDF</button>
       <button class="btn icon" aria-label="Doc menu" onClick=${open}><${Icon} name="more" /></button>
     </div>
     <${DocEditor} key=${id} id=${id} onLoaded=${setD} onTitle=${() => { clearTimeout(DocPage.t); DocPage.t = setTimeout(refreshShell, 900); }} />

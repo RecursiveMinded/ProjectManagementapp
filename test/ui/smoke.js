@@ -117,6 +117,8 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.side a:has-text("Company overview")');
       await page.waitForSelector('.widget');
       if ((await page.$$('.widget')).length < 6) throw new Error('widgets missing');
+      await page.waitForSelector('.wtable');
+      await page.waitForSelector('.mini-cal .mc-day');
     });
     await step('main calendar: month, week, agenda', async () => {
       await page.click('.side .nav a:has-text("Calendar")');
@@ -187,6 +189,15 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.user-tpl:has-text("QA setup")');
       await page.click('.modal button:has-text("Create board")');
       await page.waitForSelector('.board-title:has-text("QA setup")');
+    });
+    await step('keyboard shortcuts', async () => {
+      await page.click('.side .nav a:has-text("Home")');
+      await page.keyboard.press('?');
+      await page.waitForSelector('.modal .keys');
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('g');
+      await page.keyboard.press('i');
+      await page.waitForSelector('h1:has-text("Inbox")');
     });
     await step('settings', async () => { await page.click('.side .foot button[title=Settings]'); await page.waitForSelector('h1:has-text("Settings")'); });
     await step('desktop self test', async () => {

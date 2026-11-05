@@ -75,9 +75,26 @@ function App() {
     return () => { clearInterval(t); offs.forEach((f) => f()); };
   }, []);
 
+  const [keysHelp, setKeysHelp] = useState(false);
+  const gPrefix = useRef(0);
   useEffect(() => {
     const k = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(true); }
+      const typing = e.target.closest && e.target.closest('input, textarea, select, [contenteditable]');
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && e.key.toLowerCase() === 'p') { e.preventDefault(); if (document.querySelector('.doc-page')) document.querySelector('.doc-page .btn.small').click(); else window.dispatchEvent(new CustomEvent('bd-print')); return; }
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'b') { e.preventDefault(); setNewBoard({}); return; }
+      if (!typing && !ctrl && !e.altKey) {
+        if (Date.now() - gPrefix.current < 1200) {
+          gPrefix.current = 0;
+          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive' }[e.key.toLowerCase()];
+          if (to) { e.preventDefault(); nav(to); return; }
+        }
+        if (e.key === 'g') { gPrefix.current = Date.now(); return; }
+        if (e.key === '?') { e.preventDefault(); setKeysHelp(true); return; }
+        if (e.key === '/') { const sIn = document.querySelector('.toolbar .search'); if (sIn) { e.preventDefault(); sIn.focus(); return; } }
+        if (e.key === 'n' && !document.querySelector('.modal, .drawer, .pop')) { const b = document.querySelector('.toolbar .btn-group .btn.primary'); if (b) { e.preventDefault(); b.click(); return; } }
+      }
+      if (ctrl && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(true); }
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea, select, [contenteditable]')) { e.preventDefault(); doUndo(); }
       if (e.key === 'Escape' && item && !document.querySelector('.modal, .pop, .palette')) setItem(null);
     };
@@ -159,10 +176,19 @@ function App() {
     ${palette ? html`<${SearchPalette} boot=${boot} nav=${nav} openItem=${openItem} onClose=${() => setPalette(false)} />` : null}
     ${newBoard ? html`<${NewBoard} boot=${boot} workspaceId=${newBoard.workspaceId} onClose=${() => setNewBoard(null)}
       onCreated=${async (id) => { setNewBoard(null); await reloadShell(); nav('board', id); }} />` : null}
+    ${keysHelp ? html`<${Modal} title="Keyboard shortcuts" onClose=${() => setKeysHelp(false)}>
+      <table class="keys">${SHORTCUTS.map(([k, d]) => html`<tr key=${k}><td>${k.split(' ').map((x, i) => html`<kbd key=${i}>${x}</kbd>`)}</td><td>${d}</td></tr>`)}</table></${Modal}>` : null}
     <${ConfirmHost} />
     <${Toasts} />
   </${Fragment}>`;
 }
+
+const SHORTCUTS = [
+  ['Ctrl+K', 'Search and commands'], ['Ctrl+Z', 'Undo the last change'], ['Ctrl+P', 'Print or save the board or doc as PDF'],
+  ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'],
+  ['g h', 'Go to Home'], ['g m', 'Go to My work'], ['g c', 'Go to Calendar'], ['g d', 'Go to Dependencies'], ['g i', 'Go to Inbox'],
+  ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
+];
 
 /** Always-visible update control: check, watch the download, restart to install. */
 function UpdateButton({ update }) {
