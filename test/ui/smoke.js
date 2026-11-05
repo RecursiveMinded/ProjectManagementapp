@@ -157,6 +157,24 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.keyboard.press('Escape');
       await page.waitForSelector('.tbl .doc-chip');
     });
+    await step('portfolio', async () => {
+      await page.click('.side .nav a:has-text("Portfolio")');
+      await page.waitForSelector('table.pf tbody tr');
+      await page.selectOption('table.pf tbody tr:has-text("Website relaunch") .pf-health', 'off_track');
+      await page.waitForSelector('.stat.click:has-text("Off track") b:text("1")');
+    });
+    await step('timesheets', async () => {
+      await page.click('.side .nav a:has-text("Timesheets")');
+      await page.selectOption('.page select.input', '');
+      await page.waitForSelector('table.ts tbody tr td a');
+      await page.click('button:has-text("Log time")');
+      await page.fill('.modal input[placeholder="Search items"]', 'offsite');
+      await page.waitForSelector('.modal select option:has-text("Plan team offsite")', { state: 'attached' });
+      await page.selectOption('.modal select >> nth=0', { label: 'Plan team offsite · Team tasks' });
+      await page.fill('.modal .grid input >> nth=1', '2:30');
+      await page.click('.modal button:has-text("Log time")');
+      await page.waitForSelector('table.ts tbody tr:has-text("Plan team offsite")');
+    });
     await step('my work', async () => { await page.click('.side .nav a:has-text("My work")'); await page.waitForSelector('h1:has-text("My work")'); });
     await step('inbox', async () => { await page.click('.side .nav a:has-text("Inbox")'); await page.waitForSelector('h1:has-text("Inbox")'); });
     await step('search palette', async () => {

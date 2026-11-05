@@ -579,3 +579,27 @@ button.cal-more:hover { color: var(--brand); }
 .mc-more { font-size: 10px; color: var(--muted); }
 .keys { width: 100%; border-collapse: collapse; } .keys td { padding: 6px 4px; border-bottom: 1px solid var(--line); } .keys td:first-child { width: 160px; white-space: nowrap; }
 .keys kbd { display: inline-block; font: 12px ui-monospace, Consolas, monospace; background: var(--bg, #f4f4f8); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; margin-right: 4px; }
+
+/* Portfolio */
+.stat-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; display: flex; flex-direction: column; min-width: 120px; text-align: left; font: inherit; color: inherit; }
+.stat b { font-size: 24px; letter-spacing: -.02em; } .stat span { font-size: 12px; color: var(--muted); }
+.stat.click { cursor: pointer; } .stat.click:hover, .stat.on { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+table.pf, table.ts { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pf th, .ts th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; white-space: nowrap; }
+.pf td, .ts td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.pf-name { font-weight: 600; cursor: pointer; color: var(--text); } .pf-name:hover { color: var(--brand); }
+.pf-sel { border: 0; background: transparent; color: inherit; font: inherit; max-width: 130px; cursor: pointer; }
+.pf-av { display: none; }
+.pf-health { border: 0; border-radius: 999px; padding: 3px 8px; font: 600 12px inherit; color: #fff; background: var(--hc); cursor: pointer; }
+.pf-health option { color: #1d1c2b; background: #fff; }
+.pf-bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-bottom: 3px; } .pf-bar span { display: block; height: 100%; background: var(--good, #2bb673); }
+.pf-note { max-width: 260px; cursor: pointer; font-size: 12px; } .pf-note:hover { background: var(--brand-soft); }
+td.bad, .bad { color: var(--bad); } td.b, .b { font-weight: 700; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+/* Timesheets */
+.ts th:not(:first-child), .ts td.num { text-align: center; width: 72px; }
+.ts th.today { color: var(--brand); }
+.ts td.click { cursor: pointer; } .ts td.click:hover { background: var(--brand-soft); }
+.ts tfoot td { font-weight: 600; background: var(--bg, #f7f7fb); }
+.ts.entries td { padding: 5px 10px; }

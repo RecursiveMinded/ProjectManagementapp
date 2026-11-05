@@ -14,6 +14,7 @@ import { useUpdate, installUpdate, checkForUpdates } from './update.js';
 import { selfTest } from './selftest.js';
 import { C } from './model.js';
 import { DocPage, DocDrawer } from './docs.js';
+import { PortfolioPage, TimesheetPage } from './reports.js';
 
 window.__bdSelfTest = selfTest;
 
@@ -86,7 +87,7 @@ function App() {
       if (!typing && !ctrl && !e.altKey) {
         if (Date.now() - gPrefix.current < 1200) {
           gPrefix.current = 0;
-          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive' }[e.key.toLowerCase()];
+          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets' }[e.key.toLowerCase()];
           if (to) { e.preventDefault(); nav(to); return; }
         }
         if (e.key === 'g') { gPrefix.current = Date.now(); return; }
@@ -122,6 +123,8 @@ function App() {
   else if (r.name === 'dashboard') page = html`<${DashboardPage} key=${r.id} id=${r.id} boot=${boot} nav=${nav} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
   else if (r.name === 'dependencies') page = html`<${DependenciesPage} openItem=${openItem} nav=${nav} version=${version} />`;
   else if (r.name === 'doc') page = html`<${DocPage} key=${r.id} id=${r.id} nav=${nav} openItem=${openItem} refreshShell=${reloadShell} />`;
+  else if (r.name === 'portfolio') page = html`<${PortfolioPage} boot=${boot} nav=${nav} version=${version} />`;
+  else if (r.name === 'timesheets') page = html`<${TimesheetPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'calendar') page = html`<${CalendarPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'mywork') page = html`<${MyWork} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'inbox') page = html`<${Inbox} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
@@ -144,6 +147,8 @@ function App() {
         ${navLink('mywork', 'My work', 'check')}
         ${navLink('calendar', 'Calendar', 'calendar')}
         ${navLink('dependencies', 'Dependencies', 'dependency')}
+        ${navLink('portfolio', 'Portfolio', 'grid')}
+        ${navLink('timesheets', 'Timesheets', 'timer')}
         ${navLink('inbox', 'Inbox', 'inbox', boot.unread || null)}
       </nav>
       <div class="scroll">
@@ -187,7 +192,7 @@ const SHORTCUTS = [
   ['Ctrl+K', 'Search and commands'], ['Ctrl+Z', 'Undo the last change'], ['Ctrl+P', 'Print or save the board or doc as PDF'],
   ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'],
   ['g h', 'Go to Home'], ['g m', 'Go to My work'], ['g c', 'Go to Calendar'], ['g d', 'Go to Dependencies'], ['g i', 'Go to Inbox'],
-  ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
+  ['g p', 'Go to Portfolio'], ['g t', 'Go to Timesheets'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
 ];
 
 /** Always-visible update control: check, watch the download, restart to install. */

@@ -233,6 +233,25 @@ function sampleWorkspace(store, automations, dashboards) {
     dashboards.saveWidget(dash, { type: 'teams', title: 'Who owns what, who we wait on', size: 'm', config: { boardIds: [project] } });
     dashboards.saveWidget(dash, { type: 'calendar', title: 'This month', size: 'm', config: { boardIds: [project, tasks] } });
     dashboards.saveWidget(dash, { type: 'table', title: 'All open work', size: 'l', config: { boardIds: [project, tasks], notDone: true } });
+    // A week of logged time so Timesheets has something to show.
+    const timeCol = col(tasks, 'Time spent');
+    if (timeCol) {
+      const ppl = store.people();
+      const its = store.db.all('SELECT id FROM items WHERE board_id=? AND parent_id IS NULL ORDER BY position', [tasks]);
+      its.slice(0, 4).forEach((row, i) => {
+        const sessions = [];
+        let total = 0;
+        for (let d = 0; d < 5; d++) {
+          if ((d + i) % 2) continue;
+          const day = addDays(today(), -d - i);
+          const secs = (45 + ((i * 37 + d * 23) % 120)) * 60;
+          const start = new Date(`${day}T10:00:00`).toISOString();
+          sessions.push({ start, end: new Date(new Date(start).getTime() + secs * 1000).toISOString(), date: day, seconds: secs, by: ppl[(i + d) % ppl.length].id, manual: true, note: '' });
+          total += secs;
+        }
+        store.setValue(row.id, timeCol, { total, since: null, sessions }, { quiet: true, noDeps: true });
+      });
+    }
     const ts = new Date().toISOString();
     store.db.run('INSERT INTO docs(id,workspace_id,item_id,title,html,position,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)', [
       `d_sample_${ws}`, ws, null, 'Relaunch kickoff notes',

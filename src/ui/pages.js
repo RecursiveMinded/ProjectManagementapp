@@ -183,7 +183,7 @@ export function SearchPalette({ onClose, nav, openItem, boot }) {
     return () => clearTimeout(t);
   }, [q]);
   const commands = [
-    ['Go to Home', () => nav('home')], ['Go to My work', () => nav('mywork')], ['Go to Calendar', () => nav('calendar')], ['Go to Team dependencies', () => nav('dependencies')], ['Go to Inbox', () => nav('inbox')], ['Go to Settings', () => nav('settings')],
+    ['Go to Home', () => nav('home')], ['Go to My work', () => nav('mywork')], ['Go to Calendar', () => nav('calendar')], ['Go to Team dependencies', () => nav('dependencies')], ['Go to Portfolio', () => nav('portfolio')], ['Go to Timesheets', () => nav('timesheets')], ['Go to Inbox', () => nav('inbox')], ['Go to Settings', () => nav('settings')],
     ...boot.workspaces.flatMap((w) => w.boards.map((b) => [`Open board: ${b.name}`, () => nav('board', b.id)])),
     ...boot.dashboards.map((d) => [`Open dashboard: ${d.name}`, () => nav('dashboard', d.id)]),
     ...(boot.docs || []).map((d) => [`Open doc: ${d.title}`, () => nav('doc', d.id)]),

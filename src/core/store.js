@@ -758,7 +758,7 @@ class Store {
     if (v.since) {
       const secs = Math.round((Date.now() - new Date(v.since).getTime()) / 1000);
       v.total += Math.max(0, secs);
-      v.sessions = [...(v.sessions || []).slice(-49), { start: v.since, end: now(), by: this.me().id }];
+      v.sessions = [...(v.sessions || []).slice(-499), { start: v.since, end: now(), by: this.me().id }];
       v.since = null;
     } else v.since = now();
     this.setValue(itemId, columnId, v, { source: 'timer' });

@@ -75,6 +75,8 @@ The feature set was mapped from the public help documentation of a leading hoste
 - My work: overdue, today, this week and later, across all boards.
 - Calendar: dated work from every board in month, week or agenda form, with drag to reschedule, person and board filters, quick add, and export to `.ics` for Outlook or Google Calendar.
 - Inbox for mentions, assignments and automation notices.
+- Portfolio: every board on one page with owner, progress, dates, overdue and blocked counts, and health (worked out automatically or set by hand) plus a status note.
+- Timesheets: time from every Time tracking column by person and week, time logged by hand, and CSV export.
 - Ctrl+K search and command palette. Press `?` for keyboard shortcuts (`g h` Home, `g c` Calendar, `n` new item, `/` search the board, Ctrl+P print).
 - Windows notifications and an optional daily digest.
 

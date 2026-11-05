@@ -381,3 +381,36 @@ test('dashboard widgets: table, calendar and team ownership', async () => {
   const teams = w('teams').data.teams;
   assert.ok(teams.some((t) => t.name === 'Legal' && t.waiting > 0), JSON.stringify(teams));
 });
+
+test('portfolio and timesheets', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const P = api.portfolio();
+  const web = P.find((b) => b.name === 'Website relaunch');
+  assert.ok(web.items >= 6 && web.progress > 0 && web.start && web.end);
+  assert.ok(['on_track', 'at_risk', 'off_track', 'done'].includes(web.health));
+  api.setPortfolio(web.id, { health: 'off_track', note: 'Waiting on Legal' });
+  let w2 = api.portfolio().find((b) => b.id === web.id);
+  assert.equal(w2.health, 'off_track');
+  assert.equal(w2.note, 'Waiting on Legal');
+  api.setPortfolio(web.id, { health: null });
+  w2 = api.portfolio().find((b) => b.id === web.id);
+  assert.equal(w2.health, w2.autoHealth);
+
+  const { addDays, today } = require('../src/core/util');
+  const ts = api.timesheet({ from: addDays(today(), -10), to: today() });
+  assert.ok(ts.entries.length > 3, 'sample time is logged');
+  const tasks = api.bootstrap().workspaces[0].boards.find((b) => b.name === 'Team tasks');
+  const B = api.getBoard(tasks.id);
+  const tc = col(B, 'Time spent');
+  const it = B.items[4];
+  api.addTime(it.id, tc.id, { date: today(), minutes: 90, note: 'Call' });
+  const mine = api.timesheet({ from: today(), to: today() }).entries.filter((e) => e.rowId === it.id);
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].seconds, 5400);
+  assert.equal(api.getBoard(tasks.id).items[4].values[tc.id].total, 5400);
+  assert.match(api.timesheetCsv({ from: today(), to: today() }), /Call/);
+  api.removeTime(it.id, tc.id, mine[0].index);
+  assert.equal(api.getBoard(tasks.id).items[4].values[tc.id].total, 0);
+  assert.throws(() => api.addTime(it.id, tc.id, { minutes: 0 }), /between/);
+});

@@ -8,6 +8,7 @@ const { Database } = require('./db');
 const { Store } = require('./store');
 const { Automations, TRIGGERS, ACTIONS } = require('./automations');
 const { Dashboards, WIDGETS } = require('./dashboards');
+const { Reports } = require('./reports');
 const T = require('./templates');
 const io = require('./io');
 const C = require('./columns');
@@ -38,6 +39,7 @@ class AppApi {
     this.store = new Store(db, { filesDir: dataDir ? path.join(dataDir, 'files') : null });
     this.automations = new Automations(this.store);
     this.dashboards = new Dashboards(this.store);
+    this.reports = new Reports(this.store);
     this.store.me();
     if (dataDir) this.autoBackup();
     try { this.store.purgeTrash({ olderThanDays: 30 }); } catch (_) { /* never block start-up */ }
@@ -286,6 +288,22 @@ class AppApi {
   deleteAutomation(id) { return this.automations.remove(id); }
   automationLog(q) { return this.automations.log(q); }
   runSchedule(at) { return this.automations.tick(at ? new Date(at) : new Date()); }
+
+  // --------------------------------------------------- portfolio, timesheets
+  portfolio() { return this.reports.portfolio(); }
+  setPortfolio(boardId, patch) { return this.reports.setPortfolio(boardId, patch); }
+  timesheet(opts) { return this.reports.timesheet(opts); }
+  addTime(itemId, columnId, entry) { return this.reports.addTime(itemId, columnId, entry); }
+  removeTime(itemId, columnId, index) { return this.reports.removeTime(itemId, columnId, index); }
+  timeTargets(q) { return this.reports.timeTargets(q); }
+  timesheetCsv(opts) {
+    const { entries } = this.reports.timesheet(opts);
+    const people = this.store.peopleMap();
+    const q = (x) => (/[",\n]/.test(String(x)) ? `"${String(x).replace(/"/g, '""')}"` : String(x));
+    const rows = [['Date', 'Person', 'Board', 'Item', 'Hours', 'Note', 'Entered by hand']];
+    for (const e of entries) rows.push([e.date, e.personId && people[e.personId] ? people[e.personId].name : '', e.boardName, e.name, (e.seconds / 3600).toFixed(2), e.note, e.manual ? 'yes' : '']);
+    return rows.map((r) => r.map(q).join(',')).join('\r\n');
+  }
 
   // ------------------------------------------------------------ dashboards
   listDashboards() { return this.dashboards.list(); }
