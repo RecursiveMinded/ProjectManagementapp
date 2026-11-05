@@ -112,6 +112,49 @@ CREATE TABLE IF NOT EXISTS meeting_actions (
   position REAL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS customers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  industry TEXT DEFAULT '',
+  website TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  account_no TEXT DEFAULT '',
+  owner TEXT,
+  tags TEXT DEFAULT '[]',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS customer_contacts (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  title TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  mobile TEXT DEFAULT '',
+  is_primary INTEGER DEFAULT 0,
+  notes TEXT DEFAULT '',
+  position REAL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS customer_devices (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT DEFAULT '',
+  model TEXT DEFAULT '',
+  serial TEXT DEFAULT '',
+  location TEXT DEFAULT '',
+  status TEXT DEFAULT 'active',
+  installed TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  position REAL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS user_templates (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -329,7 +372,9 @@ class Database {
     const v = this.get("SELECT value FROM settings WHERE key='schema_version'");
     const from = v ? Number(JSON.parse(v.value)) : SCHEMA_VERSION;
     if (from < 2) this.upgradeTo2();
-    if (!this.all('PRAGMA table_info(files)').some((c) => c.name === 'meeting_id')) this.db.exec('ALTER TABLE files ADD COLUMN meeting_id TEXT');
+    const fileCols = this.all('PRAGMA table_info(files)').map((c) => c.name);
+    if (!fileCols.includes('meeting_id')) this.db.exec('ALTER TABLE files ADD COLUMN meeting_id TEXT');
+    if (!fileCols.includes('customer_id')) this.db.exec('ALTER TABLE files ADD COLUMN customer_id TEXT');
     const ver = JSON.stringify(SCHEMA_VERSION);
     if (!v) this.run("INSERT INTO settings(key,value) VALUES('schema_version', ?)", [ver]);
     else if (v.value !== ver) this.run("UPDATE settings SET value=? WHERE key='schema_version'", [ver]);

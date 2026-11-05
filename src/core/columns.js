@@ -23,6 +23,7 @@ const TYPES = {
   status: { label: 'Status', group: 'Essentials', icon: 'status', value: 'label id', defaults: () => ({ labels: statusLabels() }) },
   people: { label: 'People', group: 'Essentials', icon: 'people', value: '[person id]', defaults: () => ({ max: 0 }) },
   team: { label: 'Team', group: 'Essentials', icon: 'group', value: '[team id]', defaults: () => ({ role: 'owner', max: 0 }) },
+  customer: { label: 'Customer', group: 'Essentials', icon: 'building', value: '[customer id]', defaults: () => ({ max: 1 }) },
   date: { label: 'Date', group: 'Essentials', icon: 'calendar', value: "'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM'", defaults: () => ({ time: false }) },
   timeline: { label: 'Timeline', group: 'Essentials', icon: 'timeline', value: '{ start, end }' },
   numbers: { label: 'Numbers', group: 'Essentials', icon: 'hash', value: 'number', defaults: () => ({ unit: '', unitSide: 'right', decimals: 'auto', summary: 'sum' }) },
@@ -100,6 +101,7 @@ function textOf(col, v, ctx = {}) {
     case 'dropdown': return (Array.isArray(v) ? v : []).map((id) => (optionOf(col, id) || {}).label).filter(Boolean).join(', ');
     case 'people': case 'vote': return (Array.isArray(v) ? v : []).map((id) => (ctx.people && ctx.people[id] ? ctx.people[id].name : '')).filter(Boolean).join(', ');
     case 'team': return (Array.isArray(v) ? v : []).map((id) => (ctx.teams && ctx.teams[id] ? ctx.teams[id].name : '')).filter(Boolean).join(', ');
+    case 'customer': return (Array.isArray(v) ? v : []).map((id) => (ctx.customers && ctx.customers[id] ? ctx.customers[id].name : '')).filter(Boolean).join(', ');
     case 'timeline': return v.start || v.end ? `${v.start || ''} - ${v.end || ''}` : '';
     case 'checkbox': return v ? 'Yes' : '';
     case 'tags': return (Array.isArray(v) ? v : []).join(', ');
@@ -170,7 +172,7 @@ function coerce(col, v) {
   switch (col.type) {
     case 'numbers': case 'rating': { const n = Number(String(v).replace(/[^0-9.\-eE]/g, '')); return Number.isFinite(n) ? n : null; }
     case 'checkbox': return v === true || v === 1 || /^(true|yes|y|1|x|done|✓)$/i.test(String(v)) || null;
-    case 'people': case 'vote': case 'dropdown': case 'connect': case 'dependency': case 'files': case 'team': return Array.isArray(v) ? v.filter(Boolean) : [v];
+    case 'people': case 'vote': case 'dropdown': case 'connect': case 'dependency': case 'files': case 'team': case 'customer': return Array.isArray(v) ? v.filter(Boolean) : [v];
     case 'tags': return (Array.isArray(v) ? v : String(v).split(',')).map((t) => String(t).trim()).filter(Boolean);
     case 'link': return typeof v === 'object' ? (v.url ? { url: v.url, text: v.text || '' } : null) : { url: String(v), text: '' };
     case 'timeline': {

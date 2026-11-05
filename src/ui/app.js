@@ -17,6 +17,8 @@ import { DocPage, DocDrawer } from './docs.js';
 import { MeetingsPage, MeetingDrawer, NewMeeting, openMeeting } from './meetings.js';
 import { CaptureModal, openCapture } from './capture.js';
 import { PortfolioPage, TimesheetPage } from './reports.js';
+import { HelpPage } from './help.js';
+import { CustomersPage, CustomerDrawer } from './customers.js';
 
 window.__bdSelfTest = selfTest;
 
@@ -37,6 +39,7 @@ function App() {
   const [palette, setPalette] = useState(false);
   const [docOpen, setDocOpen] = useState(null);
   const [meetOpen, setMeetOpen] = useState(null);
+  const [custOpen, setCustOpen] = useState(null);
   const [newMeet, setNewMeet] = useState(null);
   const [capture, setCapture] = useState(false);
   const [newBoard, setNewBoard] = useState(null); // { workspaceId }
@@ -76,7 +79,9 @@ function App() {
     window.addEventListener('bd-new-meeting', nm);
     const oc = () => setCapture(true);
     window.addEventListener('bd-capture', oc);
-    return () => { window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); window.removeEventListener('bd-capture', oc); };
+    const ocu = (e) => setCustOpen(e.detail);
+    window.addEventListener('bd-open-customer', ocu);
+    return () => { window.removeEventListener('bd-open-customer', ocu); window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); window.removeEventListener('bd-capture', oc); };
   }, []);
 
   // Unread count and data changed by automations in the background.
@@ -94,12 +99,13 @@ function App() {
       const typing = e.target.closest && e.target.closest('input, textarea, select, [contenteditable]');
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key.toLowerCase() === 'p') { e.preventDefault(); if (document.querySelector('.doc-page')) document.querySelector('.doc-page .btn.small').click(); else window.dispatchEvent(new CustomEvent('bd-print')); return; }
+      if (e.key === 'F1') { e.preventDefault(); nav('help'); return; }
       if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'j') { e.preventDefault(); setCapture(true); return; }
       if (ctrl && e.shiftKey && e.key.toLowerCase() === 'b') { e.preventDefault(); setNewBoard({}); return; }
       if (!typing && !ctrl && !e.altKey) {
         if (Date.now() - gPrefix.current < 1200) {
           gPrefix.current = 0;
-          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets', l: 'meetings' }[e.key.toLowerCase()];
+          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets', l: 'meetings', u: 'customers' }[e.key.toLowerCase()];
           if (to) { e.preventDefault(); nav(to); return; }
         }
         if (e.key === 'g') { gPrefix.current = Date.now(); return; }
@@ -138,6 +144,8 @@ function App() {
   else if (r.name === 'portfolio') page = html`<${PortfolioPage} boot=${boot} nav=${nav} version=${version} />`;
   else if (r.name === 'timesheets') page = html`<${TimesheetPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'meetings') page = html`<${MeetingsPage} boot=${boot} openItem=${openItem} version=${version} />`;
+  else if (r.name === 'customers') page = html`<${CustomersPage} boot=${boot} version=${version} />`;
+  else if (r.name === 'help') page = html`<${HelpPage} id=${r.id} nav=${nav} />`;
   else if (r.name === 'calendar') page = html`<${CalendarPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'mywork') page = html`<${MyWork} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'inbox') page = html`<${Inbox} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
@@ -160,11 +168,13 @@ function App() {
         ${navLink('home', 'Home', 'home')}
         ${navLink('mywork', 'My work', 'check')}
         ${navLink('calendar', 'Calendar', 'calendar')}
+        ${navLink('customers', 'Customers', 'building')}
         ${navLink('meetings', 'Calls and meetings', 'phone')}
         ${navLink('dependencies', 'Dependencies', 'dependency')}
         ${navLink('portfolio', 'Portfolio', 'grid')}
         ${navLink('timesheets', 'Timesheets', 'timer')}
         ${navLink('inbox', 'Inbox', 'inbox', boot.unread || null)}
+        ${navLink('help', 'Help and guide', 'help')}
       </nav>
       <div class="scroll">
         ${favs.length ? html`<div class="sect">Favorites</div>
@@ -194,6 +204,7 @@ function App() {
       onClose=${() => setItem(null)} onChanged=${() => { if (itemReload.current) itemReload.current(); else bump(); }} />` : null}
     ${meetOpen ? html`<${MeetingDrawer} key=${meetOpen} id=${meetOpen} boot=${boot} openItem=${(id) => { setMeetOpen(null); openItem(id); }} onClose=${() => setMeetOpen(null)}
       onChanged=${() => { window.dispatchEvent(new CustomEvent('bd-meetings-changed')); if (itemReload.current) itemReload.current(); }} />` : null}
+    ${custOpen ? html`<${CustomerDrawer} key=${custOpen} id=${custOpen} boot=${boot} openItem=${(id) => { setCustOpen(null); openItem(id); }} onClose=${() => { setCustOpen(null); bump(); if (itemReload.current) itemReload.current(); }} />` : null}
     ${capture ? html`<${CaptureModal} boot=${boot} onClose=${() => setCapture(false)} onDone=${(made) => { setCapture(false); bump(); window.dispatchEvent(new CustomEvent('bd-meetings-changed')); if (made.first && made.first.kind === 'meeting') openMeeting(made.first.id); else if (made.first && made.first.kind === 'item') openItem(made.first.id); }} />` : null}
     ${newMeet ? html`<${NewMeeting} boot=${boot} preset=${newMeet} onClose=${() => setNewMeet(null)} onCreated=${(id) => { setNewMeet(null); bump(); setItem(null); openMeeting(id); }} />` : null}
     ${docOpen ? html`<${DocDrawer} key=${docOpen} id=${docOpen} nav=${nav} onClose=${() => { setDocOpen(null); bump(); }} />` : null}
@@ -211,7 +222,7 @@ const SHORTCUTS = [
   ['Ctrl+K', 'Search and commands'], ['Ctrl+Z', 'Undo the last change'], ['Ctrl+P', 'Print or save the board or doc as PDF'],
   ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'],
   ['g h', 'Go to Home'], ['g m', 'Go to My work'], ['g c', 'Go to Calendar'], ['g d', 'Go to Dependencies'], ['g i', 'Go to Inbox'],
-  ['g p', 'Go to Portfolio'], ['Ctrl J', 'Quick capture: turn notes into records'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
+  ['g p', 'Go to Portfolio'], ['Ctrl J', 'Quick capture: turn notes into records'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g u', 'Go to Customers'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['F1', 'Help and user guide'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
 ];
 
 /** Always-visible update control: check, watch the download, restart to install. */

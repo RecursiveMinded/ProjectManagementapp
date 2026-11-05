@@ -10,7 +10,8 @@ export function ctxOf(B) {
   const itemNames = Object.fromEntries(Object.entries(B.linked || {}).map(([k, v]) => [k, v.name]));
   for (const it of [...(B.items || []), ...(B.subitems || [])]) itemNames[it.id] = it.name;
   const teams = Object.fromEntries((B.teams || []).map((t) => [t.id, t]));
-  return { people, teams, files: B.files || {}, docs: B.docs || {}, itemNames };
+  const customers = Object.fromEntries((B.customers || []).map((c) => [c.id, c]));
+  return { people, teams, customers, files: B.files || {}, docs: B.docs || {}, itemNames };
 }
 
 export const FILTER_OPS = {
@@ -20,7 +21,7 @@ export const FILTER_OPS = {
 
 export function opsFor(col) {
   if (!col) return ['contains', 'empty', 'not_empty'];
-  if (C.LABEL_TYPES.has(col.type) || ['people', 'team', 'dropdown', 'connect', 'vote', 'country'].includes(col.type)) return ['is', 'is_not', 'empty', 'not_empty'];
+  if (C.LABEL_TYPES.has(col.type) || ['people', 'team', 'customer', 'dropdown', 'connect', 'vote', 'country'].includes(col.type)) return ['is', 'is_not', 'empty', 'not_empty'];
   if (['numbers', 'rating', 'progress', 'auto_number', 'item_id'].includes(col.type)) return ['is', 'gt', 'lt', 'empty', 'not_empty'];
   if (['date', 'timeline', 'week'].includes(col.type)) return ['before', 'after', 'today', 'this_week', 'overdue', 'empty', 'not_empty'];
   if (col.type === 'checkbox') return ['not_empty', 'empty'];
@@ -135,6 +136,7 @@ export function sections(B, cfg, items, ctx) {
     const v = it.values[by.id];
     if (C.LABEL_TYPES.has(by.type)) { const l = C.labelOf(by, v); if (l) put(l.id, l.label, C.colorHex(l.color), it); else put('__empty', 'No value', '#9aa3b2', it); }
     else if (by.type === 'team') { const tid = (v || [])[0]; const tm = tid && ctx.teams[tid]; put(tid || '__empty', tm ? tm.name : 'No team', tm ? C.colorHex(tm.color) : '#9aa3b2', it); }
+    else if (by.type === 'customer') { const cid = (v || [])[0]; const cu = cid && ctx.customers[cid]; put(cid || '__empty', cu ? cu.name : 'No customer', cu ? '#2f6fdf' : '#9aa3b2', it); }
     else if (by.type === 'people') { const p = (v || [])[0]; put(p || '__empty', p && ctx.people[p] ? ctx.people[p].name : 'Unassigned', p && ctx.people[p] ? ctx.people[p].color : '#9aa3b2', it); }
     else if (by.type === 'date') { const d = v ? String(v).slice(0, 7) : ''; put(d || '__empty', d ? monthName(d) : 'No date', '#3aa0e8', it); }
     else if (by.type === 'timeline') { const d = v && v.start ? v.start.slice(0, 7) : ''; put(d || '__empty', d ? monthName(d) : 'No date', '#3aa0e8', it); }
@@ -156,7 +158,7 @@ export function summary(col, items, ctx) {
   if (C.LABEL_TYPES.has(col.type)) {
     const counts = {};
     for (const v of vals) counts[v || '__empty'] = (counts[v || '__empty'] || 0) + 1;
-    const parts = [...(col.settings.labels || []).map((l) => ({ color: C.colorHex(l.color), n: counts[l.id] || 0, label: l.label })), { color: '#d5dae3', n: counts.__empty || 0, label: 'Empty' }].filter((p) => p.n);
+    const parts = [...(col.settings.labels || []).map((l) => ({ color: C.colorHex(l.color), n: counts[l.id] || 0, label: l.label })), { color: 'var(--empty-bar)', n: counts.__empty || 0, label: 'Empty' }].filter((p) => p.n);
     return { kind: 'bar', parts, total: items.length };
   }
   if (['numbers', 'formula', 'mirror'].includes(col.type)) {

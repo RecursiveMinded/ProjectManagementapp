@@ -5,8 +5,9 @@ import { C } from './model.js';
 import { call, native, isDesktop } from './api.js';
 import { useUpdate, checkForUpdates, installUpdate } from './update.js';
 import { AiSettings } from './capture.js';
+import { HelpPage } from './help.js';
 
-const TABS = [['profile', 'People & teams'], ['notify', 'Notifications'], ['look', 'Appearance'], ['ai', 'AI'], ['data', 'Data & backups'], ['about', 'Updates & about']];
+const TABS = [['profile', 'People & teams'], ['notify', 'Notifications'], ['look', 'Appearance'], ['ai', 'AI'], ['data', 'Data & backups'], ['about', 'Updates & about'], ['help', 'Help & user guide']];
 
 export function Settings({ boot, reloadShell }) {
   const [tab, setTab] = useState('profile');
@@ -23,6 +24,7 @@ export function Settings({ boot, reloadShell }) {
       ${tab === 'ai' ? html`<${AiSettings} />` : null}
       ${tab === 'data' ? html`<${Data} boot=${boot} s=${s} save=${save} reloadShell=${reloadShell} />` : null}
       ${tab === 'about' ? html`<${About} s=${s} save=${save} />` : null}
+      ${tab === 'help' ? html`<${HelpPage} embedded />` : null}
     </div></div>`;
 }
 

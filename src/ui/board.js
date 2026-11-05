@@ -269,6 +269,7 @@ function ruleValue(B, cols, f, setF) {
   if (C.LABEL_TYPES.has(col.type)) return multi([...(col.settings.labels || []).map((l) => ({ value: l.id, label: l.label })), { value: '__empty', label: '(empty)' }]);
   if (col.type === 'people') return multi([{ value: '__me', label: 'Me' }, ...B.people.map((p) => ({ value: p.id, label: p.name }))]);
   if (col.type === 'team') return multi((B.teams || []).map((t) => ({ value: t.id, label: t.name })));
+  if (col.type === 'customer') return multi((B.customers || []).map((c) => ({ value: c.id, label: c.name })));
   if (col.type === 'dropdown') return multi((col.settings.options || []).map((o) => ({ value: o.id, label: o.label })));
   if (col.type === 'country') return multi(C.COUNTRIES.map(([k, n]) => ({ value: k, label: n })));
   if (['before', 'after'].includes(f.op)) return html`<input class="input" type="date" value=${f.value || ''} onInput=${(e) => setF({ value: e.target.value })} />`;

@@ -135,7 +135,7 @@ class Dashboards {
             else if (c.type === 'people') keys = (v && v.length ? v : [null]).map((p) => ({ k: p && people[p] ? people[p].name : 'Unassigned', color: p && people[p] ? people[p].color : '#c4cad4' }));
             else if (c.type === 'dropdown' || c.type === 'tags') keys = (C.textOf(c, v) || 'Empty').split(', ').map((k) => ({ k }));
             else if (c.type === 'date') keys = [{ k: v ? String(v).slice(0, 7) : 'No date' }];
-            else keys = [{ k: C.textOf(c, v, { people }) || 'Empty' }];
+            else keys = [{ k: C.textOf(c, v, { people, customers: this.store.customersMap() }) || 'Empty' }];
           }
           let m = 1;
           if (cfg.measure === 'sum' && cfg.value) { const vc = colFor(b, cfg.value); m = vc ? Number(it.values[vc.id]) || 0 : 0; }
@@ -245,7 +245,7 @@ class Dashboards {
             status: l ? { label: l.label, color: C.colorHex(l.color) } : null,
             people: pc ? (it.values[pc.id] || []).map((p) => people[p]).filter(Boolean).map((p) => ({ id: p.id, name: p.name, color: p.color })) : [],
             due, overdue: !!(due && due < t && !isDone(b, it)),
-            extra: extra.map((ref) => { const c = colFor(b, ref); return c ? C.textOf(c, it.values[c.id], { people, teams }) : ''; }),
+            extra: extra.map((ref) => { const c = colFor(b, ref); return c ? C.textOf(c, it.values[c.id], { people, teams, customers: this.store.customersMap() }) : ''; }),
           });
         }
         const titles = extra.map((ref) => { const c = boards.flatMap((x) => x.columns).find((x) => x.id === ref); return c ? c.title : ''; });

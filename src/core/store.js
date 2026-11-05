@@ -77,6 +77,9 @@ class Store {
       ...t, external: !!t.external, members: members.filter((m) => m.team_id === t.id).map((m) => m.person_id),
     }));
   }
+  /** Customers in the directory, light enough for every board read. */
+  customersList() { return this.db.all('SELECT id, name, status FROM customers ORDER BY name COLLATE NOCASE'); }
+  customersMap() { return Object.fromEntries(this.customersList().map((c) => [c.id, c])); }
   teamsMap() { return Object.fromEntries(this.teams().map((t) => [t.id, t])); }
   teamByName(name, create = false) {
     const n = String(name || '').trim();
@@ -344,7 +347,7 @@ class Store {
   }
   /** Change a column's type, carrying values across as text where possible. */
   convertValues(col, type, settings) {
-    const ctx = { people: this.peopleMap(), teams: this.teamsMap() };
+    const ctx = { people: this.peopleMap(), teams: this.teamsMap(), customers: this.customersMap() };
     const target = { ...col, type, settings };
     const items = this.db.all('SELECT id, data FROM items WHERE board_id=?', [col.board_id]);
     for (const it of items) {
@@ -464,7 +467,7 @@ class Store {
     if (v == null) delete it.data[columnId]; else it.data[columnId] = v;
     this.db.tx(() => {
       this.db.run('UPDATE items SET data=?, updated_at=? WHERE id=?', [JSON.stringify(it.data), now(), itemId]);
-      const ctx = { people: this.peopleMap(), teams: this.teamsMap(), itemNames: this.namesFor([...(Array.isArray(old) ? old : []), ...(Array.isArray(v) ? v : [])]) };
+      const ctx = { people: this.peopleMap(), teams: this.teamsMap(), customers: this.customersMap(), itemNames: this.namesFor([...(Array.isArray(old) ? old : []), ...(Array.isArray(v) ? v : [])]) };
       if (col.type !== 'time_tracking') {
         this.log({ boardId: it.board_id, itemId, action: 'value', columnId, oldValue: C.textOf(col, old, ctx), newValue: C.textOf(col, v, ctx), source });
       }
@@ -942,7 +945,7 @@ class Store {
     }
     return {
       board, workspace: ws, groups, columns, items, subitems, files, updateCounts, docs,
-      linked: ctx.linked, people: this.people(), teams: this.teams(), views: this.views(id),
+      linked: ctx.linked, people: this.people(), teams: this.teams(), customers: this.customersList(), views: this.views(id),
       automations: this.db.get('SELECT COUNT(*) AS n FROM automations WHERE board_id=? AND enabled=1', [id]).n,
     };
   }
@@ -965,7 +968,7 @@ class Store {
     }
     const boardCols = {};
     for (const b of Object.keys(extBoards)) boardCols[b] = this.columns(b);
-    return { linked, boardCols, people: this.peopleMap(), teams: this.teamsMap() };
+    return { linked, boardCols, people: this.peopleMap(), teams: this.teamsMap(), customers: this.customersMap() };
   }
 
   compute(board, columns, items, subitems, ctx) {
@@ -1071,6 +1074,11 @@ class Store {
       const text = d.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
       const i = text.toLowerCase().indexOf(s);
       out.push({ kind: 'doc', id: d.id, name: d.title, snippet: i >= 0 ? text.slice(Math.max(0, i - 40), i + 120).trim() : '', score: d.title.toLowerCase().includes(s) ? 2.5 : 0.8 });
+    }
+    for (const c of this.db.all(`SELECT c.id, c.name, c.industry, GROUP_CONCAT(k.name, ', ') AS contacts FROM customers c LEFT JOIN customer_contacts k ON k.customer_id=c.id
+      GROUP BY c.id HAVING LOWER(c.name) LIKE ? OR LOWER(c.email) LIKE ? OR LOWER(c.account_no) LIKE ? OR LOWER(c.notes) LIKE ? OR LOWER(IFNULL(GROUP_CONCAT(k.name || ' ' || k.email || ' ' || k.phone, ' '), '')) LIKE ?
+      OR c.id IN (SELECT customer_id FROM customer_devices WHERE LOWER(name || ' ' || serial || ' ' || model) LIKE ?) LIMIT 30`, [like, like, like, like, like, like])) {
+      out.push({ kind: 'customer', id: c.id, name: c.name, snippet: [c.industry, c.contacts].filter(Boolean).join(' · '), score: c.name.toLowerCase().includes(s) ? 2.8 : 1.2 });
     }
     for (const b of this.db.all('SELECT id, name, description FROM boards WHERE archived=0 AND (LOWER(name) LIKE ? OR LOWER(description) LIKE ?)', [like, like])) {
       out.push({ kind: 'board', id: b.id, name: b.name, boardId: b.id, boardName: b.name, score: 3 });

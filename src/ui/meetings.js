@@ -173,7 +173,8 @@ export function MeetingDrawer({ id, boot, onClose, openItem, onChanged }) {
       <div class="fl">When</div><div class="row" style="gap:6px"><input class="input" type="date" aria-label="Date" value=${m.date} onChange=${(e) => save({ date: e.target.value })} />
         <input class="input" type="time" aria-label="Time" value=${m.time} onChange=${(e) => save({ time: e.target.value })} />
         <input class="input" style="width:80px" type="number" min="5" step="5" aria-label="Minutes" value=${m.minutes} onChange=${(e) => save({ minutes: Number(e.target.value) })} /><span class="small muted">min</span></div>
-      <div class="fl">Customer</div><input class="input bare" aria-label="Customer" placeholder="Company or account" value=${m.customer} onBlur=${(e) => e.target.value !== m.customer && save({ customer: e.target.value })} />
+      <div class="fl">Customer</div><div class="row" style="gap:6px"><input class="input bare grow" aria-label="Customer" placeholder="Company or account" value=${m.customer} onBlur=${(e) => e.target.value !== m.customer && save({ customer: e.target.value })} />
+        ${m.customer ? html`<button class="btn ghost small" onClick=${() => call('customerOptions').then((l) => { const hit = l.find((x) => x.name.toLowerCase() === m.customer.toLowerCase()); if (hit) window.dispatchEvent(new CustomEvent('bd-open-customer', { detail: hit.id })); else toast('Not in Customers yet'); }, toastError)}><${Icon} name="building" size="13" /> Profile</button>` : null}</div>
       <div class="fl">Where</div><input class="input bare" aria-label="Where" placeholder="Phone number, link or room" value=${m.where} onBlur=${(e) => e.target.value !== m.where && save({ where: e.target.value })} />
       <div class="fl">About</div><div>${m.item ? html`<span class="row" style="gap:6px"><a class="chip" onClick=${() => openItem(m.item.id)}><${Icon} name="table" size="12" /> ${m.item.name} · ${m.item.boardName}</a><button class="btn ghost small" onClick=${() => save({ itemId: null })}>Unlink</button></span>`
         : html`<${ItemPicker} value=${null} onPick=${(v) => v && save({ itemId: v.id })} />`}</div>
@@ -206,7 +207,7 @@ export function MeetingDrawer({ id, boot, onClose, openItem, onChanged }) {
   </${Drawer}>`;
 }
 
-function MeetingRow({ m, people }) {
+export function MeetingRow({ m, people }) {
   const owner = m.next && m.next.owner && people[m.next.owner];
   return html`<div class=${`meet-row ${m.status}`} role="button" tabindex="0" onClick=${() => openMeeting(m.id)} onKeyDown=${(e) => { if (e.key === 'Enter') openMeeting(m.id); }}>
     <span class=${`meet-ic ${m.kind}`}><${Icon} name=${m.kind === 'call' ? 'phone' : 'people'} size="15" /></span>

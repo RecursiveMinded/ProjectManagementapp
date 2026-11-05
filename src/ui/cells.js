@@ -1,6 +1,6 @@
 // Cell display and editing for every column type.
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { html, Icon, Popover, useAnchor, Avatar, Avatars, shortDate, todayIso, addDaysIso, diffDays, hexA, toastError } from './lib.js';
+import { html, Icon, Popover, useAnchor, Avatar, Avatars, shortDate, todayIso, addDaysIso, diffDays, hexA, toastError, toast } from './lib.js';
 import { call, native } from './api.js';
 import { C } from './model.js';
 
@@ -61,7 +61,7 @@ export function Cell({ col, item, B, ctx, onSet, reload, compact = false, readon
 }
 
 function cellAlign(T) {
-  return ['status', 'priority', 'people', 'team', 'date', 'timeline', 'progress', 'week', 'color', 'country', 'world_clock', 'item_id', 'auto_number', 'subitems_count', 'last_updated', 'creation_log'].includes(T) ? 'center' : '';
+  return ['status', 'priority', 'people', 'team', 'customer', 'date', 'timeline', 'progress', 'week', 'color', 'country', 'world_clock', 'item_id', 'auto_number', 'subitems_count', 'last_updated', 'creation_log'].includes(T) ? 'center' : '';
 }
 
 export function renderValue(col, v, B, ctx, compact, item) {
@@ -73,6 +73,12 @@ export function renderValue(col, v, B, ctx, compact, item) {
       const list = (v || []).map((id) => ctx.teams && ctx.teams[id]).filter(Boolean);
       if (!list.length) return html`<span class="placeholder"><${Icon} name="group" size="15" /></span>`;
       return html`<span class="team-chips">${list.slice(0, compact ? 1 : 2).map((t) => html`<span key=${t.id} class=${`team-chip ${col.settings.role === 'waiting' ? 'waiting' : ''}`} style=${`--tc:${C.colorHex(t.color)}`} title=${t.external ? `${t.name} (outside Boardenda)` : t.name}>${col.settings.role === 'waiting' ? '⏳ ' : ''}${t.name}</span>`)}${list.length > (compact ? 1 : 2) ? html`<span class="small muted">+${list.length - (compact ? 1 : 2)}</span>` : null}</span>`;
+    }
+    case 'customer': {
+      const list = (v || []).map((id) => ctx.customers && ctx.customers[id]).filter(Boolean);
+      if (!list.length) return html`<span class="placeholder"><${Icon} name="building" size="15" /></span>`;
+      return html`<span class="team-chips">${list.slice(0, compact ? 1 : 2).map((c) => html`<span key=${c.id} class="cust-chip" title=${`${c.name}: click to open the profile`}
+        onClick=${(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('bd-open-customer', { detail: c.id })); }}><${Icon} name="building" size="12" />${c.name}</span>`)}${list.length > (compact ? 1 : 2) ? html`<span class="small muted">+${list.length - (compact ? 1 : 2)}</span>` : null}</span>`;
     }
     case 'date': {
       if (!v) return html`<span class="placeholder"><${Icon} name="calendar" size="15" /></span>`;
@@ -168,6 +174,7 @@ function Editor({ anchor, close, col, item, v, set, B, ctx, reload }) {
   if (C.LABEL_TYPES.has(T)) body = html`<${LabelEditor} ...${props} />`;
   else if (T === 'people') body = html`<${PeopleEditor} ...${props} />`;
   else if (T === 'team') body = html`<${TeamEditor} ...${props} />`;
+  else if (T === 'customer') { body = html`<${CustomerEditor} ...${props} />`; width = 280; }
   else if (T === 'date') body = html`<${DateEditor} ...${props} />`;
   else if (T === 'timeline') { body = html`<${TimelineEditor} ...${props} />`; width = 300; }
   else if (T === 'week') body = html`<${DateEditor} ...${props} week />`;
@@ -250,6 +257,34 @@ function TeamEditor({ col, v, set, B }) {
       <span class="color-dot" style=${`background:${C.colorHex(t.color)}`}></span><span class="grow">${t.name}</span>${t.external ? html`<span class="faint small">outside</span>` : html`<span class="faint small">${t.members.length}</span>`}${cur.includes(t.id) ? html`<${Icon} name="check" size="14" />` : null}</button>`)}</div>
     ${q && !list.some((t) => t.name.toLowerCase() === q.toLowerCase()) ? html`<button class="btn small" onClick=${async () => { try { const id = await call('saveTeam', { name: q, external: col.settings.role === 'waiting' }); B.teams = [...teams, { id, name: q, color: 'indigo', members: [], external: col.settings.role === 'waiting' }]; set([...cur, id]); setQ(''); } catch (e) { toastError(e); } }}>Create team “${q}”</button>` : null}
     ${!teams.length && !q ? html`<div class="small muted">Type a name to create your first team.</div>` : null}
+  </div>`;
+}
+
+function CustomerEditor({ col, v, set, close, B }) {
+  const [q, setQ] = useState('');
+  const cur = v || [];
+  const all = B.customers || [];
+  const list = all.filter((c) => c.name.toLowerCase().includes(q.toLowerCase())).slice(0, 60);
+  const one = col.settings.max === 1 || col.settings.max == null;
+  const toggle = (id) => { if (one) { set(cur.includes(id) ? [] : [id]); close(); } else set(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]); };
+  const create = async () => {
+    try {
+      const id = await call('saveCustomer', { name: q.trim() });
+      B.customers = [...all, { id, name: q.trim(), status: 'active' }].sort((a, b) => a.name.localeCompare(b.name));
+      set(one ? [id] : [...cur, id]); setQ('');
+      toast(`Added ${q.trim()} to Customers`, '', { label: 'Open profile', run: () => window.dispatchEvent(new CustomEvent('bd-open-customer', { detail: id })) });
+      if (one) close();
+    } catch (e) { toastError(e); }
+  };
+  return html`<div class="pad col" style="gap:6px">
+    <input class="input" autoFocus placeholder="Search customers" value=${q} onInput=${(e) => setQ(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Enter') { if (list[0]) toggle(list[0].id); else if (q.trim()) create(); } }} />
+    <div class="pick-list">${list.map((c) => html`<button key=${c.id} class=${`mi ${cur.includes(c.id) ? 'active' : ''}`} onClick=${() => toggle(c.id)}>
+      <${Icon} name="building" size="14" /><span class="grow clip">${c.name}</span>${c.status && c.status !== 'active' ? html`<span class="faint small">${c.status.replace('_', ' ')}</span>` : null}${cur.includes(c.id) ? html`<${Icon} name="check" size="14" />` : null}</button>`)}</div>
+    ${q.trim() && !all.some((c) => c.name.toLowerCase() === q.trim().toLowerCase()) ? html`<button class="btn small" onClick=${create}>Add “${q.trim()}” to Customers</button>` : null}
+    ${!all.length && !q ? html`<div class="small muted">Type a name to add your first customer.</div>` : null}
+    ${cur.length ? html`<div class="row" style="gap:6px;border-top:1px solid var(--line);padding-top:6px">
+      <button class="btn small ghost" onClick=${() => { close(); window.dispatchEvent(new CustomEvent('bd-open-customer', { detail: cur[0] })); }}><${Icon} name="building" size="13" /> Open profile</button>
+      <span class="grow"></span><button class="btn small ghost" onClick=${() => { set([]); close(); }}>Clear</button></div>` : null}
   </div>`;
 }
 

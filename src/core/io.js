@@ -83,6 +83,7 @@ function inferColumns(header, rows) {
     else if (/status|stage|state/.test(t) && new Set(vals).size <= 12) type = 'status';
     else if (/priority|severity/.test(t) && new Set(vals).size <= 8) type = 'priority';
     else if (/^(team|teams|department|squad|owning team)$/.test(t)) type = 'team';
+    else if (/^(customer|customers|client|account|account name|company)$/.test(t)) type = 'customer';
     else if (/owner|assignee|assigned|person|people|responsible/.test(t)) type = 'people';
     else if (/email/.test(t) || all(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)) type = 'email';
     else if (/phone|mobile/.test(t)) type = 'phone';
@@ -171,7 +172,9 @@ async function importTable(store, { name, bytes, rows: given, header: givenHeade
         const raw = String(r[idx] || '').trim();
         if (!raw) continue;
         const col = colRows[cid];
-        if (col.type === 'team') {
+        if (col.type === 'customer') {
+          values[cid] = raw.split(/[;]/).map((n) => n.trim()).filter(Boolean).map((n) => store.customerByName(n, true).id).slice(0, col.settings.max === 1 ? 1 : 50);
+        } else if (col.type === 'team') {
           values[cid] = raw.split(/[,;]/).map((n) => n.trim()).filter(Boolean).map((n) => store.teamByName(n, true).id);
         } else if (col.type === 'people') {
           values[cid] = raw.split(/[,;]/).map((n) => n.trim()).filter(Boolean).map((n) => (store.personByName(n) || { id: store.savePerson({ name: n }) }).id);
@@ -211,7 +214,7 @@ async function importTable(store, { name, bytes, rows: given, header: givenHeade
 /** Rows for export: one per item and subitem, with every column as text. */
 function exportRows(store, boardId) {
   const B = store.getBoard(boardId);
-  const ctx = { people: Object.fromEntries(B.people.map((p) => [p.id, p])), teams: Object.fromEntries((B.teams || []).map((t) => [t.id, t])), files: B.files, itemNames: Object.fromEntries(Object.entries(B.linked).map(([k, v]) => [k, v.name])) };
+  const ctx = { people: Object.fromEntries(B.people.map((p) => [p.id, p])), teams: Object.fromEntries((B.teams || []).map((t) => [t.id, t])), customers: Object.fromEntries((B.customers || []).map((c) => [c.id, c])), files: B.files, itemNames: Object.fromEntries(Object.entries(B.linked).map(([k, v]) => [k, v.name])) };
   for (const it of [...B.items, ...B.subitems]) ctx.itemNames[it.id] = it.name;
   const cols = B.columns.filter((c) => c.scope === 'item' && c.type !== 'button');
   const subCols = B.columns.filter((c) => c.scope === 'sub' && c.type !== 'button');
@@ -319,6 +322,7 @@ const SHEET_COLS = [
   ['Status', 'status', 'Any words. Done, Complete, Closed, Won and Fixed count as done. Each different value becomes a label.', ['Done', 'In progress', 'Not started']],
   ['Owner', 'people', 'Names, separated by commas. Unknown names are added as people.', ['Alex Morgan', 'Jordan Lee, Sam Patel', '']],
   ['Team', 'team', 'Team names, separated by commas. Unknown teams are added.', ['Product', 'Design', 'Legal']],
+  ['Customer', 'customer', 'The customer or account name. Unknown customers are added to the Customers directory.', ['Northwind Traders', 'Northwind Traders', '']],
   ['Priority', 'priority', 'Any words, such as Low, Medium, High, Critical.', ['High', 'Medium', 'Low']],
   ['Timeline', 'timeline', 'Two dates: 2026-01-05 - 2026-01-09 (or 05/01/2026 - 09/01/2026).', ['2026-01-05 - 2026-01-09', '2026-01-12 - 2026-01-14', '']],
   ['Due date', 'date', 'One date: 2026-01-09, or day/month/year.', ['2026-01-09', '2026-01-14', '2026-01-20']],
@@ -342,7 +346,7 @@ async function importSheet(store, boardId) {
     const B = store.getBoard(boardId);
     const usable = B.columns.filter((c) => c.scope === 'item' && !C.isComputed(c.type) && !['button', 'files', 'doc', 'vote', 'time_tracking', 'connect', 'dependency'].includes(c.type));
     const sample = B.items[0];
-    const ctx = { people: Object.fromEntries(B.people.map((p) => [p.id, p])), teams: Object.fromEntries((B.teams || []).map((t) => [t.id, t])) };
+    const ctx = { people: Object.fromEntries(B.people.map((p) => [p.id, p])), teams: Object.fromEntries((B.teams || []).map((t) => [t.id, t])), customers: Object.fromEntries((B.customers || []).map((c) => [c.id, c])) };
     const fmt = (c, v) => (c.type === 'timeline' && v ? `${v.start} - ${v.end}` : C.textOf(c, v, ctx));
     cols = [
       [B.board.item_noun ? B.board.item_noun[0].toUpperCase() + B.board.item_noun.slice(1) : 'Name', 'text', 'Required.', [sample ? `EXAMPLE: ${sample.name}` : 'EXAMPLE: First item']],

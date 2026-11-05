@@ -10,6 +10,7 @@ const { Automations, TRIGGERS, ACTIONS } = require('./automations');
 const { Dashboards, WIDGETS } = require('./dashboards');
 const { Reports } = require('./reports');
 const { Recurring } = require('./recurring');
+const { Customers } = require('./customers');
 const { Meetings } = require('./meetings');
 const { Capture } = require('./capture');
 const T = require('./templates');
@@ -45,7 +46,16 @@ class AppApi {
     this.reports = new Reports(this.store);
     this.recurring = new Recurring(this.store);
     this.meetings = new Meetings(this.store);
+    this.customers = new Customers(this.store, this.meetings);
+    this.store.customerByName = (name, create) => this.customers.byName(name, create);
     this.capture = new Capture(this.store, this.meetings);
+    this.capture.customers = this.customers;
+    try {
+      if (!this.db.get("SELECT value FROM settings WHERE key='customers_adopted'")) {
+        this.customers.adoptCallCustomers();
+        this.db.run("INSERT INTO settings(key,value) VALUES('customers_adopted','true')");
+      }
+    } catch (_) { /* never block start-up */ }
     this.store.me();
     if (dataDir) this.autoBackup();
     try { this.store.purgeTrash({ olderThanDays: 30 }); } catch (_) { /* never block start-up */ }
@@ -90,6 +100,7 @@ class AppApi {
   loadSample() {
     const ws = this.withLog(() => T.sampleWorkspace(this.store, this.automations, this.dashboards));
     try { this.sampleMeetings(ws); } catch (_) { /* sample calls are optional */ }
+    try { this.sampleCustomers(ws); } catch (_) { /* sample customers are optional */ }
     return ws;
   }
   /** Two sample customer calls (one held, with notes and actions) and a weekly sync. */
@@ -120,6 +131,32 @@ class AppApi {
       kind: 'meeting', title: 'Weekly pipeline review', date: t, time: '09:30', minutes: 30, attendees: people.slice(0, 3).map((p) => p.id),
       agenda: '<ol><li>Deals closing this month</li><li>Blockers</li><li>Next steps per deal</li></ol>', repeat: { unit: 'week', every: 1 },
     });
+  }
+  /** Two customer profiles with contacts and devices, and a Customer column on Team tasks. */
+  sampleCustomers(ws) {
+    const nw = this.customers.byName('Northwind Traders', true);
+    const cur = this.customers.get(nw.id);
+    if (!cur.contacts.length) {
+      this.customers.save({ id: nw.id, status: 'active', industry: 'Retail', website: 'https://northwind.example', phone: '+1 555 0100', accountNo: 'NW-1042',
+        address: '12 Harbor Way, Seattle, WA', tags: ['pilot', 'priority'], owner: this.store.me().id,
+        notes: '<p>Pilot of the new terminals in 3 stores. Finance prefers quarterly billing. Legal reviews all data terms.</p>' });
+      this.customers.saveContact(nw.id, { name: 'Priya Shah', title: 'Director of Operations', email: 'priya@northwind.example', phone: '+1 555 0101', primary: true });
+      this.customers.saveContact(nw.id, { name: 'Marcus Lee', title: 'Finance manager', email: 'marcus@northwind.example', phone: '+1 555 0102' });
+      this.customers.saveDevice(nw.id, { name: 'Front counter terminal', kind: 'Payment terminal', model: 'PT-400', serial: 'PT4-88231', location: 'Store 1, Seattle', installed: addDays(today(), -40) });
+      this.customers.saveDevice(nw.id, { name: 'Mobile terminal', kind: 'Payment terminal', model: 'PT-200 Go', serial: 'PT2-10457', location: 'Store 2, Tacoma', status: 'pending' });
+    }
+    if (!this.customers.byName('Contoso Retail')) {
+      const id = this.customers.save({ name: 'Contoso Retail', status: 'prospect', industry: 'Grocery', phone: '+1 555 0200', accountNo: 'CR-2210' });
+      this.customers.saveContact(id, { name: 'Dana Ruiz', title: 'IT lead', email: 'dana@contoso.example', mobile: '+1 555 0201' });
+    }
+    const tasks = this.db.get("SELECT id FROM boards WHERE workspace_id=? AND name='Team tasks'", [ws]);
+    if (tasks && !this.db.get("SELECT id FROM columns WHERE board_id=? AND type='customer'", [tasks.id])) {
+      const owner = this.db.get("SELECT id FROM columns WHERE board_id=? AND type='people' AND scope='item' ORDER BY position LIMIT 1", [tasks.id]);
+      const col = this.store.addColumn(tasks.id, { title: 'Customer', type: 'customer', after: owner && owner.id });
+      const colId = typeof col === 'string' ? col : col.id;
+      const it = this.db.get("SELECT id FROM items WHERE board_id=? AND name LIKE 'Send revised quote%'", [tasks.id]);
+      if (it) this.store.setValue(it.id, colId, [nw.id], { quiet: true });
+    }
   }
   withLog(fn) { return fn(); }
 
@@ -394,13 +431,22 @@ class AppApi {
   // ------------------------------------------------- customer calls and meetings
   listMeetings(q) { return this.meetings.list(q); }
   getMeeting(id) { return this.meetings.get(id); }
-  createMeeting(m) { return this.meetings.create(m); }
-  updateMeeting(id, patch) { return this.meetings.update(id, patch); }
+  createMeeting(m) { const id = this.meetings.create(m); this.adoptCustomer(m && m.customer); return id; }
+  updateMeeting(id, patch) { const r = this.meetings.update(id, patch); if (patch && patch.customer) this.adoptCustomer(patch.customer); return r; }
+  /** A customer named on a call joins the directory. */
+  adoptCustomer(name) { try { if (String(name || '').trim()) this.customers.byName(name, true); } catch (_) { /* a name clash is fine */ } }
   deleteMeeting(id, opts) { return this.meetings.remove(id, opts); }
   setMeetingRepeat(id, rule) { return this.meetings.setRepeat(id, rule); }
   stopMeetingRepeat(id) { return this.meetings.stopRepeat(id); }
   applyMeetingToSeries(id) { return this.meetings.applyToSeries(id); }
-  meetingCustomers() { return this.meetings.customers(); }
+  meetingCustomers() {
+    const seen = new Set();
+    const out = [];
+    for (const c of [...this.meetings.customers(), ...this.customers.names().map((name) => ({ name, meetings: 0, last: null }))]) {
+      if (!seen.has(c.name.toLowerCase())) { seen.add(c.name.toLowerCase()); out.push(c); }
+    }
+    return out;
+  }
   addMeetingAction(meetingId, a) { return this.meetings.addAction(meetingId, a); }
   updateMeetingAction(id, patch) { return this.meetings.updateAction(id, patch); }
   removeMeetingAction(id) { return this.meetings.removeAction(id); }
@@ -409,6 +455,34 @@ class AppApi {
   itemMeetings(itemId) { return this.meetings.forItem(itemId); }
   addMeetingFile(meetingId, f) { return this.meetings.addFile(meetingId, f); }
   meetingSummary(id) { return this.meetings.summary(id); }
+
+  // ----------------------------------------------------------- customers
+  listCustomers(q) { return this.customers.list(q); }
+  getCustomer(id) { return this.customers.get(id); }
+  saveCustomer(c) { return this.customers.save(c); }
+  deleteCustomer(id) { return this.customers.remove(id); }
+  saveCustomerContact(customerId, k) { return this.customers.saveContact(customerId, k); }
+  removeCustomerContact(id) { return this.customers.removeContact(id); }
+  saveCustomerDevice(customerId, d) { return this.customers.saveDevice(customerId, d); }
+  removeCustomerDevice(id) { return this.customers.removeDevice(id); }
+  addCustomerFile(customerId, f) { return this.customers.addFile(customerId, f); }
+  customerSummary(id) { return this.customers.summary(id); }
+  customerOptions() { return this.store.customersList(); }
+  /** Assign a customer to an item through its board's Customer column, adding the column if needed. */
+  assignCustomer(itemId, customerId) {
+    const it = this.db.get('SELECT board_id, parent_id FROM items WHERE id=?', [itemId]);
+    if (!it) throw new Error('That item no longer exists');
+    this.customers.row(customerId);
+    const scope = it.parent_id ? 'subitem' : 'item';
+    let col = this.db.get("SELECT id, settings FROM columns WHERE board_id=? AND type='customer' AND scope=? ORDER BY position LIMIT 1", [it.board_id, scope]);
+    if (!col) {
+      const owner = this.db.get("SELECT id FROM columns WHERE board_id=? AND type='people' AND scope=? ORDER BY position LIMIT 1", [it.board_id, scope]);
+      const c = this.store.addColumn(it.board_id, { title: 'Customer', type: 'customer', scope, after: owner && owner.id }); col = { id: typeof c === 'string' ? c : c.id, settings: '{}' }; }
+    const cur = parseJson((this.db.get('SELECT data FROM items WHERE id=?', [itemId]) || {}).data, {})[col.id] || [];
+    const max = parseJson(col.settings, {}).max;
+    this.setValue(itemId, col.id, max === 1 || max == null ? [customerId] : [...new Set([...cur, customerId])]);
+    return col.id;
+  }
 
   // ------------------------------------------- recurring items, item templates
   getRecurrence(itemId) { return this.recurring.get(itemId); }

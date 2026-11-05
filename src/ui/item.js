@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { html, Icon, Menu, useAnchor, InlineText, Avatar, toastError, toast, ask, Spinner, relTime, plural, bytes, Modal, todayIso, addDaysIso, shortDate } from './lib.js';
 import { ItemCalls } from './meetings.js';
+import { AssignCustomer } from './customers.js';
 import { call, native } from './api.js';
 import { C, ctxOf } from './model.js';
 import { Cell } from './cells.js';
@@ -13,6 +14,7 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
   const [menu, openMenu, closeMenu] = useAnchor();
   const [moveB, setMoveB] = useState(null);
   const [repeat, setRepeat] = useState(false);
+  const [assignCu, setAssignCu] = useState(false);
   const [tplName, setTplName] = useState(null);
   const load = useCallback(async () => {
     try { setD(await call('getItem', id)); } catch (e) { toastError(e); onClose(); }
@@ -63,6 +65,7 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
       { label: 'Duplicate', icon: 'copy', onClick: () => call('duplicateItem', it.id).then((nid) => { changed(); openItem(nid); }, toastError) },
       !isSub && { label: d.recurrence ? 'Change repeat…' : 'Repeat…', icon: 'refresh', hint: d.recurrence ? d.recurrence.text : 'on a schedule', onClick: () => setRepeat(true) },
       !isSub && { label: 'Save as item template…', icon: 'spark', onClick: () => setTplName(it.name) },
+      { label: 'Assign customer…', icon: 'building', onClick: () => setAssignCu(true) },
       !isSub && { head: 'Move to group' },
       ...(!isSub ? d.groups.filter((g) => !g.archived && g.id !== it.group_id).map((g) => ({ label: g.name, icon: 'group', onClick: () => call('moveItem', it.id, { groupId: g.id }).then(changed, toastError) })) : []),
       !isSub && { label: 'Move to another board…', icon: 'arrowRight', onClick: async () => setMoveB(await call('allBoards')) },
@@ -71,6 +74,7 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
         : { label: 'Archive', icon: 'archive', onClick: () => call('archiveItem', it.id, true).then(() => { toast('Archived'); onChanged && onChanged(); onClose(); }, toastError) },
       { label: 'Delete', icon: 'trash', danger: true, onClick: async () => { if (await ask({ title: 'Delete this item?', body: 'It moves to the trash with its subitems, updates and files. You can restore it for 30 days, or press Ctrl+Z.' })) call('deleteItem', it.id).then(() => { onChanged && onChanged(); onClose(); }, toastError); } },
     ]} />` : null}
+    ${assignCu ? html`<${AssignCustomer} itemId=${it.id} onClose=${() => setAssignCu(false)} onDone=${() => { setAssignCu(false); toast('Customer assigned'); changed(); }} />` : null}
     ${repeat ? html`<${RepeatEditor} it=${it} d=${d} onClose=${() => setRepeat(false)} onDone=${() => { setRepeat(false); changed(); }} />` : null}
     ${tplName != null ? html`<${Modal} title="Save as item template" onClose=${() => setTplName(null)}>
       <p class="small muted">Saves this item's values${d.subitems.length ? ` and its ${plural(d.subitems.length, 'subitem')}` : ''}. Add copies from the arrow next to New on this board.</p>

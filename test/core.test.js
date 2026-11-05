@@ -671,3 +671,58 @@ test('quick capture: reads notes with a local Ollama model, and only local serve
     assert.match(fb.notes.join(' '), /local model/);
   } finally { srv.close(); }
 });
+
+test('customer directory: profiles, contacts, devices, Customer column, calls, import and delete', async () => {
+  const api = await fresh();
+  const ws = api.saveWorkspace({ name: 'Accounts' });
+  const board = api.createBoard({ workspaceId: ws, name: 'Service', template: 'blank' });
+  const id = api.saveCustomer({ name: 'Acme Health', status: 'active', phone: '555 1000', accountNo: 'AC-1', tags: 'vip, east' });
+  assert.throws(() => api.saveCustomer({ name: 'acme health' }), /already exists/);
+  const k1 = api.saveCustomerContact(id, { name: 'Jo Park', title: 'CIO', email: 'jo@acme.test' });
+  api.saveCustomerContact(id, { name: 'Ray Diaz', phone: '555 1001', primary: true });
+  api.saveCustomerDevice(id, { name: 'Lobby kiosk', model: 'K-9', serial: 'SN123', status: 'repair' });
+  let c = api.getCustomer(id);
+  assert.deepEqual(c.tags, ['vip', 'east']);
+  assert.equal(c.contacts[0].name, 'Ray Diaz', 'the main contact comes first');
+  assert.equal(c.contacts.filter((x) => x.primary).length, 1);
+  assert.equal(c.devices[0].serial, 'SN123');
+  assert.equal(c.devices[0].status, 'repair');
+  api.removeCustomerContact(k1);
+  // Assign to a task: adds the Customer column on first use.
+  const item = api.addItem(board, { name: 'Replace kiosk screen' });
+  const colId = api.assignCustomer(item, id);
+  const B = api.getBoard(board);
+  assert.equal(B.columns.find((x) => x.id === colId).type, 'customer');
+  assert.ok(B.customers.some((x) => x.id === id));
+  c = api.getCustomer(id);
+  assert.equal(c.tasks.length, 1);
+  assert.equal(c.tasks[0].name, 'Replace kiosk screen');
+  // Calls are matched by name, follow a rename, and new call customers join the directory.
+  api.createMeeting({ title: 'Quarterly review', customer: 'Acme Health', date: today(), time: '10:00' });
+  api.createMeeting({ title: 'Intro call', customer: 'Globex', date: today(), time: '11:00' });
+  assert.ok(api.listCustomers().some((x) => x.name === 'Globex'));
+  api.saveCustomer({ id, name: 'Acme Healthcare' });
+  c = api.getCustomer(id);
+  assert.equal(c.calls.length, 1);
+  assert.equal(c.calls[0].customer, 'Acme Healthcare');
+  const row = api.listCustomers({ q: 'sn123' });
+  assert.equal(row.length, 1, 'search finds a customer by device serial');
+  assert.equal(row[0].openTasks, 1);
+  assert.equal(row[0].calls, 1);
+  assert.ok(api.search('Acme').some((r) => r.kind === 'customer'));
+  assert.match(api.customerSummary(id), /Lobby kiosk/);
+  // Import: a Customer header becomes a Customer column and unknown names are added.
+  const csv = Buffer.from('Name,Customer\nFix printer,Acme Healthcare\nNew site survey,Initech\n');
+  const prev = await api.previewImport('jobs.csv', csv);
+  assert.equal(prev.columns.find((x) => x.title === 'Customer').type, 'customer');
+  const r = await api.importTable({ name: 'jobs.csv', bytes: csv, columns: prev.columns, workspaceId: ws });
+  const IB = api.getBoard(r.boardId);
+  const icol = IB.columns.find((x) => x.type === 'customer');
+  const initech = api.listCustomers({ q: 'Initech' })[0];
+  assert.ok(initech, 'unknown customer added to the directory');
+  assert.deepEqual(IB.items.find((x) => x.name === 'New site survey').values[icol.id], [initech.id]);
+  assert.equal(api.getCustomer(id).tasks.length, 2);
+  // Delete clears the value from items.
+  api.deleteCustomer(id);
+  assert.equal(api.store.getBoard(board).items.find((x) => x.id === item).values[colId], undefined);
+});

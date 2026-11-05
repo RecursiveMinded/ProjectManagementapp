@@ -194,7 +194,7 @@ class Capture {
       weekday: DAYS[dow(today()) - 1],
       people: this.store.people().map((p) => ({ id: p.id, name: p.name, isMe: !!p.is_me })),
       teams: this.store.teams().map((t) => ({ id: t.id, name: t.name })),
-      customers: this.meetings.customers().map((c) => c.name),
+      customers: [...new Set([...(this.customers ? this.customers.names() : []), ...this.meetings.customers().map((c) => c.name)])],
       boards: boards.map((b) => {
         const cols = this.db.all("SELECT * FROM columns WHERE board_id=? AND scope='item' ORDER BY position", [b.id]).map((c) => ({ ...c, settings: parseJson(c.settings, {}) }));
         return {
@@ -239,6 +239,12 @@ class Capture {
     const t = String(text == null ? '' : text).trim();
     if (!t) return null;
     if (col.type === 'people') { const ids = t.split(/,|&| and /).map((x) => this.person(x, ctx)).filter(Boolean); return ids.length ? ids : null; }
+    if (col.type === 'customer') {
+      const list = this.store.customersList();
+      const lc = t.toLowerCase();
+      const hit = list.find((x) => x.name.toLowerCase() === lc) || list.find((x) => lc.includes(x.name.toLowerCase()) || x.name.toLowerCase().includes(lc));
+      return hit ? [hit.id] : null;
+    }
     if (col.type === 'team') { const hit = ctx.teams.find((x) => x.name.toLowerCase() === t.toLowerCase()); return hit ? [hit.id] : null; }
     if (col.type === 'date') return parseDate(t, ctx.today);
     if (col.type === 'timeline') { const parts = t.split(/\s+(?:to|-|–|until)\s+/); const a = parseDate(parts[0], ctx.today); const b = parseDate(parts[1] || parts[0], ctx.today); return a ? { start: a, end: b && b >= a ? b : a } : null; }

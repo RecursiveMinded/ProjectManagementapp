@@ -6,6 +6,7 @@ import { C } from './model.js';
 import { LabelPill } from './cells.js';
 import { ImportWizard, pickFile, IMPORT_ACCEPT, downloadImportSheet } from './importer.js';
 import { saveAs } from './api.js';
+import { searchHelp, exportGuide } from './help.js';
 
 const TPL_STYLE = {
   blank: ['#5e6b80', 'table'], project: ['#5a55d6', 'timeline'], tasks: ['#13a89e', 'checkbox'], crm: ['#2bb673', 'chart'], bugs: ['#f0634e', 'warn'], content: ['#f28a2e', 'calendar'],
@@ -196,14 +197,15 @@ export function SearchPalette({ onClose, nav, openItem, boot }) {
     return () => clearTimeout(t);
   }, [q]);
   const commands = [
-    ['Go to Home', () => nav('home')], ['Go to My work', () => nav('mywork')], ['Go to Calendar', () => nav('calendar')], ['Go to Calls and meetings', () => nav('meetings')], ['Quick capture: turn notes into records', () => window.dispatchEvent(new CustomEvent('bd-capture'))], ['Log a customer call', () => window.dispatchEvent(new CustomEvent('bd-new-meeting', { detail: { kind: 'call' } }))], ['Go to Team dependencies', () => nav('dependencies')], ['Go to Portfolio', () => nav('portfolio')], ['Go to Timesheets', () => nav('timesheets')], ['Go to Inbox', () => nav('inbox')], ['Go to Settings', () => nav('settings')],
+    ['Go to Home', () => nav('home')], ['Go to My work', () => nav('mywork')], ['Go to Calendar', () => nav('calendar')], ['Go to Customers', () => nav('customers')], ['Add a customer', () => nav('customers')], ['Go to Calls and meetings', () => nav('meetings')], ['Quick capture: turn notes into records', () => window.dispatchEvent(new CustomEvent('bd-capture'))], ['Log a customer call', () => window.dispatchEvent(new CustomEvent('bd-new-meeting', { detail: { kind: 'call' } }))], ['Go to Team dependencies', () => nav('dependencies')], ['Go to Portfolio', () => nav('portfolio')], ['Go to Timesheets', () => nav('timesheets')], ['Go to Inbox', () => nav('inbox')], ['Go to Settings', () => nav('settings')], ['Open help and user guide', () => nav('help')], ['Export user guide as PDF', () => exportGuide('pdf')],
     ...boot.workspaces.flatMap((w) => w.boards.map((b) => [`Open board: ${b.name}`, () => nav('board', b.id)])),
     ...boot.dashboards.map((d) => [`Open dashboard: ${d.name}`, () => nav('dashboard', d.id)]),
     ...(boot.docs || []).map((d) => [`Open doc: ${d.title}`, () => nav('doc', d.id)]),
     ['Keyboard shortcuts', () => setTimeout(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' })), 50)],
   ].filter(([l]) => !q || l.toLowerCase().includes(q.toLowerCase())).slice(0, q ? 6 : 8);
-  const all = [...res.map((r) => ({ label: r.name, sub: r.kind === 'update' ? `Update: ${r.snippet}` : r.kind === 'doc' ? `Doc${r.snippet ? ` · ${r.snippet}` : ''}` : `${r.boardName}${r.groupName ? ` · ${r.groupName}` : ''}`, icon: r.kind === 'board' ? 'table' : r.kind === 'doc' ? 'para' : r.kind === 'update' ? 'msg' : r.kind === 'subitem' ? 'sub' : 'list', go: () => (r.kind === 'board' ? nav('board', r.id) : r.kind === 'doc' ? nav('doc', r.id) : openItem(r.subId || r.id)) })),
-    ...commands.map(([l, go]) => ({ label: l, icon: 'arrowRight', go }))];
+  const helpHits = q.trim().length >= 2 ? searchHelp(q).slice(0, 3).map((a) => ({ label: `How to: ${a.title}`, sub: 'Help article', icon: 'help', go: () => nav('help', a.id) })) : [];
+  const all = [...res.map((r) => ({ label: r.name, sub: r.kind === 'customer' ? `Customer${r.snippet ? ` · ${r.snippet}` : ''}` : r.kind === 'update' ? `Update: ${r.snippet}` : r.kind === 'doc' ? `Doc${r.snippet ? ` · ${r.snippet}` : ''}` : `${r.boardName}${r.groupName ? ` · ${r.groupName}` : ''}`, icon: r.kind === 'customer' ? 'building' : r.kind === 'board' ? 'table' : r.kind === 'doc' ? 'para' : r.kind === 'update' ? 'msg' : r.kind === 'subitem' ? 'sub' : 'list', go: () => (r.kind === 'customer' ? window.dispatchEvent(new CustomEvent('bd-open-customer', { detail: r.id })) : r.kind === 'board' ? nav('board', r.id) : r.kind === 'doc' ? nav('doc', r.id) : openItem(r.subId || r.id)) })),
+    ...helpHits, ...commands.map(([l, go]) => ({ label: l, icon: 'arrowRight', go }))];
   const run = (x) => { onClose(); x.go(); };
   return html`<div><div class="scrim" style="z-index:94" onClick=${onClose}></div><div class="palette" role="dialog" aria-label="Search">
     <input autoFocus placeholder="Search items, updates and boards, or jump anywhere" value=${q} onInput=${(e) => setQ(e.target.value)}
