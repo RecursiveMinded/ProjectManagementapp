@@ -78,6 +78,8 @@ function inferColumns(header, rows) {
     const t = title.toLowerCase();
     let type = 'text';
     if (/^(group|section|phase)$/.test(t)) type = '__group';
+    else if (/^(subitem of|parent|parent item)$/.test(t)) type = '__parent';
+    else if (/timeline|date range|period/.test(t) || (vals.length && vals.every((v) => /\d{4}-\d{2}-\d{2}.*\d{4}-\d{2}-\d{2}/.test(v) || /^\d{1,2}[/.]\d{1,2}[/.]\d{2,4}\s*[-–]\s*\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$/.test(v)))) type = 'timeline';
     else if (/status|stage|state/.test(t) && new Set(vals).size <= 12) type = 'status';
     else if (/priority|severity/.test(t) && new Set(vals).size <= 8) type = 'priority';
     else if (/^(team|teams|department|squad|owning team)$/.test(t)) type = 'team';
@@ -94,20 +96,51 @@ function inferColumns(header, rows) {
   });
 }
 
-async function importTable(store, { name, bytes, workspaceId, boardId, boardName }) {
-  const rows = await readTable(name, bytes);
-  if (rows.length < 2) throw new Error('The file has no rows to import');
-  const header = rows[0];
-  const body = rows.slice(1);
+const EXAMPLE_RE = /^example\s*[:\-–]/i;
+
+/** What an import would create, so it can be checked and adjusted first. */
+async function previewImport(name, bytes) {
+  const { extract } = require('./extract');
+  const r = await extract(name, bytes, readTable);
+  const rows = (r.rows || []).map((x) => x.map((v) => (v == null ? '' : String(v))));
+  if (rows.length < 2) throw new Error('No rows were found to import');
+  const width = Math.max(...rows.map((x) => x.length));
+  const norm = rows.map((x) => { const y = [...x]; while (y.length < width) y.push(''); return y; });
+  const header = norm[0].map((h, i) => String(h || '').trim() || `Column ${i + 1}`);
+  const body = norm.slice(1).filter((x) => x.some((v) => String(v).trim()));
   const cols = inferColumns(header, body);
-  const nameCol = cols.find((c) => /^(name|item|title|task|subject)$/i.test(c.title)) || cols.find((c) => c.type === 'text') || cols[0];
+  const nameCol = guessName(cols);
+  const examples = body.filter((x) => EXAMPLE_RE.test(String(x[nameCol.index] || ''))).length;
+  return { kind: r.kind, notes: r.notes || [], confidence: r.confidence, header, rows: body.slice(0, 500), total: body.length, examples,
+    columns: cols.map((c) => ({ ...c, type: c === nameCol ? '__name' : c.type })) };
+}
+
+function guessName(cols) {
+  return cols.find((c) => /^(name|item|title|task|subject|item name|task name|action|action item)$/i.test(c.title)) || cols.find((c) => c.type === 'text') || cols[0];
+}
+
+/**
+ * Create items from rows. columns (optional) overrides the guessed types:
+ * [{ index, title, type }] where type may be '__name', '__group', '__parent' or 'skip'.
+ */
+async function importTable(store, { name, bytes, rows: given, header: givenHeader, columns: chosen, workspaceId, boardId, boardName, skipExamples = true }) {
+  let rows = given ? [givenHeader, ...given] : await readTable(name, bytes);
+  if (rows.length < 2) throw new Error('The file has no rows to import');
+  const header = rows[0].map((h, i) => String(h || '').trim() || `Column ${i + 1}`);
+  let body = rows.slice(1);
+  let cols = chosen && chosen.length ? chosen.map((c) => ({ index: Number(c.index), title: String(c.title || header[c.index] || `Column ${Number(c.index) + 1}`).trim(), type: c.type })).filter((c) => c.type !== 'skip') : inferColumns(header, body);
+  const nameCol = cols.find((c) => c.type === '__name') || guessName(cols);
+  if (!nameCol) throw new Error('Choose which column holds the item names');
+  if (skipExamples) body = body.filter((r) => !EXAMPLE_RE.test(String(r[nameCol.index] || '').trim()));
+  if (!body.some((r) => String(r[nameCol.index] || '').trim())) throw new Error(rows.length > 1 && skipExamples ? 'Only EXAMPLE rows were found. Add your own rows to the sheet, then import it.' : 'No rows with a name were found');
+  cols = cols.map((c) => (c === nameCol ? { ...c, type: '__name' } : c));
   let created = 0;
   store.db.tx(() => {
     const target = boardId || store.createBoard({ workspaceId, name: boardName || String(name).replace(/\.[^.]+$/, ''), groups: [], columns: [], views: [{ name: 'Main table', type: 'table' }] });
     const existing = store.columns(target, 'item');
     const map = {};
     for (const c of cols) {
-      if (c === nameCol || c.type === '__group') continue;
+      if (c === nameCol || c.type === '__group' || c.type === '__parent' || c.type === '__name' || !C.TYPES[c.type]) continue;
       const hit = existing.find((x) => x.title.toLowerCase() === c.title.toLowerCase());
       if (hit) { map[c.index] = hit.id; continue; }
       const settings = {};
@@ -123,15 +156,16 @@ async function importTable(store, { name, bytes, workspaceId, boardId, boardName
       map[c.index] = store.addColumn(target, { title: c.title, type: c.type, settings });
     }
     const groupCol = cols.find((c) => c.type === '__group');
+    const parentCol = cols.find((c) => c.type === '__parent');
+    const byName = {};
+    const subs = [];
     const groups = Object.fromEntries(store.db.all('SELECT id, name FROM groups WHERE board_id=?', [target]).map((g) => [g.name.toLowerCase(), g.id]));
     const colRows = Object.fromEntries(store.columns(target).map((c) => [c.id, c]));
     for (const r of body) {
       const nm = String(r[nameCol.index] || '').trim();
       if (!nm) continue;
-      let gid;
       const gname = groupCol ? String(r[groupCol.index] || '').trim() || 'Imported' : 'Imported';
-      gid = groups[gname.toLowerCase()];
-      if (!gid) { gid = store.addGroup(target, { name: gname }); groups[gname.toLowerCase()] = gid; }
+      const groupFor = () => { let g = groups[gname.toLowerCase()]; if (!g) { g = store.addGroup(target, { name: gname }); groups[gname.toLowerCase()] = g; } return g; };
       const values = {};
       for (const [idx, cid] of Object.entries(map)) {
         const raw = String(r[idx] || '').trim();
@@ -142,6 +176,10 @@ async function importTable(store, { name, bytes, workspaceId, boardId, boardName
         } else if (col.type === 'people') {
           values[cid] = raw.split(/[,;]/).map((n) => n.trim()).filter(Boolean).map((n) => (store.personByName(n) || { id: store.savePerson({ name: n }) }).id);
         } else if (col.type === 'date') values[cid] = toIsoDate(raw);
+        else if (col.type === 'timeline') {
+          const ds = (raw.match(/\d{4}-\d{2}-\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4}/g) || []).map(toIsoDate).filter(Boolean);
+          if (ds.length) values[cid] = { start: ds[0], end: ds[1] || ds[0] };
+        } else if (col.type === 'checkbox') values[cid] = /^(yes|true|y|x|1|✓|done)$/i.test(raw) || null;
         else if (col.type === 'dropdown') {
           const opts = [...(col.settings.options || [])];
           values[cid] = raw.split(',').map((t) => t.trim()).filter(Boolean).map((t) => { let o = opts.find((x) => x.label === t); if (!o) { o = { id: uid('o'), label: t }; opts.push(o); } return o.id; });
@@ -149,7 +187,20 @@ async function importTable(store, { name, bytes, workspaceId, boardId, boardName
           col.settings.options = opts;
         } else values[cid] = raw;
       }
-      store.addItem(target, { groupId: gid, name: nm, values, source: 'import' });
+      const parentName = parentCol ? String(r[parentCol.index] || '').trim() : '';
+      if (parentName) { subs.push({ parentName, nm, values, groupFor }); continue; }
+      byName[nm.toLowerCase()] = store.addItem(target, { groupId: groupFor(), name: nm, values, source: 'import' });
+      created++;
+    }
+    for (const s of subs) {
+      const pid = byName[s.parentName.toLowerCase()];
+      if (pid) {
+        // Subitems keep only values for subitem columns with the same title.
+        const subCols = store.columns(target, 'sub');
+        const sv = {};
+        for (const [cid, v] of Object.entries(s.values)) { const c = colRows[cid]; const sc = c && subCols.find((x) => x.title.toLowerCase() === c.title.toLowerCase()); if (sc) sv[sc.id] = v; }
+        store.addItem(target, { parentId: pid, name: s.nm, values: sv, source: 'import' });
+      } else byName[s.nm.toLowerCase()] = store.addItem(target, { groupId: s.groupFor(), name: s.nm, values: s.values, source: 'import' });
       created++;
     }
     boardId = target;
@@ -259,4 +310,73 @@ function importBoardFile(store, text, { workspaceId, name } = {}) {
   return nb;
 }
 
-module.exports = { parseCsv, inferColumns, importTable, exportXlsx, exportCsv, exportBoardFile, importBoardFile, toIsoDate };
+module.exports = { parseCsv, inferColumns, importTable, previewImport, importSheet, readTable, exportXlsx, exportCsv, exportBoardFile, importBoardFile, toIsoDate };
+
+const SHEET_COLS = [
+  ['Name', 'text', 'Required. One row per item.', ['EXAMPLE: Write the project brief', 'EXAMPLE: Review the brief', 'EXAMPLE: Collect sign-off']],
+  ['Group', '__group', 'Items with the same group name are put together. New groups are created.', ['Planning', 'Planning', 'Approval']],
+  ['Subitem of', '__parent', 'Optional. The name of another row; this row becomes its subitem.', ['', 'EXAMPLE: Write the project brief', '']],
+  ['Status', 'status', 'Any words. Done, Complete, Closed, Won and Fixed count as done. Each different value becomes a label.', ['Done', 'In progress', 'Not started']],
+  ['Owner', 'people', 'Names, separated by commas. Unknown names are added as people.', ['Alex Morgan', 'Jordan Lee, Sam Patel', '']],
+  ['Team', 'team', 'Team names, separated by commas. Unknown teams are added.', ['Product', 'Design', 'Legal']],
+  ['Priority', 'priority', 'Any words, such as Low, Medium, High, Critical.', ['High', 'Medium', 'Low']],
+  ['Timeline', 'timeline', 'Two dates: 2026-01-05 - 2026-01-09 (or 05/01/2026 - 09/01/2026).', ['2026-01-05 - 2026-01-09', '2026-01-12 - 2026-01-14', '']],
+  ['Due date', 'date', 'One date: 2026-01-09, or day/month/year.', ['2026-01-09', '2026-01-14', '2026-01-20']],
+  ['Effort (hours)', 'numbers', 'A number. Add $, €, £ or % to a value to use it as the unit.', ['6', '2', '1']],
+  ['Done?', 'checkbox', 'Yes / No (also True/False, Y/N, X).', ['Yes', 'No', '']],
+  ['Tags', 'tags', 'Words separated by commas.', ['brief, q1', 'review', '']],
+  ['Link', 'link', 'A web address starting with http:// or https://.', ['https://example.com/brief', '', '']],
+  ['Notes', 'long_text', 'Any text.', ['Keep it to one page.', '', 'Needs Legal to sign.']],
+];
+
+/**
+ * A blank Excel sheet to fill in for import, with examples and a "How to fill
+ * this in" tab. With a boardId, its headers match that board's columns.
+ */
+async function importSheet(store, boardId) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Boardenda';
+  const ws = wb.addWorksheet('Items', { views: [{ state: 'frozen', ySplit: 1 }] });
+  let cols;
+  if (boardId) {
+    const B = store.getBoard(boardId);
+    const usable = B.columns.filter((c) => c.scope === 'item' && !C.isComputed(c.type) && !['button', 'files', 'doc', 'vote', 'time_tracking', 'connect', 'dependency'].includes(c.type));
+    const sample = B.items[0];
+    const ctx = { people: Object.fromEntries(B.people.map((p) => [p.id, p])), teams: Object.fromEntries((B.teams || []).map((t) => [t.id, t])) };
+    const fmt = (c, v) => (c.type === 'timeline' && v ? `${v.start} - ${v.end}` : C.textOf(c, v, ctx));
+    cols = [
+      [B.board.item_noun ? B.board.item_noun[0].toUpperCase() + B.board.item_noun.slice(1) : 'Name', 'text', 'Required.', [sample ? `EXAMPLE: ${sample.name}` : 'EXAMPLE: First item']],
+      ['Group', '__group', `Existing groups: ${B.groups.filter((g) => !g.archived).map((g) => g.name).join(', ')}. Other names create a group.`, [sample ? (B.groups.find((g) => g.id === sample.group_id) || {}).name || '' : '']],
+      ['Subitem of', '__parent', 'Optional. The name of another row; this row becomes its subitem.', ['']],
+      ...usable.map((c) => {
+        const base = SHEET_COLS.find((x) => x[1] === c.type);
+        const labels = C.LABEL_TYPES.has(c.type) ? (c.settings.labels || []).map((l) => l.label) : c.type === 'dropdown' ? (c.settings.options || []).map((o) => o.label) : null;
+        return [c.title, c.type, labels ? `One of: ${labels.join(', ')}` : base ? base[2] : 'Any text.', [sample ? fmt(c, sample.values[c.id]) : ''], labels];
+      }),
+    ];
+  } else cols = SHEET_COLS;
+  ws.columns = cols.map(([title, type]) => ({ header: title, key: title, width: type === 'long_text' ? 36 : type === 'text' ? 34 : type === 'timeline' ? 26 : 16 }));
+  const head = ws.getRow(1);
+  head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF5A55D6' } };
+  const n = Math.max(...cols.map((c) => c[3].length));
+  for (let i = 0; i < n; i++) {
+    const r = ws.addRow(cols.map((c) => (c[3][i] != null ? c[3][i] : '')));
+    r.font = { italic: true, color: { argb: 'FF8A89A3' } };
+  }
+  cols.forEach((c, i) => {
+    const list = c[4] || (c[1] === 'status' && !boardId ? ['Not started', 'In progress', 'Blocked', 'Done'] : c[1] === 'priority' && !boardId ? ['Low', 'Medium', 'High', 'Critical'] : c[1] === 'checkbox' ? ['Yes', 'No'] : null);
+    if (!list || !list.length || list.join(',').length > 250) return;
+    const letter = ws.getColumn(i + 1).letter;
+    for (let r = 2; r <= 500; r++) ws.getCell(`${letter}${r}`).dataValidation = { type: 'list', allowBlank: true, showErrorMessage: false, formulae: [`"${list.join(',')}"`] };
+  });
+  const help = wb.addWorksheet('How to fill this in');
+  help.columns = [{ header: 'Column', key: 'c', width: 22 }, { header: 'What to put in it', key: 'd', width: 90 }];
+  help.getRow(1).font = { bold: true };
+  help.addRow({ c: 'Rows', d: 'One row per item. Rows whose name starts with "EXAMPLE:" are skipped, so you can leave or delete them.' });
+  help.addRow({ c: 'Headers', d: 'Keep the header names: they decide each column’s type. You can delete columns you do not need or add your own; new ones are guessed from their values.' });
+  help.addRow({ c: 'Before importing', d: 'Boardenda shows a preview where you can change any column’s type or skip it.' });
+  help.addRow({});
+  for (const c of cols) help.addRow({ c: c[0], d: c[2] });
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}

@@ -609,3 +609,25 @@ td.bad, .bad { color: var(--bad); } td.b, .b { font-weight: 700; }
 /* Menu labels never shrink to nothing; long hints are cut instead. */
 .mi > .grow { flex: 1 0 auto; }
 .mi > .faint.small { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Import wizard */
+.tpl-exp { position: absolute; top: 10px; right: 38px; background: none; border: 0; cursor: pointer; color: var(--faint, #a3a2bb); padding: 4px; border-radius: 6px; opacity: 0; }
+.user-tpl:hover .tpl-exp, .tpl-exp:focus { opacity: 1; }
+.tpl-exp:hover { color: var(--brand); background: var(--hover, rgba(0,0,0,.05)); }
+.import-err { padding: 16px; border-radius: 10px; background: rgba(216,58,82,.08); color: #b4233c; }
+.import-note { display: flex; gap: 6px; align-items: center; padding: 6px 10px; border-radius: 8px; background: var(--brand-soft); }
+.chip.warn { background: rgba(240,99,78,.15); color: #c0392b; }
+.import-grid-wrap { max-height: 52vh; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.import-grid { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.import-grid th { position: sticky; top: 0; z-index: 1; background: var(--panel, #fff); padding: 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; min-width: 140px; }
+.import-grid th:first-child, .import-grid td:first-child { min-width: 28px; width: 28px; }
+.import-grid td { border-bottom: 1px solid var(--line); padding: 0; }
+.import-grid .skip { opacity: .45; }
+.import-grid tr.ex td { opacity: .45; text-decoration: line-through; }
+.ig-title { width: 100%; font-weight: 600; border: 1px solid transparent; border-radius: 6px; padding: 3px 5px; background: transparent; color: inherit; font: inherit; }
+.ig-title:hover, .ig-title:focus { border-color: var(--line); }
+.ig-type { width: 100%; margin-top: 4px; font-size: 12px; padding: 3px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg, #fff); color: inherit; }
+.ig-cell { width: 100%; border: 1px solid transparent; padding: 6px; background: transparent; color: inherit; font: inherit; }
+.ig-cell:focus { border-color: var(--brand); outline: none; background: var(--panel, #fff); }
+.ig-del { border: 0; background: none; cursor: pointer; color: var(--faint, #a3a2bb); font-size: 16px; padding: 4px 6px; }
+.ig-del:hover { color: #d83a52; }

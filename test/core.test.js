@@ -462,3 +462,80 @@ test('recurring items and item templates', async () => {
   api.deleteItemTemplate(tid);
   assert.equal(api.itemTemplates(web.id).length, 0);
 });
+
+test('import and export templates: template file, board file, CSV', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const ws = api.bootstrap().workspaces[0];
+  const web = ws.boards.find((b) => b.name === 'Website relaunch');
+  const tid = api.saveAsTemplate(web.id, { name: 'Launch plan', description: 'Phases', withItems: true });
+  const file = api.exportTemplate(tid);
+  assert.match(file, /boardenda\.template/);
+
+  const other = await fresh();
+  const t1 = await other.importTemplate({ name: 'Launch plan.boardenda-template.json', text: file });
+  const T1 = other.userTemplates().find((t) => t.id === t1);
+  assert.equal(T1.name, 'Launch plan');
+  assert.equal(T1.description, 'Phases');
+  const b1 = other.createBoard({ template: `user:${t1}` });
+  assert.ok(other.getBoard(b1).items.length >= 6);
+
+  const t2 = await other.importTemplate({ name: 'web.boardenda.json', text: api.exportBoardFile(web.id), withItems: false });
+  assert.equal(other.getBoard(other.createBoard({ template: `user:${t2}` })).items.length, 0);
+
+  const before = other.bootstrap().workspaces.flatMap((w) => w.boards).length;
+  const csv = 'Name,Status,Owner,Due date,Group\nWrite brief,Done,Alex,2026-01-05,Plan\nReview,Working on it,Sam,2026-01-09,Do\n';
+  const t3 = await other.importTemplate({ name: 'Content process.csv', bytes: Buffer.from(csv), withItems: true });
+  assert.equal(other.bootstrap().workspaces.flatMap((w) => w.boards).length, before, 'scratch board removed');
+  assert.equal(other.trash().length, 0, 'scratch board not left in the trash');
+  const B3 = other.getBoard(other.createBoard({ template: `user:${t3}` }));
+  assert.equal(B3.board.name, 'Content process');
+  assert.equal(B3.items.length, 2);
+  await assert.rejects(other.importTemplate({ name: 'x.json', text: '{"a":1}' }), /not a Boardenda/);
+  other.renameTemplate(t3, { name: 'Content flow' });
+  assert.ok(other.userTemplates().some((t) => t.name === 'Content flow'));
+});
+
+test('import: blank sheet, preview, column overrides, subitems, Word and text', async () => {
+  const api = await fresh();
+  const ExcelJS = require('exceljs');
+  const sheet = await api.importSheet();
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(sheet);
+  assert.equal(wb.worksheets[0].name, 'Items');
+  assert.ok(wb.worksheets.some((w) => w.name === 'How to fill this in'));
+  await assert.rejects(api.importTable({ name: 'blank.xlsx', bytes: sheet }), /Only EXAMPLE rows/);
+  // Fill in two rows plus a subitem
+  const ws = wb.worksheets[0];
+  const hdr = ws.getRow(1).values.slice(1);
+  const at = (h) => hdr.indexOf(h) + 1;
+  const add = (vals) => { const r = ws.addRow([]); for (const [h, v] of Object.entries(vals)) r.getCell(at(h)).value = v; };
+  add({ Name: 'Kickoff call', Group: 'Week 1', Status: 'Done', Owner: 'Alex Morgan', Timeline: '2026-01-05 - 2026-01-07', 'Done?': 'Yes' });
+  add({ Name: 'Send recap', 'Subitem of': 'Kickoff call', Status: 'Not started' });
+  add({ Name: 'Pilot', Group: 'Week 2', Priority: 'High', 'Effort (hours)': '4' });
+  const bytes = Buffer.from(await wb.xlsx.writeBuffer());
+  const pv = await api.previewImport('filled.xlsx', bytes);
+  assert.equal(pv.examples, 3);
+  const types = Object.fromEntries(pv.columns.map((c) => [c.title, c.type]));
+  assert.equal(types.Name, '__name');
+  assert.equal(types['Subitem of'], '__parent');
+  assert.equal(types.Timeline, 'timeline');
+  const r = await api.importTable({ name: 'filled.xlsx', bytes, columns: pv.columns.map((c) => (c.title === 'Notes' ? { ...c, type: 'skip' } : c)) });
+  const B = api.getBoard(r.boardId);
+  assert.equal(B.items.length, 2);
+  assert.equal(B.subitems.length, 1);
+  const tl = B.columns.find((c) => c.title === 'Timeline');
+  assert.deepEqual(B.items.find((i) => i.name === 'Kickoff call').values[tl.id], { start: '2026-01-05', end: '2026-01-07' });
+  assert.ok(!B.columns.some((c) => c.title === 'Notes'), 'skipped column not created');
+  assert.deepEqual(B.groups.map((g) => g.name).sort(), ['Week 1', 'Week 2']);
+  // A board's own sheet uses its column titles
+  const own = new ExcelJS.Workbook();
+  await own.xlsx.load(await api.importSheet(r.boardId));
+  assert.ok(own.worksheets[0].getRow(1).values.includes('Timeline'));
+  // Text lists and outlines
+  const { linesToRows } = require('../src/core/extract');
+  assert.deepEqual(linesToRows(['- Draft agenda - Alex - 2026-03-02', '- Confirm attendees - Sam - 2026-03-03']).slice(1), [['Draft agenda', 'Alex', '2026-03-02'], ['Confirm attendees', 'Sam', '2026-03-03']]);
+  assert.deepEqual(linesToRows(['Task\tOwner', 'A\tAlex', 'B\tSam'])[0], ['Task', 'Owner']);
+  const txt = await api.previewImport('list.txt', Buffer.from('Plan venue\nSend invites\n'));
+  assert.equal(txt.total, 2);
+});

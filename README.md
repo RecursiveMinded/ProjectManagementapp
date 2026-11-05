@@ -83,7 +83,10 @@ The feature set was mapped from the public help documentation of a leading hoste
 - Windows notifications and an optional daily digest.
 
 **Data**
-- Import from Excel or CSV. Column types are inferred and new groups are created from a "Group" column.
+- Import from Excel, CSV, Word, PDF, plain text or a picture. Pictures and photos of printed lists are read with OCR on this PC; Word tables are used directly, and Word lists become items with headings as groups.
+- Every import opens a preview: fix any cell, rename columns, choose each column's type (or which column holds names, groups or parent items), and leave rows out before anything is created.
+- A blank Excel import sheet (New board, or the arrow next to New on a board) has the right headers, drop-down lists and EXAMPLE rows; EXAMPLE rows are skipped on import. A "Subitem of" column makes subitems.
+- Templates can be saved as a file and imported on another PC, and a template can also be made from a board file or an Excel sheet.
 - Export to Excel or CSV, and to a portable `.board.json` board file.
 - Print or save any board view or doc as PDF.
 - Daily automatic backups with one-click restore, and a movable data folder.
@@ -119,7 +122,7 @@ npm run icons        # redraw build/icon.png and build/icon.ico (needs Python + 
 
 | Path | What it holds |
 | --- | --- |
-| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `api.js` (the API the UI calls) |
+| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `api.js` (the API the UI calls) |
 | `src/ui/` | Preact + htm interface, bundled by esbuild into `dist/ui` |
 | `electron/` | Window, tray, scheduler, Windows notifications, native file dialogs, auto-update |
 | `dev/server.js` | The same API over HTTP, for browser testing |

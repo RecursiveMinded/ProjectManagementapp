@@ -229,6 +229,17 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.modal button:has-text("Create board")');
       await page.waitForSelector('.board-title:has-text("QA setup")');
     });
+    await step('import wizard from a text file', async () => {
+      await page.click('.side .sect button[title="New board"]');
+      const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('.modal button:has-text("Import a file")')]);
+      await fc.setFiles({ name: 'Call list.txt', mimeType: 'text/plain', buffer: Buffer.from('Task\tOwner\tDue\nEXAMPLE: sample row\tSam\t2026-01-01\nCall Acme\tDana\t2026-12-01\nSend quote\tLee\t2026-12-03\n') });
+      await page.waitForSelector('.import-grid');
+      await page.waitForSelector('.modal button:has-text("Import 2 items")');
+      await page.fill('.import-grid tbody tr >> nth=1 >> .ig-cell >> nth=0', 'Call Acme Ltd');
+      await page.click('.modal button:has-text("Import 2 items")');
+      await page.waitForSelector('.board-title:has-text("Call list")');
+      await page.waitForSelector('text=Call Acme Ltd');
+    });
     await step('keyboard shortcuts', async () => {
       await page.click('.side .nav a:has-text("Home")');
       await page.keyboard.press('?');

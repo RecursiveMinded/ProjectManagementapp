@@ -114,7 +114,14 @@ function runSmokeTest() {
   win.webContents.on('did-finish-load', async () => {
     try {
       const r = await win.webContents.executeJavaScript(`new Promise((res) => { const t = setInterval(() => { if (window.__bdSelfTest && document.querySelector('.side')) { clearInterval(t); window.__bdSelfTest().then(res, (e) => res({ ok: false, error: String(e) })); } }, 200); })`);
-      finish(r.ok ? 0 : 1, JSON.stringify(r));
+      if (!r.ok) return finish(1, JSON.stringify(r));
+      // Readers used by Import: OCR on a drawn picture, and a PDF of this window.
+      const png = await win.webContents.executeJavaScript(`(() => { const c = document.createElement('canvas'); c.width = 900; c.height = 160; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 900, 160); g.fillStyle = '#000'; g.font = '36px Arial'; g.fillText('Call Acme', 30, 60); g.fillText('Dana', 420, 60); g.fillText('Send quote', 30, 120); g.fillText('Lee', 420, 120); return c.toDataURL('image/png').split(',')[1]; })()`);
+      const ocr = await api.previewImport('smoke.png', Buffer.from(png, 'base64'));
+      const ocrText = JSON.stringify([ocr.header, ...ocr.rows]);
+      if (!/Acme/i.test(ocrText)) return finish(1, `OCR read ${ocrText}`);
+      const pdf = await api.previewImport('smoke.pdf', await win.webContents.printToPDF({}));
+      finish(0, `${JSON.stringify(r)} ocr=${ocr.confidence}% pdfRows=${pdf.total}`);
     } catch (e) { finish(1, e.message); }
   });
 }

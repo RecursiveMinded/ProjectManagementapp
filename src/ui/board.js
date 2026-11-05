@@ -10,6 +10,7 @@ import { TimelineView } from './views/timeline.js';
 import { CalendarView, ChartView, WorkloadView, FormView, FilesView } from './views/more.js';
 import { AutomationCenter } from './automations-ui.js';
 import { ActivityLog } from './item.js';
+import { ImportWizard, pickFile, IMPORT_ACCEPT, downloadImportSheet } from './importer.js';
 
 export function BoardPage({ boardId, openItem, refreshShell, nav, version }) {
   const [B, setB] = useState(null);
@@ -204,6 +205,7 @@ function Toolbar({ B, cfg, setCfg, view, reload, count }) {
   const [na, openN, closeN] = useAnchor();
   const [ca, openC, closeC] = useAnchor();
   const [delTpl, setDelTpl] = useState(false);
+  const [impFile, setImpFile] = useState(null);
   const filterBtn = useRef(null);
   useEffect(() => { if (cfg.showFilter && filterBtn.current) { openF({ currentTarget: filterBtn.current }); setCfg({ ...cfg, showFilter: false }); } }, [cfg.showFilter]);
   const nFilters = (cfg.filters || []).filter((f) => f.column).length;
@@ -218,11 +220,13 @@ function Toolbar({ B, cfg, setCfg, view, reload, count }) {
       <button class="btn primary icon" aria-label="More new options" onClick=${openN}><${Icon} name="chev" size="14" /></button></div>
     ${na ? html`<${Menu} anchor=${na} onClose=${closeN} items=${[
       { label: 'New group of items', icon: 'group', onClick: () => call('addGroup', B.board.id, { top: true }).then(reload, toastError) },
-      { label: 'Import items from Excel or CSV', icon: 'upload', onClick: () => importInto(B, reload) },
+      { label: 'Import items…', icon: 'upload', hint: 'Excel, Word, PDF, picture', onClick: () => pickFile(IMPORT_ACCEPT).then((f) => f && setImpFile(f)) },
+      { label: 'Download import sheet', icon: 'download', hint: 'blank, with examples', onClick: () => downloadImportSheet(B.board.id, B.board.name) },
       ...((B.itemTemplates || []).length ? [{ sep: true }, { head: 'From an item template' },
         ...B.itemTemplates.map((t) => ({ label: t.name, icon: 'spark', onClick: () => call('addItemFromTemplate', t.id, { groupId: firstGroup && firstGroup.id }).then(() => { toast(`Added “${t.name}”`); reload(); }, toastError) })),
         { label: 'Delete an item template…', icon: 'trash', onClick: () => setDelTpl(true) }] : []),
     ]} />` : null}
+    ${impFile ? html`<${ImportWizard} file=${impFile} boardId=${B.board.id} boardName=${B.board.name} onClose=${() => setImpFile(null)} onDone=${() => { setImpFile(null); reload(); }} />` : null}
     ${delTpl ? html`<${Modal} title="Item templates" onClose=${() => setDelTpl(false)}>
       ${(B.itemTemplates || []).map((t) => html`<div class="row" key=${t.id} style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="grow">${t.name}</span>
         <button class="btn small ghost" onClick=${() => call('deleteItemTemplate', t.id).then(reload, toastError)}><${Icon} name="trash" size="14" /> Delete</button></div>`)}
@@ -252,22 +256,6 @@ function Toolbar({ B, cfg, setCfg, view, reload, count }) {
         .map((c) => ({ label: c.title, icon: C.TYPES[c.type].icon, active: cfg.groupBy === c.id, onClick: () => setCfg({ ...cfg, groupBy: c.id }) })),
     ]} />` : null}
   </div>`;
-}
-
-async function importInto(B, reload) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.csv,.xlsx,.tsv,.txt';
-  input.onchange = async () => {
-    const f = input.files[0];
-    if (!f) return;
-    try {
-      const r = await call('importTable', { name: f.name, bytes: new Uint8Array(await f.arrayBuffer()), boardId: B.board.id });
-      toast(`Imported ${r.created} items`);
-      reload();
-    } catch (e) { toastError(e); }
-  };
-  input.click();
 }
 
 function ruleValue(B, cols, f, setF) {

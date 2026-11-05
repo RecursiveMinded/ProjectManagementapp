@@ -159,6 +159,46 @@ class AppApi {
   }
   userTemplates() { return this.db.all('SELECT id, name, description, with_items, created_at FROM user_templates ORDER BY created_at DESC'); }
   deleteTemplate(id) { this.db.run('DELETE FROM user_templates WHERE id=?', [id]); }
+  /** A template as a file you can share: open it with Import template on another PC. */
+  exportTemplate(id) {
+    const t = this.db.get('SELECT * FROM user_templates WHERE id=?', [id]);
+    if (!t) throw new Error('That template no longer exists');
+    return JSON.stringify({ format: 'boardenda.template', version: 1, name: t.name, description: t.description, withItems: !!t.with_items, board: parseJson(t.payload, {}) }, null, 1);
+  }
+  renameTemplate(id, { name, description } = {}) {
+    const t = this.db.get('SELECT * FROM user_templates WHERE id=?', [id]);
+    if (!t) throw new Error('That template no longer exists');
+    this.db.run('UPDATE user_templates SET name=?, description=? WHERE id=?', [String(name || t.name).trim() || t.name, description != null ? description : t.description, id]);
+  }
+  /**
+   * Add a template from a file: a template file, a board file, or an Excel/CSV
+   * sheet (its columns become the template; rows are kept when withItems).
+   */
+  async importTemplate({ name: fileName = '', bytes, text, templateName, description, withItems = true } = {}) {
+    const raw = text != null ? String(text) : null;
+    const isJson = /\.json$/i.test(fileName) || (raw && raw.trim().startsWith('{'));
+    let payload, tName, tDesc = description || '', keepItems = !!withItems;
+    if (isJson) {
+      const f = parseJson(raw != null ? raw : Buffer.from(bytes).toString('utf8'), null);
+      if (f && f.format === 'boardenda.template') {
+        payload = f.board; tName = f.name; tDesc = description != null ? description : f.description || ''; keepItems = !!f.withItems && withItems;
+      } else if (f && f.format === 'boardenda.board') {
+        payload = f; tName = f.board && f.board.name;
+      } else throw new Error('This file is not a Boardenda template or board file');
+    } else {
+      // Build a scratch board from the sheet, keep its structure, then remove it.
+      const ws = (this.db.get('SELECT id FROM workspaces ORDER BY position LIMIT 1') || {}).id || this.store.saveWorkspace({ name: 'Main workspace' });
+      const r = await io.importTable(this.store, { name: fileName || 'Template.csv', bytes, workspaceId: ws });
+      try { payload = JSON.parse(io.exportBoardFile(this.store, r.boardId)); } finally { this.store.deleteBoard(r.boardId, { trash: false }); }
+      tName = String(fileName).replace(/\.[^.]+$/, '');
+    }
+    if (!payload || !payload.board || !Array.isArray(payload.columns)) throw new Error('The template has no board structure');
+    if (!keepItems) { payload.items = []; payload.updates = []; }
+    const id = uid('u');
+    this.db.run('INSERT INTO user_templates(id,name,description,with_items,payload,created_at) VALUES(?,?,?,?,?,?)',
+      [id, String(templateName || tName || 'Imported template').trim(), tDesc, keepItems && (payload.items || []).length ? 1 : 0, JSON.stringify(payload), now()]);
+    return id;
+  }
   setBoardFolder(boardId, folder) { return this.store.updateBoard(boardId, { folder: String(folder || '').trim() }); }
   favorites() { const r = this.db.get("SELECT value FROM settings WHERE key='favorites'"); return parseJson(r && r.value, []); }
   toggleFavorite(kind, id) {
@@ -534,6 +574,8 @@ class AppApi {
 
   // ----------------------------------------------------------- import/export
   importTable(args) { return io.importTable(this.store, args); }
+  previewImport(name, bytes) { return io.previewImport(name, bytes); }
+  async importSheet(boardId) { return io.importSheet(this.store, boardId); }
   async exportXlsx(boardIds) { return io.exportXlsx(this.store, Array.isArray(boardIds) ? boardIds : [boardIds]); }
   exportCsv(boardId) { return io.exportCsv(this.store, boardId); }
   exportBoardFile(boardId) { return io.exportBoardFile(this.store, boardId); }

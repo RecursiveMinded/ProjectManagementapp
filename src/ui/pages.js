@@ -4,6 +4,8 @@ import { html, Icon, Modal, toastError, toast, Spinner, useLoad, relTime, shortD
 import { call } from './api.js';
 import { C } from './model.js';
 import { LabelPill } from './cells.js';
+import { ImportWizard, pickFile, IMPORT_ACCEPT, downloadImportSheet } from './importer.js';
+import { saveAs } from './api.js';
 
 const TPL_STYLE = {
   blank: ['#5e6b80', 'table'], project: ['#5a55d6', 'timeline'], tasks: ['#13a89e', 'checkbox'], crm: ['#2bb673', 'chart'], bugs: ['#f0634e', 'warn'], content: ['#f28a2e', 'calendar'],
@@ -26,37 +28,48 @@ export function NewBoard({ boot, onClose, onCreated, workspaceId }) {
       onCreated(id);
     } catch (e) { toastError(e); } finally { setBusy(false); }
   };
-  const importFile = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.csv,.xlsx,.tsv,.txt,.json';
-    input.onchange = async () => {
-      const f = input.files[0];
-      if (!f) return;
-      try {
-        const bytes = new Uint8Array(await f.arrayBuffer());
-        let id;
-        if (/\.json$/i.test(f.name)) id = await call('importBoardFile', new TextDecoder().decode(bytes), { workspaceId: ws });
-        else { const r = await call('importTable', { name: f.name, bytes, workspaceId: ws }); id = r.boardId; toast(`Imported ${plural(r.created, 'item')}`); }
-        onCreated(id);
-      } catch (e) { toastError(e); }
-    };
-    input.click();
+  const [impFile, setImpFile] = useState(null);
+  const importFile = async () => {
+    const f = await pickFile(IMPORT_ACCEPT + ',.json');
+    if (!f) return;
+    if (!/\.json$/i.test(f.name)) { setImpFile(f); return; }
+    try {
+      const text = new TextDecoder().decode(f.bytes);
+      if (/"format"\s*:\s*"boardenda\.template"/.test(text.slice(0, 400))) { await addTemplate(f); return; }
+      onCreated(await call('importBoardFile', text, { workspaceId: ws }));
+    } catch (e) { toastError(e); }
   };
+  const addTemplate = async (f) => {
+    try {
+      const id = await call('importTemplate', { name: f.name, bytes: f.bytes });
+      const list = await call('userTemplates');
+      setUtpls(list);
+      setTpl(`user:${id}`);
+      toast('Template added. Pick it below and create a board');
+    } catch (e) { toastError(e); }
+  };
+  const importTpl = async () => { const f = await pickFile('.json,.xlsx,.csv,.tsv'); if (f) addTemplate(f); };
+  const exportTpl = async (t) => {
+    try { await saveAs(`${t.name}.boardenda-template.json`, await call('exportTemplate', t.id), [{ name: 'Boardenda template', extensions: ['json'] }]); } catch (e) { toastError(e); }
+  };
+  if (impFile) return html`<${ImportWizard} file=${impFile} workspaces=${boot.workspaces} workspaceId=${ws} onClose=${() => setImpFile(null)} onDone=${(id) => onCreated(id)} />`;
   return html`<${Modal} title="New board" onClose=${onClose} wide>
-    ${(boot.userTemplates || []).length ? html`<div class="small muted" style="margin-bottom:6px">Built in</div>` : null}
+    ${utpls.length ? html`<div class="small muted" style="margin-bottom:6px">Built in</div>` : null}
     <div class="grid c3">${Object.entries(boot.catalog.templates).map(([k, t]) => html`<button key=${k} class="tpl" style=${tpl === k ? 'border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)' : ''} onClick=${() => setTpl(k)}>
       <span class="ic" style=${`background:${TPL_STYLE[k][0]}`}><${Icon} name=${TPL_STYLE[k][1]} /></span><b>${t.name}</b><span class="small muted">${t.description}</span></button>`)}</div>
     ${utpls.length ? html`<div class="small muted mt2" style="margin-bottom:6px">Your templates</div>
       <div class="grid c3">${utpls.map((t) => html`<div key=${t.id} role="button" tabindex="0" class="tpl user-tpl" style=${tpl === `user:${t.id}` ? 'border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)' : ''} onClick=${() => setTpl(`user:${t.id}`)}>
         <span class="ic" style="background:#5b5bd6"><${Icon} name="spark" /></span><b>${t.name}</b><span class="small muted">${t.description || (t.with_items ? 'Structure and items' : 'Structure only')}</span>
+        <button class="tpl-exp" title="Save template as a file" aria-label=${`Export template ${t.name}`} onClick=${(e) => { e.stopPropagation(); exportTpl(t); }}><${Icon} name="download" size=${14} /></button>
         <button class="tpl-del" title="Delete template" aria-label=${`Delete template ${t.name}`} onClick=${async (e) => { e.stopPropagation(); if (await ask({ title: 'Delete template?', body: `“${t.name}” will no longer be offered. Boards made from it are not affected.` })) { try { await call('deleteTemplate', t.id); setUtpls(utpls.filter((x) => x.id !== t.id)); if (tpl === `user:${t.id}`) setTpl('blank'); } catch (err) { toastError(err); } } }}><${Icon} name="trash" size=${14} /></button></div>`)}</div>` : null}
     <div class="grid c2 mt2">
       <label class="field">Board name<input class="input" placeholder=${tplName} value=${name} onInput=${(e) => setName(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Enter') create(); }} /></label>
       <label class="field">Workspace<select class="input" value=${ws} onChange=${(e) => setWs(e.target.value)}>${boot.workspaces.map((w) => html`<option value=${w.id}>${w.name}</option>`)}${!boot.workspaces.length ? html`<option value="">Main workspace</option>` : null}</select></label>
     </div>
     ${tpl !== 'blank' && !tpl.startsWith('user:') ? html`<label class="check mt2"><input type="checkbox" checked=${sample} onChange=${(e) => setSample(e.target.checked)} /> Include example items</label>` : null}
-    <div class="row mt2"><button class="btn ghost" onClick=${importFile}><${Icon} name="upload" /> Import from Excel, CSV or a board file</button><span class="grow"></span>
+    <div class="row wrap mt2" style="gap:6px"><button class="btn ghost" title="Excel, CSV, Word, PDF, text, a picture (read with OCR) or a board file" onClick=${importFile}><${Icon} name="upload" /> Import a file…</button>
+      <button class="btn ghost" title="A template file, a board file, or an Excel or CSV sheet" onClick=${importTpl}><${Icon} name="spark" /> Import template…</button>
+      <button class="btn ghost" onClick=${() => downloadImportSheet(null)}><${Icon} name="download" /> Blank import sheet</button><span class="grow"></span>
       <button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${busy} onClick=${create}>Create board</button></div>
   </${Modal}>`;
 }

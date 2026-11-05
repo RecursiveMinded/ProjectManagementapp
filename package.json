@@ -1,7 +1,7 @@
 {
   "name": "boardenda",
   "productName": "Boardenda",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Local-first work management for Windows: boards, groups and items with typed columns, table, kanban, timeline, calendar, chart, workload and form views, automations, dashboards and reminders.",
   "author": "Boardenda",
   "license": "UNLICENSED",
@@ -17,9 +17,13 @@
     "dist": "npm run build:ui && electron-builder --win --x64 --publish never"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "electron-updater": "6.8.10",
     "exceljs": "^4.4.0",
-    "sql.js": "^1.15.2"
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^5.4.624",
+    "sql.js": "^1.15.2",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "electron": "^37.10.3",
@@ -31,11 +35,56 @@
   "build": {
     "appId": "com.boardenda.app",
     "productName": "Boardenda",
-    "copyright": "Copyright © 2026",
-    "directories": { "output": "release", "buildResources": "build" },
-    "files": ["electron/**", "src/core/**", "dist/ui/**", "package.json", "!**/*.map"],
+    "copyright": "Copyright \u00a9 2026",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "src/core/**",
+      "dist/ui/**",
+      "package.json",
+      "!**/*.map",
+      "!node_modules/pdfjs-dist/web/**",
+      "!node_modules/pdfjs-dist/build/**",
+      "!node_modules/pdfjs-dist/legacy/web/**",
+      "!node_modules/pdfjs-dist/types/**",
+      "!node_modules/pdfjs-dist/image_decoders/**",
+      "!node_modules/pdfjs-dist/legacy/image_decoders/**"
+    ],
+    "asarUnpack": [
+      "node_modules/tesseract.js/**",
+      "node_modules/tesseract.js-core/**",
+      "node_modules/@tesseract.js-data/**",
+      "node_modules/wasm-feature-detect/**",
+      "node_modules/node-fetch/**",
+      "node_modules/bmp-js/**",
+      "node_modules/is-url/**",
+      "node_modules/zlibjs/**",
+      "node_modules/regenerator-runtime/**",
+      "node_modules/whatwg-url/**",
+      "node_modules/tr46/**",
+      "node_modules/webidl-conversions/**",
+      "node_modules/is-electron/**",
+      "node_modules/idb-keyval/**",
+      "node_modules/opencollective-postinstall/**"
+    ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico"
     },
     "nsis": {
@@ -47,8 +96,17 @@
       "shortcutName": "Boardenda",
       "artifactName": "Boardenda-Setup-${version}.${ext}"
     },
-    "portable": { "artifactName": "Boardenda-Portable-${version}.${ext}" },
-    "publish": [{ "provider": "github", "owner": "RecursiveMinded", "repo": "ProjectManagementapp", "releaseType": "release" }],
+    "portable": {
+      "artifactName": "Boardenda-Portable-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "RecursiveMinded",
+        "repo": "ProjectManagementapp",
+        "releaseType": "release"
+      }
+    ],
     "compression": "maximum"
   }
 }
