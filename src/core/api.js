@@ -378,11 +378,8 @@ class AppApi {
   // ------------------------------------------------------- quick capture
   aiStatus() { return this.capture.aiStatus(); }
   setAi(cfg) { return this.capture.setAi(cfg); }
-  async testAi() {
-    const r = await this.capture.read({ text: 'Call with Test Co tomorrow 10am. Sam to send the quote by Friday.' }, async () => '');
-    if (r.mode !== 'claude') throw new Error(r.notes[r.notes.length - 1] || 'Claude is not set up');
-    return { ok: true, records: r.records.length };
-  }
+  testAi() { return this.capture.aiTest(); }
+  localModels() { return this.capture.localModels(); }
   /** Read pasted or dropped notes into proposed records for review. */
   readNotes({ text, files } = {}) { return this.capture.read({ text, files: files || [] }, (name, bytes) => this.notesText(name, bytes)); }
   applyNotes(args) { return this.capture.apply(args); }

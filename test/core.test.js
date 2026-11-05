@@ -637,3 +637,37 @@ test('quick capture: built-in reader proposes records, flags unsure ones, and cr
   const meeting = api.listMeetings({ q: 'quarterly billing' })[0];
   assert.equal(meeting.actions.length, 2);
 });
+
+test('quick capture: reads notes with a local Ollama model, and only local servers are allowed', async () => {
+  const http = require('http');
+  let body = null;
+  const srv = http.createServer((req, res) => {
+    let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      if (req.url === '/api/tags') return res.end(JSON.stringify({ models: [{ name: 'nomic-embed-text' }, { name: 'llama3.2:3b' }] }));
+      body = JSON.parse(b);
+      const rec = { kind: 'item', title: 'Fix export crash', board: 'Bug tracker', group: '', existingItem: '', customer: '', date: '', time: '', owner: 'Sam', due: 'tomorrow', fields: [], notes: '', meetingIndex: -1, confidence: 0.9, question: '' };
+      res.end(JSON.stringify({ message: { role: 'assistant', content: JSON.stringify({ records: [rec] }) }, done: true }));
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const api = await fresh();
+    api.loadSample();
+    assert.throws(() => api.setAi({ localUrl: 'https://example.com' }), /privacy/);
+    api.setAi({ provider: 'ollama', localUrl: `http://127.0.0.1:${srv.address().port}` });
+    assert.equal((await api.testAi()).model, 'llama3.2:3b', 'prefers an installed Llama model');
+    const r = await api.readNotes({ text: '- export crashes, Sam to fix tomorrow' });
+    assert.equal(r.mode, 'local');
+    assert.equal(body.model, 'llama3.2:3b');
+    assert.equal(body.format.type, 'object', 'asks Ollama for the record schema');
+    const [rec] = r.records;
+    assert.equal(api.getBoard(rec.boardId).board.name, 'Bug tracker');
+    assert.equal(rec.due, addDays(today(), 1));
+    assert.ok(rec.owner);
+    srv.close();
+    const fb = await api.readNotes({ text: '- export crashes' });
+    assert.equal(fb.mode, 'basic', 'falls back to the built-in reader when the server is down');
+    assert.match(fb.notes.join(' '), /local model/);
+  } finally { srv.close(); }
+});

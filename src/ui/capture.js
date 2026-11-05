@@ -1,6 +1,6 @@
 // Quick capture: drop or paste rough notes, review what they become (items,
 // calls, action items, updates), map anything unsure, then create it all.
-import { useState, useRef } from 'preact/hooks';
+import { useState, useRef, useEffect } from 'preact/hooks';
 import { html, Icon, Modal, Spinner, toast, toastError, plural } from './lib.js';
 import { call } from './api.js';
 
@@ -55,6 +55,20 @@ function ItemField({ r, set, need }) {
       <span class="clip">${x.name}</span><span class="grow"></span><span class="small faint">${x.boardName}</span></button>`)}</div>` : null}</label>`;
 }
 
+function readerName(ai) {
+  const p = (ai && ai.provider) || 'auto';
+  if (p === 'off') return 'The built-in reader';
+  if (p === 'anthropic' || (p === 'auto' && ai.hasKey)) return 'Claude reads them and';
+  if (p === 'ollama' || p === 'openai') return 'Your local model reads them and';
+  return 'Your local Ollama model (or the built-in reader if Ollama is not running) reads them and';
+}
+function readerHint(ai) {
+  const p = (ai && ai.provider) || 'auto';
+  if (p === 'off') return 'Built-in reader. Turn on a model in Settings > AI.';
+  if (p === 'anthropic' || (p === 'auto' && ai.hasKey)) return 'Claude will read these notes.';
+  return 'A model on this PC will read these notes; it can take up to a minute. Nothing leaves this PC.';
+}
+
 export function CaptureModal({ boot, onClose, onDone }) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]);
@@ -63,6 +77,8 @@ export function CaptureModal({ boot, onClose, onDone }) {
   const [ctx, setCtx] = useState(null);
   const [over, setOver] = useState(false);
   const input = useRef(null);
+  const [ai, setAiState] = useState(boot.ai);
+  useEffect(() => { call('aiStatus').then(setAiState, () => {}); }, []);
   const addFiles = async (list) => {
     const out = [];
     for (const f of list) out.push({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) });
@@ -92,7 +108,7 @@ export function CaptureModal({ boot, onClose, onDone }) {
   };
   return html`<${Modal} wide title="Quick capture" onClose=${onClose}>
     ${!res ? html`<div class="col" style="gap:10px">
-      <div class="small muted">Paste meeting notes, a to-do list or an email, or drop a Word file, PDF or photo of handwritten notes. ${boot.ai && boot.ai.hasKey ? 'Claude reads them and' : 'The built-in reader'} suggests where each thing goes, and asks when it isn't sure. Nothing is created until you confirm.</div>
+      <div class="small muted">Paste meeting notes, a to-do list or an email, or drop a Word file, PDF or photo of handwritten notes. ${readerName(ai)} suggests where each thing goes, and asks when it isn't sure. Nothing is created until you confirm.</div>
       <div class=${`cap-drop ${over ? 'over' : ''}`} onDragOver=${(e) => { e.preventDefault(); setOver(true); }} onDragLeave=${() => setOver(false)} onDrop=${(e) => { e.preventDefault(); setOver(false); addFiles([...e.dataTransfer.files]); }}>
         <textarea class="input cap-text" autoFocus aria-label="Notes" placeholder=${'Call with Acme 11/12 2pm\nThey want the pilot in January.\n- Sam to send the quote by Friday\n- Book a demo for their IT team next week'} value=${text} onInput=${(e) => setText(e.target.value)}
           onKeyDown=${(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) read(); }}></textarea>
@@ -100,11 +116,11 @@ export function CaptureModal({ boot, onClose, onDone }) {
           <a onClick=${() => input.current.click()}>Add a file</a><span class="faint">or drop one here</span></div>
         <input type="file" hidden multiple accept=${ACCEPT} ref=${input} onChange=${(e) => addFiles([...e.target.files])} />
       </div>
-      <div class="row"><span class="small faint">${boot.ai && boot.ai.hasKey ? html`<${Icon} name="spark" size="13" /> Read by Claude` : html`Using the built-in reader. Add an Anthropic API key in Settings for Claude to read your notes.`}</span><span class="grow"></span>
+      <div class="row"><span class="small faint"><${Icon} name="spark" size="13" /> ${readerHint(ai)}</span><span class="grow"></span>
         <button class="btn" onClick=${onClose}>Cancel</button>
         <button class="btn primary" disabled=${busy || (!text.trim() && !files.length)} onClick=${read}>${busy ? html`<${Spinner} /> Reading…` : 'Read notes'}</button></div>
     </div>` : html`<div class="col" style="gap:10px">
-      <div class="row small" style="gap:8px;flex-wrap:wrap"><span class="chip">${res.mode === 'claude' ? 'Read by Claude' : 'Built-in reader'}</span>
+      <div class="row small" style="gap:8px;flex-wrap:wrap"><span class="chip">${res.mode === 'claude' ? 'Read by Claude' : res.mode === 'local' ? `Read by ${res.model} on this PC` : 'Built-in reader'}</span>
         <span class="muted">${plural(res.records.length, 'record')} found${unsure.length ? `, ${unsure.length} to check` : ''}.</span>
         ${res.notes.map((n, i) => html`<span class="faint" key=${i}>${n}</span>`)}</div>
       <div class="cap-list">${res.records.map((r) => html`<${RecordCard} key=${r.key} r=${r} set=${(p) => setRec(r.key, p)} boards=${ctx || []} people=${boot.people} records=${res.records} boot=${boot} />`)}</div>
@@ -116,24 +132,46 @@ export function CaptureModal({ boot, onClose, onDone }) {
   </${Modal}>`;
 }
 
-/** Settings card: connect Claude with an Anthropic API key. */
+/** Settings: which model reads Quick capture notes. */
 export function AiSettings() {
   const [st, setSt] = useState(null);
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
+  const [local, setLocal] = useState(null);
   if (!st) { call('aiStatus').then(setSt, toastError); return html`<${Spinner} />`; }
-  const save = async (patch) => { try { setSt(await call('setAi', patch)); } catch (e) { toastError(e); } };
-  const test = async () => { setBusy(true); try { await call('testAi'); toast('Claude is connected and read a test note'); } catch (e) { toastError(e); } finally { setBusy(false); } };
+  const save = async (patch) => { try { setSt(await call('setAi', patch)); setLocal(null); } catch (e) { toastError(e); } };
+  const test = async () => {
+    setBusy(true);
+    try {
+      const r = await call('testAi');
+      if (r.models) setLocal(r);
+      toast(r.provider === 'anthropic' ? 'Claude is connected and read a test note' : `Connected. Quick capture will use ${r.model}`);
+    } catch (e) { toastError(e); } finally { setBusy(false); }
+  };
+  const p = st.provider;
+  const isLocal = p === 'ollama' || p === 'openai' || (p === 'auto' && !st.hasKey);
+  const opts = [['auto', 'Automatic'], ['ollama', 'Ollama on this PC'], ['openai', 'Other local server'], ['anthropic', 'Claude (online)'], ['off', 'Off']];
   return html`<div class="card pad">
-    <h3>Claude for Quick capture</h3>
-    <p class="small muted">Quick capture (Ctrl+J) turns rough notes into items, calls and action items. With an Anthropic API key, Claude reads the notes (including photos of handwriting) and places each record. Only the notes you capture and the names of your boards, groups, columns, people and recent items are sent to Anthropic. Without a key, a built-in reader works offline.</p>
-    <div class="row mt" style="gap:8px">
-      <input class="input grow" type="password" autocomplete="off" placeholder=${st.hasKey ? `Key saved (${st.keyHint}). Paste a new one to replace it` : 'Anthropic API key (sk-ant-…)'} value=${key} onInput=${(e) => setKey(e.target.value)} />
+    <h3>AI for Quick capture</h3>
+    <p class="small muted">Quick capture (Ctrl+J) turns rough notes into items, calls and action items. A model reads the notes and places each record using the names of your boards, groups, columns, people and recent items. Without one, a simpler built-in reader is used.</p>
+    <div class="seg mt">${opts.map(([k, l]) => html`<button key=${k} class=${p === k ? 'on' : ''} onClick=${() => save({ provider: k, ...(k === 'openai' && !/:1234/.test(st.localUrl) ? { localUrl: 'http://127.0.0.1:1234' } : k === 'ollama' && !/:11434/.test(st.localUrl) ? { localUrl: 'http://127.0.0.1:11434' } : {}) })}>${l}</button>`)}</div>
+    <p class="small muted mt">${p === 'auto' ? 'Uses Claude when an API key is saved below; otherwise the Llama or other model in Ollama on this PC (the same one LOA Command Center uses) when Ollama is running; otherwise the built-in reader.'
+      : p === 'ollama' ? 'Uses a model installed in Ollama on this PC, such as the Llama model LOA Command Center uses. Notes never leave this PC.'
+      : p === 'openai' ? 'Uses LM Studio, llama.cpp, Jan or another OpenAI-compatible server on this PC or your local network.'
+      : p === 'anthropic' ? 'Claude reads the notes, including photos of handwriting. The notes are sent to Anthropic and usage is billed to your Anthropic account.' : 'Only the built-in reader is used.'}</p>
+    ${isLocal ? html`<div class="grid c2 mt" style="gap:8px">
+      <label class="field">Server address<input class="input" value=${st.localUrl} onChange=${(e) => save({ localUrl: e.target.value })} /></label>
+      <label class="field">Model<input class="input" list="bd-local-models" placeholder="Pick automatically (prefers Llama)" value=${st.localModel} onChange=${(e) => save({ localModel: e.target.value })} />
+        <datalist id="bd-local-models">${((local && local.models) || []).map((m) => html`<option key=${m} value=${m} />`)}</datalist></label></div>
+      <div class="row mt" style="gap:8px"><button class="btn" disabled=${busy} onClick=${test}>${busy ? 'Checking…' : 'Test connection'}</button>
+        ${local ? html`<span class="small muted">Installed: ${local.models.join(', ') || 'none'}. Using ${local.model}.</span>` : null}</div>
+      <p class="small faint mt">Bigger models place records better. If Ollama is not installed: get it from ollama.com, then run <span class="mono">ollama pull llama3.1:8b</span> (or <span class="mono">llama3.2:3b</span> on a low-memory laptop).</p>` : null}
+    ${p === 'anthropic' || p === 'auto' ? html`<div class="mt"><b class="small">Anthropic API key</b><div class="row mt" style="gap:8px">
+      <input class="input grow" type="password" autocomplete="off" placeholder=${st.hasKey ? `Key saved (${st.keyHint}). Paste a new one to replace it` : 'sk-ant-…'} value=${key} onInput=${(e) => setKey(e.target.value)} />
       <button class="btn primary" disabled=${!key.trim()} onClick=${async () => { await save({ key: key.trim() }); setKey(''); toast('API key saved'); }}>Save key</button>
-      ${st.hasKey ? html`<button class="btn" disabled=${busy} onClick=${test}>${busy ? 'Testing…' : 'Test'}</button><button class="btn ghost" onClick=${() => save({ key: '' })}>Remove</button>` : null}
-    </div>
-    <label class="field mt" style="max-width:320px">Model<select class="input" value=${st.model} onChange=${(e) => save({ model: e.target.value })}>
-      <option value="claude-opus-5-5">Claude Opus 5.5 (best placement)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (faster)</option><option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest)</option></select></label>
-    <p class="small faint mt">Get a key at console.anthropic.com. Usage is billed to your Anthropic account. The key is kept in this PC's Boardenda database and its backups.</p>
+      ${st.hasKey ? html`${p === 'anthropic' ? html`<button class="btn" disabled=${busy} onClick=${test}>${busy ? 'Testing…' : 'Test'}</button>` : null}<button class="btn ghost" onClick=${() => save({ key: '' })}>Remove</button>` : null}</div>
+      <label class="field mt" style="max-width:320px">Claude model<select class="input" value=${st.model} onChange=${(e) => save({ model: e.target.value })}>
+        <option value="claude-opus-5-5">Claude Opus 5.5 (best placement)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (faster)</option><option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest)</option></select></label>
+      <p class="small faint mt">Get a key at console.anthropic.com. The key is kept in this PC's Boardenda database and its backups.</p></div>` : null}
   </div>`;
 }

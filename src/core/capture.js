@@ -13,6 +13,12 @@ const KINDS = ['item', 'meeting', 'action', 'update'];
 const DEFAULT_MODEL = 'claude-opus-5-5';
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+function isLocalUrl(u) {
+  try {
+    const h = new URL(u).hostname.replace(/^\[|\]$/g, '');
+    return ['localhost', '127.0.0.1', '::1'].includes(h) || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h) || /\.local$/.test(h);
+  } catch (_) { return false; }
+}
 const STOP = new Set('the a an and or of to for on in at with by from is are be this that it we our us you i me my need needs new call meeting notes re fw fwd up about next week today tomorrow'.split(' '));
 
 const dow = (iso) => ((new Date(`${iso}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
@@ -72,20 +78,111 @@ class Capture {
   constructor(store, meetings) { this.store = store; this.db = store.db; this.meetings = meetings; }
 
   // ---------------------------------------------------------- AI settings
+  /**
+   * provider: 'auto' (Claude if a key is saved, else Ollama if it is running),
+   * 'ollama', 'openai' (another local server such as LM Studio or llama.cpp),
+   * 'anthropic', or 'off' (built-in reader only).
+   */
   aiConfig() {
     const r = this.db.get("SELECT value FROM settings WHERE key='ai'");
     const v = parseJson(r && r.value, {});
-    return { key: v.key || process.env.BOARDENDA_ANTHROPIC_KEY || '', model: v.model || DEFAULT_MODEL, enabled: v.enabled !== false };
+    const key = v.key || process.env.BOARDENDA_ANTHROPIC_KEY || '';
+    const provider = ['auto', 'ollama', 'openai', 'anthropic', 'off'].includes(v.provider) ? v.provider : (v.enabled === false ? 'off' : 'auto');
+    return {
+      provider, key,
+      model: v.model || DEFAULT_MODEL,
+      localUrl: v.localUrl || (provider === 'openai' ? 'http://127.0.0.1:1234' : 'http://127.0.0.1:11434'),
+      localModel: v.localModel || '',
+    };
   }
-  aiStatus() { const c = this.aiConfig(); return { hasKey: !!c.key, keyHint: c.key ? `…${c.key.slice(-4)}` : '', model: c.model, enabled: c.enabled }; }
-  setAi({ key, model, enabled } = {}) {
+  aiStatus() {
+    const c = this.aiConfig();
+    return { provider: c.provider, hasKey: !!c.key, keyHint: c.key ? `…${c.key.slice(-4)}` : '', model: c.model, localUrl: c.localUrl, localModel: c.localModel, enabled: c.provider !== 'off' };
+  }
+  setAi(patch = {}) {
     const cur = parseJson((this.db.get("SELECT value FROM settings WHERE key='ai'") || {}).value, {});
     const next = { ...cur };
-    if (key !== undefined) next.key = String(key || '').trim();
-    if (model !== undefined) next.model = String(model || DEFAULT_MODEL);
-    if (enabled !== undefined) next.enabled = !!enabled;
+    if (patch.key !== undefined) next.key = String(patch.key || '').trim();
+    if (patch.model !== undefined) next.model = String(patch.model || DEFAULT_MODEL);
+    if (patch.provider !== undefined) next.provider = patch.provider;
+    if (patch.localUrl !== undefined) {
+      const u = String(patch.localUrl || '').trim();
+      if (u && !isLocalUrl(u)) throw new Error('For privacy, a local model server must be on this PC or your local network.');
+      next.localUrl = u;
+    }
+    if (patch.localModel !== undefined) next.localModel = String(patch.localModel || '').trim();
+    if (patch.enabled !== undefined) next.provider = patch.enabled ? (next.provider === 'off' ? 'auto' : next.provider) : 'off';
     this.db.run("INSERT INTO settings(key,value) VALUES('ai',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [JSON.stringify(next)]);
     return this.aiStatus();
+  }
+
+  // ------------------------------------------------------- local models
+  async localFetch(cfg, path, body, timeoutMs) {
+    const flavor = cfg.provider === 'openai' ? 'openai' : 'ollama';
+    const base = (cfg.localUrl || (flavor === 'openai' ? 'http://127.0.0.1:1234' : 'http://127.0.0.1:11434')).replace(/\/+$/, '');
+    if (!isLocalUrl(base)) throw new Error('For privacy, a local model server must be on this PC or your local network.');
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(base + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: ctrl.signal });
+      if (!res.ok) throw new Error(`The model server answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      return await res.json();
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error(body ? 'The local model took too long to answer.' : `No model server answered at ${base}.`);
+      if (/fetch failed|ECONNREFUSED/i.test(String(e.message || e) + String(e.cause || ''))) throw new Error(`No model server is running at ${base}. Start Ollama and try again.`);
+      throw e;
+    } finally { clearTimeout(t); }
+  }
+
+  /** Models installed on the local server, and which one Quick capture will use. */
+  async localModels(cfg = this.aiConfig()) {
+    const c = { ...cfg, provider: cfg.provider === 'openai' ? 'openai' : 'ollama' };
+    const r = c.provider === 'openai' ? await this.localFetch(c, '/v1/models', null, 4000) : await this.localFetch(c, '/api/tags', null, 4000);
+    const models = c.provider === 'openai' ? (r.data || []).map((m) => m.id) : (r.models || []).map((m) => m.name);
+    const chat = models.filter((m) => !/embed|bge|nomic|minilm/i.test(m));
+    const pick = (cfg.localModel && chat.find((m) => m === cfg.localModel || m.split(':')[0] === cfg.localModel.split(':')[0]))
+      || chat.find((m) => /llama/i.test(m)) || chat.find((m) => /qwen|gemma|mistral|phi/i.test(m)) || chat[0] || null;
+    return { models: chat, model: pick };
+  }
+
+  async aiTest() {
+    const cfg = this.aiConfig();
+    if (cfg.provider === 'off') throw new Error('AI is off. The built-in reader is used.');
+    if (cfg.provider === 'anthropic' || (cfg.provider === 'auto' && cfg.key)) {
+      if (!cfg.key) throw new Error('Paste an Anthropic API key first.');
+      await this.readWithClaude({ text: 'Call with Test Co tomorrow 10am. Send the quote by Friday.' }, this.context());
+      return { provider: 'anthropic', model: cfg.model };
+    }
+    const m = await this.localModels(cfg);
+    if (!m.model) throw new Error(cfg.provider === 'openai' ? 'The local server has no models loaded.' : 'Ollama is running but has no models. Run: ollama pull llama3.2');
+    return { provider: cfg.provider === 'openai' ? 'openai' : 'ollama', model: m.model, models: m.models };
+  }
+
+  async readWithLocal({ text, images = [] }, ctx, cfg) {
+    const { model } = await this.localModels(cfg);
+    if (!model) throw new Error('No local model is installed. Run: ollama pull llama3.2');
+    const system = `${this.prompt(ctx)}\n\nReply with JSON only, shaped as {"records": [...]}, using exactly these fields for each record: kind, title, board, group, existingItem, customer, date, time, owner, due, fields (list of {column, value}), notes, meetingIndex, confidence, question.`;
+    const user = `<notes>\n${text || '(see the attached pictures)'}\n</notes>`;
+    const vision = /llava|vision|-vl|vl:|gemma3|minicpm-v|moondream|bakllava/i.test(model);
+    let out;
+    if (cfg.provider === 'openai') {
+      const r = await this.localFetch(cfg, '/v1/chat/completions', {
+        model, temperature: 0,
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        response_format: { type: 'json_schema', json_schema: { name: 'records', strict: true, schema: this.schema() } },
+      }, 300000);
+      out = r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content;
+    } else {
+      const r = await this.localFetch(cfg, '/api/chat', {
+        model, stream: false, format: this.schema(),
+        options: { temperature: 0, num_ctx: 16384 },
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user, ...(vision && images.length ? { images: images.map((i) => i.data) } : {}) }],
+      }, 300000);
+      out = r.message && r.message.content;
+    }
+    const parsed = parseJson(out, null) || parseJson((String(out || '').match(/\{[\s\S]*\}/) || [])[0], null);
+    if (!parsed || !Array.isArray(parsed.records)) throw new Error('The local model returned something that could not be read.');
+    return { records: parsed.records, model };
   }
 
   // ------------------------------------------------------------- context
@@ -357,16 +454,23 @@ Boards: ${JSON.stringify(boards)}`;
   async read({ text = '', files = [] } = {}, extract) {
     const ctx = this.context();
     const cfg = this.aiConfig();
-    const useAi = !!cfg.key && cfg.enabled;
     const notes = [];
+    // Which reader: Claude, a local model (Ollama or similar), or the built-in one.
+    let engine = 'basic';
+    if (cfg.provider === 'anthropic' || (cfg.provider === 'auto' && cfg.key)) engine = cfg.key ? 'claude' : 'basic';
+    else if (cfg.provider === 'ollama' || cfg.provider === 'openai') engine = 'local';
+    else if (cfg.provider === 'auto') {
+      try { if ((await this.localModels({ ...cfg, provider: 'ollama' })).model) engine = 'local'; } catch (_) { /* Ollama not running */ }
+    }
+    const localCfg = engine === 'local' ? { ...cfg, provider: cfg.provider === 'openai' ? 'openai' : 'ollama' } : null;
     let all = String(text || '');
     const images = [];
     for (const f of files) {
       const isImg = /\.(png|jpe?g|gif|webp)$/i.test(f.name);
-      if (useAi && isImg && f.bytes.length < 4.5e6) {
+      if (isImg && f.bytes.length < 4.5e6 && engine !== 'basic') {
         const ext = f.name.toLowerCase().match(/\.(\w+)$/)[1];
         images.push({ mediaType: `image/${ext === 'jpg' ? 'jpeg' : ext}`, data: Buffer.from(f.bytes).toString('base64') });
-        continue;
+        if (engine === 'claude') continue; // Claude reads pictures directly; local models also get the OCR text
       }
       const t = await extract(f.name, f.bytes);
       if (t) all += `${all ? '\n\n' : ''}${t}`;
@@ -375,14 +479,19 @@ Boards: ${JSON.stringify(boards)}`;
     if (!all.trim() && !images.length) throw new Error('Paste some notes or drop a file first.');
     let raw;
     let mode = 'basic';
-    if (useAi) {
-      try { raw = await this.readWithClaude({ text: all, images }, ctx); mode = 'claude'; } catch (e) {
+    let model = null;
+    if (engine === 'claude') {
+      try { raw = await this.readWithClaude({ text: all, images }, ctx); mode = 'claude'; model = cfg.model; } catch (e) {
         notes.push(`Claude could not be reached (${e.message || e}), so the built-in reader was used.`);
         if (images.length && !all.trim()) throw new Error('Claude is needed to read pictures without OCR, and it could not be reached.');
       }
+    } else if (engine === 'local') {
+      try { const r = await this.readWithLocal({ text: all, images }, ctx, localCfg); raw = r.records; mode = 'local'; model = r.model; } catch (e) {
+        notes.push(`The local model could not read these notes (${e.message || e}), so the built-in reader was used.`);
+      }
     }
     if (!raw) raw = this.readLocally(all, ctx);
-    return { mode, records: this.resolve(raw, ctx, mode), text: all, notes };
+    return { mode, model, records: this.resolve(raw, ctx, mode), text: all, notes };
   }
 
   // ---------------------------------------------------------------- apply
