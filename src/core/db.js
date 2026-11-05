@@ -71,6 +71,47 @@ CREATE TABLE IF NOT EXISTS item_templates (
   payload TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS meetings (
+  id TEXT PRIMARY KEY,
+  series_id TEXT,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'call',
+  date TEXT NOT NULL,
+  time TEXT NOT NULL DEFAULT '09:00',
+  minutes INTEGER DEFAULT 30,
+  where_text TEXT DEFAULT '',
+  customer TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'planned',
+  attendees TEXT DEFAULT '[]',
+  contacts TEXT DEFAULT '[]',
+  item_id TEXT,
+  agenda TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  recap TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_meetings_date ON meetings(date);
+CREATE TABLE IF NOT EXISTS meeting_series (
+  id TEXT PRIMARY KEY,
+  rule TEXT NOT NULL,
+  template TEXT NOT NULL,
+  anchor TEXT NOT NULL,
+  last_date TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS meeting_actions (
+  id TEXT PRIMARY KEY,
+  meeting_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  owner TEXT,
+  team TEXT,
+  due TEXT,
+  done INTEGER DEFAULT 0,
+  item_id TEXT,
+  position REAL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS user_templates (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -288,6 +329,7 @@ class Database {
     const v = this.get("SELECT value FROM settings WHERE key='schema_version'");
     const from = v ? Number(JSON.parse(v.value)) : SCHEMA_VERSION;
     if (from < 2) this.upgradeTo2();
+    if (!this.all('PRAGMA table_info(files)').some((c) => c.name === 'meeting_id')) this.db.exec('ALTER TABLE files ADD COLUMN meeting_id TEXT');
     const ver = JSON.stringify(SCHEMA_VERSION);
     if (!v) this.run("INSERT INTO settings(key,value) VALUES('schema_version', ?)", [ver]);
     else if (v.value !== ver) this.run("UPDATE settings SET value=? WHERE key='schema_version'", [ver]);

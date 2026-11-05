@@ -2,6 +2,7 @@
 // field, subitems, files and the item's activity log.
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { html, Icon, Menu, useAnchor, InlineText, Avatar, toastError, toast, ask, Spinner, relTime, plural, bytes, Modal, todayIso, addDaysIso, shortDate } from './lib.js';
+import { ItemCalls } from './meetings.js';
 import { call, native } from './api.js';
 import { C, ctxOf } from './model.js';
 import { Cell } from './cells.js';
@@ -46,7 +47,7 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
         <button class="btn icon ghost" aria-label="Item menu" onClick=${openMenu}><${Icon} name="more" /></button>
         <button class="btn icon ghost" aria-label="Close" onClick=${onClose}><${Icon} name="x" /></button>
       </div>
-      <div class="ptabs">${[['updates', `Updates${d.updates.length ? ` / ${d.updates.length}` : ''}`], ['info', 'Details'], !isSub && ['subitems', `Subitems${d.subitems.length ? ` / ${d.subitems.length}` : ''}`], ['files', `Files${d.fileList.length ? ` / ${d.fileList.length}` : ''}`], ['activity', 'Activity log']].filter(Boolean).map(([k, l]) => html`<button key=${k} class=${`tab ${tab === k ? 'on' : ''}`} onClick=${() => setTab(k)}>${l}</button>`)}</div>
+      <div class="ptabs">${[['updates', `Updates${d.updates.length ? ` / ${d.updates.length}` : ''}`], ['info', 'Details'], !isSub && ['subitems', `Subitems${d.subitems.length ? ` / ${d.subitems.length}` : ''}`], ['files', `Files${d.fileList.length ? ` / ${d.fileList.length}` : ''}`], !isSub && ['calls', `Calls${d.calls && d.calls.meetings.length ? ` / ${d.calls.meetings.length}` : ''}`], ['activity', 'Activity log']].filter(Boolean).map(([k, l]) => html`<button key=${k} class=${`tab ${tab === k ? 'on' : ''}`} onClick=${() => setTab(k)}>${l}</button>`)}</div>
     </div>
     <div class="bd">
       ${tab === 'updates' ? html`<${Updates} d=${d} changed=${changed} />` : null}
@@ -55,6 +56,7 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
         <div class="fl"><${Icon} name="history" size="15" />Created</div><div class="small muted" style="padding:0 8px">${it.created_at.slice(0, 16).replace('T', ' ')} by ${(d.people.find((p) => p.id === it.created_by) || {}).name || 'someone'}</div></div>` : null}
       ${tab === 'subitems' ? html`<${Subitems} d=${d} B=${B} ctx=${ctx} changed=${changed} openItem=${openItem} />` : null}
       ${tab === 'files' ? html`<${Files} d=${d} changed=${changed} />` : null}
+      ${tab === 'calls' ? html`<${ItemCalls} d=${d} />` : null}
       ${tab === 'activity' ? html`<${ActivityLog} rows=${d.activity} people=${d.people} />` : null}
     </div>
     ${menu ? html`<${Menu} anchor=${menu} onClose=${closeMenu} align="right" width=${260} items=${[

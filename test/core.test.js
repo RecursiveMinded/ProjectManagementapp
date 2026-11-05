@@ -539,3 +539,64 @@ test('import: blank sheet, preview, column overrides, subitems, Word and text', 
   const txt = await api.previewImport('list.txt', Buffer.from('Plan venue\nSend invites\n'));
   assert.equal(txt.total, 2);
 });
+
+test('customer calls: agenda, notes, recurring series, actions to a board', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const sample = api.listMeetings({ customer: 'Northwind Traders' });
+  assert.equal(sample.length, 2, 'sample calls');
+  assert.ok(sample[0].actions[0].item, 'a sample action is on a board');
+  for (const m of api.listMeetings()) api.deleteMeeting(m.id);
+  const me = api.bootstrap().me.id;
+  const crm = api.bootstrap().workspaces[0].boards.find((b) => b.name === 'Team tasks');
+  const B = api.getBoard(crm.id);
+  const about = B.items[0];
+  const t = today();
+  // A one-off call about an item, with an outside contact
+  const id = api.createMeeting({ title: 'Kickoff call', customer: 'Acme', date: t, time: '14:30', itemId: about.id, attendees: [me], contacts: [{ name: 'Jo Client', email: 'jo@acme.test', company: 'Acme' }], agenda: '<p>Scope</p><script>x</script>' });
+  let m = api.getMeeting(id);
+  assert.equal(m.time, '14:30');
+  assert.equal(m.contacts[0].company, 'Acme');
+  assert.ok(!/script/.test(m.agenda));
+  m = api.updateMeeting(id, { notes: '<p>They want phase 1 in March</p>', recap: '<p>Agreed scope</p>', status: 'held' });
+  assert.ok(m.hasNotes && m.hasRecap);
+  // Actions: owner and due, one added to a board as an item
+  const a1 = api.addMeetingAction(id, { text: 'Send quote', owner: me, due: addDays(t, 2) });
+  api.addMeetingAction(id, { text: 'Book follow-up', due: addDays(t, 5), boardId: crm.id });
+  const itemId = api.meetingActionToItem(a1, { boardId: crm.id });
+  const nb = api.getBoard(crm.id);
+  const created = nb.items.find((i) => i.id === itemId);
+  const people = nb.columns.find((c) => c.type === 'people' && c.scope === 'item');
+  assert.deepEqual(created.values[people.id], [me]);
+  assert.equal(nb.items.filter((i) => i.name === 'Book follow-up').length, 1, 'boardId on add creates the item');
+  assert.equal(nb.nextActions[about.id].text, 'Send quote', 'next action shows on the item the call is about');
+  assert.ok(api.myWork().some((w) => w.id === itemId), 'action owner sees it in My work');
+  assert.equal(api.meetingActions({ mine: true })[0].text, 'Send quote');
+  api.updateMeetingAction(a1, { done: true });
+  assert.equal(api.getMeeting(id).actions.find((a) => a.id === a1).done, true);
+  assert.equal(api.getItem(about.id).calls.nextAction.text, 'Book follow-up');
+  assert.match(api.meetingSummary(id), /Action items:[\s\S]*\[x\] Send quote/);
+  // Recurring weekly series: each meeting keeps its own notes
+  const sid = api.createMeeting({ title: 'Weekly sync', customer: 'Acme', date: t, time: '10:00', agenda: '<p>Status</p>', repeat: { unit: 'week', every: 1 } });
+  let series = api.listMeetings({ q: 'weekly sync' });
+  assert.ok(series.length >= 8 && series.length <= 13, `series scheduled ahead (${series.length})`);
+  assert.ok(series.every((x) => x.agenda === undefined && x.repeat === 'Every week'));
+  const second = series[1];
+  assert.equal(second.date, addDays(t, 7));
+  api.updateMeeting(second.id, { notes: '<p>Week 2 notes</p>' });
+  assert.ok(!api.getMeeting(series[2].id).hasNotes, 'notes are per meeting');
+  api.updateMeeting(sid, { time: '11:00', agenda: '<p>New agenda</p>' });
+  assert.equal(api.applyMeetingToSeries(sid), series.length - 2, 'later empty meetings follow; ones with notes are kept');
+  assert.equal(api.getMeeting(series[3].id).time, '11:00');
+  assert.equal(api.getMeeting(second.id).time, '10:00');
+  api.stopMeetingRepeat(second.id);
+  series = api.listMeetings({ q: 'weekly sync' });
+  assert.equal(series.length, 2);
+  api.runSchedule(addDays(t, 30) + 'T12:00:00');
+  assert.equal(api.listMeetings({ q: 'weekly sync' }).length, 2, 'a stopped series stays stopped');
+  // Calendar and customers
+  const cal = api.calendar({ from: t, to: addDays(t, 7) });
+  assert.ok(cal.entries.some((e) => e.meetingId === id && e.time === '14:30'));
+  assert.equal(api.meetingCustomers()[0].name, 'Acme');
+  assert.equal(api.deleteMeeting(sid, { series: true }), 2);
+});

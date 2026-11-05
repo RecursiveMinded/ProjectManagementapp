@@ -10,6 +10,7 @@ const { Automations, TRIGGERS, ACTIONS } = require('./automations');
 const { Dashboards, WIDGETS } = require('./dashboards');
 const { Reports } = require('./reports');
 const { Recurring } = require('./recurring');
+const { Meetings } = require('./meetings');
 const T = require('./templates');
 const io = require('./io');
 const C = require('./columns');
@@ -42,6 +43,7 @@ class AppApi {
     this.dashboards = new Dashboards(this.store);
     this.reports = new Reports(this.store);
     this.recurring = new Recurring(this.store);
+    this.meetings = new Meetings(this.store);
     this.store.me();
     if (dataDir) this.autoBackup();
     try { this.store.purgeTrash({ olderThanDays: 30 }); } catch (_) { /* never block start-up */ }
@@ -82,7 +84,40 @@ class AppApi {
       dataDir: this.dataDir,
     };
   }
-  loadSample() { return this.withLog(() => T.sampleWorkspace(this.store, this.automations, this.dashboards)); }
+  loadSample() {
+    const ws = this.withLog(() => T.sampleWorkspace(this.store, this.automations, this.dashboards));
+    try { this.sampleMeetings(ws); } catch (_) { /* sample calls are optional */ }
+    return ws;
+  }
+  /** Two sample customer calls (one held, with notes and actions) and a weekly sync. */
+  sampleMeetings(ws) {
+    const crm = this.db.get("SELECT id FROM boards WHERE workspace_id=? AND name='Sales pipeline'", [ws]);
+    const tasks = this.db.get("SELECT id FROM boards WHERE workspace_id=? AND name='Team tasks'", [ws]);
+    if (!crm || this.db.get('SELECT id FROM meetings LIMIT 1')) return;
+    const deal = this.db.get("SELECT id FROM items WHERE board_id=? AND name='Northwind Traders'", [crm.id]);
+    const people = this.store.people();
+    const me = this.store.me().id;
+    const t = today();
+    const held = this.meetings.create({
+      kind: 'call', title: 'Proposal walkthrough', customer: 'Northwind Traders', date: addDays(t, -2), time: '15:00', minutes: 45, where: 'Teams link in the invite',
+      itemId: deal && deal.id, attendees: [me, (people[1] || {}).id].filter(Boolean), status: 'held',
+      contacts: [{ name: 'Priya Shah', company: 'Northwind Traders', email: 'priya@northwind.example', phone: '' }],
+      agenda: '<ul><li>Walk through the proposal</li><li>Pricing questions</li><li>Timeline and next steps</li></ul>',
+      notes: '<p>Priya likes phase 1 scope. Finance wants the annual price split by quarter. Legal review needed on the data terms.</p>',
+      recap: '<p><b>Agreed:</b> send a revised quote with quarterly billing. Target signature by month end.</p>',
+    });
+    const a1 = this.meetings.addAction(held, { text: 'Send revised quote with quarterly billing', owner: me, due: addDays(t, 1) });
+    this.meetings.addAction(held, { text: 'Get Legal to review the data terms', owner: (people[2] || {}).id, due: addDays(t, 4) });
+    if (tasks) this.meetings.actionToItem(a1, { boardId: tasks.id });
+    this.meetings.create({
+      kind: 'call', title: 'Contract follow-up', customer: 'Northwind Traders', date: addDays(t, 3), time: '11:00', minutes: 30, itemId: deal && deal.id, attendees: [me],
+      agenda: '<ul class="checklist"><li>Confirm revised quote</li><li>Legal feedback on data terms</li><li>Signature date</li></ul>',
+    });
+    this.meetings.create({
+      kind: 'meeting', title: 'Weekly pipeline review', date: t, time: '09:30', minutes: 30, attendees: people.slice(0, 3).map((p) => p.id),
+      agenda: '<ol><li>Deals closing this month</li><li>Blockers</li><li>Next steps per deal</li></ol>', repeat: { unit: 'week', every: 1 },
+    });
+  }
   withLog(fn) { return fn(); }
 
   // ------------------------------------------------------------ workspaces
@@ -208,7 +243,7 @@ class AppApi {
     this.db.run("INSERT INTO settings(key,value) VALUES('favorites',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [JSON.stringify(list)]);
     return list;
   }
-  getBoard(id) { const B = this.store.getBoard(id); B.recurring = this.recurring.forBoard(id); B.itemTemplates = this.recurring.itemTemplates(id); return B; }
+  getBoard(id) { const B = this.store.getBoard(id); B.recurring = this.recurring.forBoard(id); B.itemTemplates = this.recurring.itemTemplates(id); B.nextActions = this.meetings.nextByItem(id); return B; }
   updateBoard(id, patch) { return this.store.updateBoard(id, patch); }
   duplicateBoard(id, opts) { return this.store.duplicateBoard(id, opts); }
   archiveBoard(id, archived) { return this.store.archiveBoard(id, archived); }
@@ -308,6 +343,7 @@ class AppApi {
       updates: this.store.updates(id), fileList: this.store.itemFiles(id),
       activity: this.store.activity({ itemId: id, limit: 150 }),
       docs: B.docs, recurrence: row.parent_id ? null : this.recurring.get(id),
+      calls: row.parent_id ? null : this.meetings.forItem(id),
     };
   }
 
@@ -332,9 +368,28 @@ class AppApi {
   automationLog(q) { return this.automations.log(q); }
   runSchedule(at) {
     const when = at ? new Date(at) : new Date();
-    const made = this.recurring.tick(when);
+    const made = this.recurring.tick(when) + this.meetings.tick(when);
     return this.automations.tick(when) + made;
   }
+
+  // ------------------------------------------------- customer calls and meetings
+  listMeetings(q) { return this.meetings.list(q); }
+  getMeeting(id) { return this.meetings.get(id); }
+  createMeeting(m) { return this.meetings.create(m); }
+  updateMeeting(id, patch) { return this.meetings.update(id, patch); }
+  deleteMeeting(id, opts) { return this.meetings.remove(id, opts); }
+  setMeetingRepeat(id, rule) { return this.meetings.setRepeat(id, rule); }
+  stopMeetingRepeat(id) { return this.meetings.stopRepeat(id); }
+  applyMeetingToSeries(id) { return this.meetings.applyToSeries(id); }
+  meetingCustomers() { return this.meetings.customers(); }
+  addMeetingAction(meetingId, a) { return this.meetings.addAction(meetingId, a); }
+  updateMeetingAction(id, patch) { return this.meetings.updateAction(id, patch); }
+  removeMeetingAction(id) { return this.meetings.removeAction(id); }
+  meetingActionToItem(id, target) { return this.meetings.actionToItem(id, target); }
+  meetingActions(q) { return this.meetings.actions(q); }
+  itemMeetings(itemId) { return this.meetings.forItem(itemId); }
+  addMeetingFile(meetingId, f) { return this.meetings.addFile(meetingId, f); }
+  meetingSummary(id) { return this.meetings.summary(id); }
 
   // ------------------------------------------- recurring items, item templates
   getRecurrence(itemId) { return this.recurring.get(itemId); }
@@ -533,6 +588,14 @@ class AppApi {
       };
       for (const it of B.items) consider(it, 'item');
       if (includeSubitems) for (const s of B.subitems) consider(s, 'sub');
+    }
+    for (const m of this.meetings.list({ from, to })) {
+      if (m.status === 'cancelled') continue;
+      out.push({
+        key: `meet:${m.id}`, meetingId: m.id, id: null, name: m.customer ? `${m.title} · ${m.customer}` : m.title, boardId: null, boardName: m.kind === 'call' ? 'Call' : 'Meeting',
+        groupName: '', columnTitle: m.repeat || '', type: 'meeting', start: m.date, end: m.date, time: m.time, raw: m.date, people: m.attendees,
+        done: m.status === 'held', status: null, color: m.kind === 'call' ? '#13a89e' : '#5a55d6',
+      });
     }
     out.sort((a, b) => a.start.localeCompare(b.start) || String(a.time || '').localeCompare(String(b.time || '')) || a.name.localeCompare(b.name));
     return { entries: out, boards };

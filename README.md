@@ -16,6 +16,15 @@ The feature set was mapped from the public help documentation of a leading hoste
 - Item templates: save an item with its values and subitems, then add copies from the arrow next to New.
 - Each item has an updates feed with replies, pins and @mentions, plus a files tab and a full activity log.
 
+**Customer calls and meetings**
+- Log customer calls and plan meetings with date, time, length, where (phone, link or room), the customer, and the deal or item they are about.
+- Our team (people in Boardenda) and their side (outside contacts with company, email and phone).
+- Each call keeps its own agenda, notes, recap and files, and Copy summary puts the whole record on the clipboard for an email.
+- Action items with an owner and due date. Add one to any board and it becomes an item there with the owner and date filled in, so it shows in that person's My work; ticking it off, or finishing the item, closes it.
+- The next action shows on the item the call is about (a phone tag in the table, and a Calls tab in the item panel).
+- Recurring meetings (daily, weekdays, weekly, every 2 weeks, monthly) are scheduled about two months ahead; every meeting in the series keeps its own notes, recap, actions and files. Change the set-up for later meetings, or stop repeating, at any time.
+- Calls and meetings appear on the Calendar (drag to move) and in the .ics export.
+
 **Workdocs**
 - Rich notes in any workspace: headings, lists, checklists, quotes, code, links and highlights, saved as you type.
 - Markdown-style shortcuts (`#`, `-`, `[]`), pasting keeps formatting, and Print or PDF.
@@ -122,7 +131,7 @@ npm run icons        # redraw build/icon.png and build/icon.ico (needs Python + 
 
 | Path | What it holds |
 | --- | --- |
-| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `api.js` (the API the UI calls) |
+| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `meetings.js` (calls, series and action items), `api.js` (the API the UI calls) |
 | `src/ui/` | Preact + htm interface, bundled by esbuild into `dist/ui` |
 | `electron/` | Window, tray, scheduler, Windows notifications, native file dialogs, auto-update |
 | `dev/server.js` | The same API over HTTP, for browser testing |

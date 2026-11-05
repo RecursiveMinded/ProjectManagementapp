@@ -3,6 +3,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { html, Icon, Menu, useAnchor, toastError, toast, todayIso, addDaysIso, diffDays, usePersist, Avatars, Spinner } from './lib.js';
 import { call, saveAs } from './api.js';
 import { C } from './model.js';
+import { openMeeting } from './meetings.js';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -40,10 +41,10 @@ export function CalendarPage({ boot, openItem, version }) {
   const me = boot.me.id;
   const boardIdx = {};
   boot.workspaces.flatMap((w) => w.boards).forEach((b, i) => { boardIdx[b.id] = i; });
-  const entries = (data ? data.entries : []).filter((e) => (!opt.board || e.boardId === opt.board)
+  const entries = (data ? data.entries : []).filter((e) => (!opt.board || e.boardId === opt.board || (e.meetingId && opt.board === 'meetings'))
     && (!opt.person || e.people.includes(opt.person === 'me' ? me : opt.person))
     && (opt.showDone || !e.done));
-  const colorOf = (e) => (opt.colorBy === 'board' ? C.colorHex(BOARD_COLORS[(boardIdx[e.boardId] || 0) % BOARD_COLORS.length]) : e.color);
+  const colorOf = (e) => (opt.colorBy === 'board' && !e.meetingId ? C.colorHex(BOARD_COLORS[(boardIdx[e.boardId] || 0) % BOARD_COLORS.length]) : e.color);
 
   const on = {};
   for (const e of entries) {
@@ -63,6 +64,7 @@ export function CalendarPage({ boot, openItem, version }) {
     const e = drag;
     setDrag(null);
     if (!e || d === e.start) return;
+    if (e.meetingId) { try { await call('updateMeeting', e.meetingId, { date: d }); toast(`Moved “${e.name}” to ${nice(d)}`); load(); } catch (er) { toastError(er); } return; }
     let value = d;
     if (e.type === 'timeline') value = { ...e.raw, start: d, end: addDaysIso(d, diffDays(e.start, e.end)) };
     else if (String(e.raw).length > 10) value = `${d}${String(e.raw).slice(10)}`;
@@ -73,8 +75,8 @@ export function CalendarPage({ boot, openItem, version }) {
     onDragLeave: () => setOver(null),
     onDrop: (ev) => { ev.preventDefault(); moveTo(d); },
   });
-  const chip = ({ e, first }, compact) => html`<div key=${e.key} class=${`cal-item ${e.done ? 'done' : ''}`} draggable=${first} onDragStart=${() => setDrag(e)} onDragEnd=${() => setDrag(null)}
-    style=${`background:${colorOf(e)};${first ? '' : 'opacity:.55'}`} title=${`${e.name} · ${e.boardName}${e.groupName ? ` · ${e.groupName}` : ''} · ${e.columnTitle}`} onClick=${() => openItem(e.id)}>
+  const chip = ({ e, first }, compact) => html`<div key=${e.key} class=${`cal-item ${e.done ? 'done' : ''}`} draggable=${first} data-meeting=${e.meetingId || null} onDragStart=${() => setDrag(e)} onDragEnd=${() => setDrag(null)}
+    style=${`background:${colorOf(e)};${first ? '' : 'opacity:.55'}`} title=${`${e.name} · ${e.boardName}${e.groupName ? ` · ${e.groupName}` : ''} · ${e.columnTitle}`} onClick=${() => (e.meetingId ? openMeeting(e.meetingId) : openItem(e.id))}>
     ${e.time ? html`<b>${e.time}</b> ` : null}${e.name}${compact ? null : html`<span class="cal-sub">${e.boardName}</span>`}</div>`;
 
   const exportIcs = () => {
@@ -83,7 +85,7 @@ export function CalendarPage({ boot, openItem, version }) {
     const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Boardenda//Calendar//EN', 'CALSCALE:GREGORIAN'];
     const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
     for (const e of entries) {
-      lines.push('BEGIN:VEVENT', `UID:${e.key}@boardenda`, `DTSTAMP:${stamp}`, `DTSTART;VALUE=DATE:${d8(e.start)}`, `DTEND;VALUE=DATE:${d8(addDaysIso(e.end, 1))}`,
+      lines.push('BEGIN:VEVENT', `UID:${e.key}@boardenda`, `DTSTAMP:${stamp}`, ...(e.meetingId && e.time ? [`DTSTART:${d8(e.start)}T${e.time.replace(':', '')}00`] : [`DTSTART;VALUE=DATE:${d8(e.start)}`, `DTEND;VALUE=DATE:${d8(addDaysIso(e.end, 1))}`]),
         `SUMMARY:${esc(e.name)}`, `DESCRIPTION:${esc(`${e.boardName}${e.groupName ? ` / ${e.groupName}` : ''} / ${e.columnTitle}${e.status ? ` / ${e.status.label}` : ''}`)}`, 'END:VEVENT');
     }
     lines.push('END:VCALENDAR');
@@ -108,7 +110,7 @@ export function CalendarPage({ boot, openItem, version }) {
         <option value="">Everyone</option><option value="me">Assigned to me</option>
         ${boot.people.filter((p) => !p.is_me).map((p) => html`<option value=${p.id}>${p.name}</option>`)}</select>
       <select class="input" style="width:auto;height:30px" value=${opt.board} onChange=${(e) => setOpt({ ...opt, board: e.target.value })} aria-label="Board">
-        <option value="">All boards</option>${boards.map((b) => html`<option value=${b.id}>${b.name}</option>`)}</select>
+        <option value="">All boards</option><option value="meetings">Calls and meetings only</option>${boards.map((b) => html`<option value=${b.id}>${b.name}</option>`)}</select>
       <span class="small muted">Colour by</span>${seg('colorBy', [['status', 'Status'], ['board', 'Board']])}
       <label class="check small"><input type="checkbox" checked=${opt.showDone} onChange=${(e) => setOpt({ ...opt, showDone: e.target.checked })} /> Show done</label>
       <label class="check small"><input type="checkbox" checked=${opt.subitems} onChange=${(e) => setOpt({ ...opt, subitems: e.target.checked })} /> Subitems</label>
@@ -116,10 +118,10 @@ export function CalendarPage({ boot, openItem, version }) {
       <span class="small muted">${entries.length} dated ${entries.length === 1 ? 'item' : 'items'}</span>
       <button class="btn small" onClick=${exportIcs} title="Open in Outlook or Google Calendar"><${Icon} name="download" size=${14} /> Export .ics</button>
     </div>
-    ${!data ? html`<${Spinner} />` : !boards.length ? html`<div class="empty"><${Icon} name="calendar" /><h3>No dated work yet</h3><div>Add a Date or Timeline column to a board and its items appear here.</div></div>`
+    ${!data ? html`<${Spinner} />` : !boards.length && !entries.length ? html`<div class="empty"><${Icon} name="calendar" /><h3>No dated work yet</h3><div>Add a Date or Timeline column to a board and its items appear here.</div></div>`
       : opt.mode === 'agenda' ? html`<div class="card agenda">${days.filter((d) => (on[d] || []).some((x) => x.first || d === from)).map((d) => html`<div class="ag-day" key=${d}>
           <div class=${`ag-date ${d === t ? 'today' : ''} ${d < t ? 'past' : ''}`}>${nice(d)}</div>
-          <div class="ag-list">${on[d].filter((x) => x.first || d === from).map(({ e }) => html`<div class="ag-row" key=${e.key} onClick=${() => openItem(e.id)}>
+          <div class="ag-list">${on[d].filter((x) => x.first || d === from).map(({ e }) => html`<div class="ag-row" key=${e.key} onClick=${() => (e.meetingId ? openMeeting(e.meetingId) : openItem(e.id))}>
             <span class="dot" style=${`background:${colorOf(e)}`}></span><b class="clip">${e.parentName ? html`<span class="muted">${e.parentName} › </span>` : null}${e.name}</b>
             <span class="small muted clip">${e.boardName}${e.groupName ? ` · ${e.groupName}` : ''}</span>
             <span class="small muted">${e.type === 'timeline' && e.end !== e.start ? `until ${nice(e.end)}` : e.time || ''}</span>

@@ -631,3 +631,33 @@ td.bad, .bad { color: var(--bad); } td.b, .b { font-weight: 700; }
 .ig-cell:focus { border-color: var(--brand); outline: none; background: var(--panel, #fff); }
 .ig-del { border: 0; background: none; cursor: pointer; color: var(--faint, #a3a2bb); font-size: 16px; padding: 4px 6px; }
 .ig-del:hover { color: #d83a52; }
+
+/* Calls and meetings */
+.meet-row { display: grid; grid-template-columns: 30px 70px minmax(160px, 1.4fr) minmax(140px, 1fr) 110px auto; gap: 12px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.meet-row:last-child { border-bottom: 0; }
+.meet-row:hover { background: var(--hover); }
+.meet-row.cancelled .meet-main b { text-decoration: line-through; color: var(--muted); }
+.card > .meet-row:has(> input[type=checkbox]) { grid-template-columns: 24px minmax(200px, 1fr) 120px auto auto; }
+.meet-ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: #fff; background: #5a55d6; }
+.meet-ic.call { background: #13a89e; }
+.meet-when, .meet-main, .meet-next { display: flex; flex-direction: column; min-width: 0; }
+.meet-next .clip { color: var(--text); }
+.overdue { color: #d83a52; font-weight: 600; }
+.meet-fields { grid-template-columns: 110px 1fr; }
+.meet-fields > .input.bare, .actions .input.bare { border-color: transparent; background: transparent; }
+.meet-fields > .input.bare:hover, .meet-fields > .input.bare:focus, .actions .input.bare:hover, .actions .input.bare:focus { border-color: var(--line); background: var(--panel); }
+.contact-row { gap: 4px; }
+.contact-row .input { min-width: 0; flex: 1; height: 30px; }
+.next-action { color: var(--text); }
+.next-action.card { border-left: 3px solid #13a89e; }
+.actions td { padding: 3px 4px; }
+.actions tr.done .input.bare { text-decoration: line-through; color: var(--muted); }
+.actions .input { height: 30px; }
+.rich .doc-tools { position: static; }
+.rich-body { min-height: 220px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-top: 6px; outline: none; }
+.rich-body:focus { border-color: var(--brand); }
+.rich-body:empty:before { content: attr(data-ph); color: var(--faint, #a3a2bb); }
+.item-pick { position: relative; }
+.item-pick-list { position: absolute; z-index: 5; left: 0; right: 0; top: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; }
+.next-ic { display: inline-flex; align-items: center; gap: 3px; border: 0; border-radius: 10px; padding: 1px 6px; font-size: 11px; background: rgba(19,168,158,.14); color: #0f8a82; cursor: pointer; margin-left: 4px; flex: none; }
+.next-ic.late { background: rgba(216,58,82,.14); color: #c0392b; }

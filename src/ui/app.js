@@ -14,6 +14,7 @@ import { useUpdate, installUpdate, checkForUpdates } from './update.js';
 import { selfTest } from './selftest.js';
 import { C } from './model.js';
 import { DocPage, DocDrawer } from './docs.js';
+import { MeetingsPage, MeetingDrawer, NewMeeting, openMeeting } from './meetings.js';
 import { PortfolioPage, TimesheetPage } from './reports.js';
 
 window.__bdSelfTest = selfTest;
@@ -34,6 +35,8 @@ function App() {
   const [item, setItem] = useState(null); // { id, tab }
   const [palette, setPalette] = useState(false);
   const [docOpen, setDocOpen] = useState(null);
+  const [meetOpen, setMeetOpen] = useState(null);
+  const [newMeet, setNewMeet] = useState(null);
   const [newBoard, setNewBoard] = useState(null); // { workspaceId }
   const [closedWs, setClosedWs] = usePersist('closedWs', {});
   const itemReload = useRef(null);
@@ -65,7 +68,11 @@ function App() {
     window.addEventListener('bd-undoable', h);
     const od = (e) => setDocOpen(e.detail);
     window.addEventListener('bd-open-doc', od);
-    return () => { window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); };
+    const om = (e) => setMeetOpen(e.detail);
+    const nm = (e) => setNewMeet(e.detail || {});
+    window.addEventListener('bd-open-meeting', om);
+    window.addEventListener('bd-new-meeting', nm);
+    return () => { window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); };
   }, []);
 
   // Unread count and data changed by automations in the background.
@@ -87,7 +94,7 @@ function App() {
       if (!typing && !ctrl && !e.altKey) {
         if (Date.now() - gPrefix.current < 1200) {
           gPrefix.current = 0;
-          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets' }[e.key.toLowerCase()];
+          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets', l: 'meetings' }[e.key.toLowerCase()];
           if (to) { e.preventDefault(); nav(to); return; }
         }
         if (e.key === 'g') { gPrefix.current = Date.now(); return; }
@@ -125,6 +132,7 @@ function App() {
   else if (r.name === 'doc') page = html`<${DocPage} key=${r.id} id=${r.id} nav=${nav} openItem=${openItem} refreshShell=${reloadShell} />`;
   else if (r.name === 'portfolio') page = html`<${PortfolioPage} boot=${boot} nav=${nav} version=${version} />`;
   else if (r.name === 'timesheets') page = html`<${TimesheetPage} boot=${boot} openItem=${openItem} version=${version} />`;
+  else if (r.name === 'meetings') page = html`<${MeetingsPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'calendar') page = html`<${CalendarPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'mywork') page = html`<${MyWork} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'inbox') page = html`<${Inbox} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
@@ -146,6 +154,7 @@ function App() {
         ${navLink('home', 'Home', 'home')}
         ${navLink('mywork', 'My work', 'check')}
         ${navLink('calendar', 'Calendar', 'calendar')}
+        ${navLink('meetings', 'Calls and meetings', 'phone')}
         ${navLink('dependencies', 'Dependencies', 'dependency')}
         ${navLink('portfolio', 'Portfolio', 'grid')}
         ${navLink('timesheets', 'Timesheets', 'timer')}
@@ -177,6 +186,9 @@ function App() {
     </main></div>
     ${item ? html`<${ItemPanel} key=${item.id + item.t} id=${item.id} tab=${item.tab} openItem=${openItem} nav=${nav}
       onClose=${() => setItem(null)} onChanged=${() => { if (itemReload.current) itemReload.current(); else bump(); }} />` : null}
+    ${meetOpen ? html`<${MeetingDrawer} key=${meetOpen} id=${meetOpen} boot=${boot} openItem=${(id) => { setMeetOpen(null); openItem(id); }} onClose=${() => setMeetOpen(null)}
+      onChanged=${() => { window.dispatchEvent(new CustomEvent('bd-meetings-changed')); if (itemReload.current) itemReload.current(); }} />` : null}
+    ${newMeet ? html`<${NewMeeting} boot=${boot} preset=${newMeet} onClose=${() => setNewMeet(null)} onCreated=${(id) => { setNewMeet(null); bump(); setItem(null); openMeeting(id); }} />` : null}
     ${docOpen ? html`<${DocDrawer} key=${docOpen} id=${docOpen} nav=${nav} onClose=${() => { setDocOpen(null); bump(); }} />` : null}
     ${palette ? html`<${SearchPalette} boot=${boot} nav=${nav} openItem=${openItem} onClose=${() => setPalette(false)} />` : null}
     ${newBoard ? html`<${NewBoard} boot=${boot} workspaceId=${newBoard.workspaceId} onClose=${() => setNewBoard(null)}
@@ -192,7 +204,7 @@ const SHORTCUTS = [
   ['Ctrl+K', 'Search and commands'], ['Ctrl+Z', 'Undo the last change'], ['Ctrl+P', 'Print or save the board or doc as PDF'],
   ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'],
   ['g h', 'Go to Home'], ['g m', 'Go to My work'], ['g c', 'Go to Calendar'], ['g d', 'Go to Dependencies'], ['g i', 'Go to Inbox'],
-  ['g p', 'Go to Portfolio'], ['g t', 'Go to Timesheets'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
+  ['g p', 'Go to Portfolio'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
 ];
 
 /** Always-visible update control: check, watch the download, restart to install. */

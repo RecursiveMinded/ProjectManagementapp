@@ -194,3 +194,32 @@ export function DocDrawer({ id, onClose, nav }) {
     <${DocEditor} id=${id} onLoaded=${setD} onTitle=${(t) => setD((x) => ({ ...x, title: t }))} />
   </${Drawer}>`;
 }
+
+/** A small rich-text box (agenda, notes, recap) that saves as you type. */
+export function RichText({ value, onSave, placeholder, label }) {
+  const body = useRef(null);
+  const timer = useRef(null);
+  const last = useRef(value || '');
+  const [state, setState] = useState('saved');
+  useEffect(() => { if (body.current) body.current.innerHTML = cleanDocHtml(value) || ''; last.current = value || ''; }, []);
+  const flush = async () => {
+    clearTimeout(timer.current);
+    if (!body.current) return;
+    const h = cleanDocHtml(body.current.innerHTML);
+    if (h === last.current) return;
+    last.current = h;
+    try { await onSave(h); setState('saved'); } catch (e) { setState('error'); toastError(e); }
+  };
+  useEffect(() => () => flush(), []);
+  const onInput = () => { setState('saving'); clearTimeout(timer.current); timer.current = setTimeout(flush, 700); };
+  const onPaste = (e) => { const h = e.clipboardData && e.clipboardData.getData('text/html'); if (!h) return; e.preventDefault(); document.execCommand('insertHTML', false, cleanDocHtml(h)); };
+  const onClick = (e) => { const li = e.target.closest && e.target.closest('ul.checklist > li'); if (li && e.offsetX < 22) { li.classList.toggle('done'); onInput(); } };
+  return html`<div class="rich">
+    <div class="doc-tools" role="toolbar" aria-label="Formatting">
+      ${TOOLS.filter((t) => !['h1', 'code', 'hr'].includes(t.k)).map((t, i) => (t.sep ? html`<span class="sep" key=${i}></span>` : html`<button key=${t.k} title=${t.title} aria-label=${t.title} onMouseDown=${(e) => { e.preventDefault(); body.current.focus(); t.run(); onInput(); }}>${t.label}</button>`))}
+      <span class="grow"></span><span class=${`small faint doc-state ${state}`}>${state === 'saving' ? 'Saving…' : state === 'error' ? 'Not saved' : 'Saved'}</span>
+    </div>
+    <div class="doc-body rich-body" ref=${body} contenteditable="true" spellcheck="true" aria-label=${label || placeholder} data-ph=${placeholder || ''}
+      onInput=${onInput} onPaste=${onPaste} onClick=${onClick} onKeyDown=${shortcut} onBlur=${flush}></div>
+  </div>`;
+}
