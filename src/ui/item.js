@@ -1,7 +1,7 @@
 // The item panel: updates (comments with @mentions and replies), every
 // field, subitems, files and the item's activity log.
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
-import { html, Icon, Menu, useAnchor, InlineText, Avatar, toastError, toast, ask, Spinner, relTime, plural, bytes } from './lib.js';
+import { html, Icon, Menu, useAnchor, InlineText, Avatar, toastError, toast, ask, Spinner, relTime, plural, bytes, Modal, todayIso, addDaysIso, shortDate } from './lib.js';
 import { call, native } from './api.js';
 import { C, ctxOf } from './model.js';
 import { Cell } from './cells.js';
@@ -11,6 +11,8 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
   const [tab, setTab] = useState(initialTab || 'updates');
   const [menu, openMenu, closeMenu] = useAnchor();
   const [moveB, setMoveB] = useState(null);
+  const [repeat, setRepeat] = useState(false);
+  const [tplName, setTplName] = useState(null);
   const load = useCallback(async () => {
     try { setD(await call('getItem', id)); } catch (e) { toastError(e); onClose(); }
   }, [id]);
@@ -25,7 +27,7 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
   if (!d) return html`<div><div class="scrim" onClick=${onClose}></div><aside class="drawer wide"><div class="bd"><${Spinner} /></div></aside></div>`;
   const it = d.item;
   const isSub = !!it.parent_id;
-  const B = { board: d.board, columns: d.columns, groups: d.groups, people: d.people, items: d.parent ? [d.parent] : [it], subitems: d.subitems, files: d.files, linked: d.linked, updateCounts: {} };
+  const B = { board: d.board, columns: d.columns, groups: d.groups, people: d.people, items: d.parent ? [d.parent] : [it], subitems: d.subitems, files: d.files, linked: d.linked, docs: d.docs || {}, updateCounts: {} };
   const ctx = ctxOf(B);
   const cols = d.columns.filter((c) => c.scope === (isSub ? 'sub' : 'item'));
   const group = d.groups.find((g) => g.id === it.group_id);
@@ -37,7 +39,8 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
           <div class="crumbs"><a onClick=${() => { onClose(); nav('board', d.board.id); }}>${d.board.name}</a>
             ${group ? html`<span>/</span><span style=${`color:${C.colorHex(group.color)}`}>${group.name}</span>` : null}
             ${d.parent ? html`<span>/</span><a onClick=${() => openItem(d.parent.id)}>${d.parent.name}</a>` : null}
-            ${it.archived ? html`<span class="chip">Archived</span>` : null}</div>
+            ${it.archived ? html`<span class="chip">Archived</span>` : null}
+            ${d.recurrence ? html`<button class="chip rec-chip" title="Change how this item repeats" onClick=${() => setRepeat(true)}>↻ ${d.recurrence.text} · next ${shortDate(d.recurrence.next_date)}</button>` : null}</div>
           <h2 class="mt"><${InlineText} value=${it.name} onSave=${(v) => call('renameItem', it.id, v).then(changed, toastError)} /></h2>
         </div>
         <button class="btn icon ghost" aria-label="Item menu" onClick=${openMenu}><${Icon} name="more" /></button>
@@ -56,6 +59,8 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
     </div>
     ${menu ? html`<${Menu} anchor=${menu} onClose=${closeMenu} align="right" items=${[
       { label: 'Duplicate', icon: 'copy', onClick: () => call('duplicateItem', it.id).then((nid) => { changed(); openItem(nid); }, toastError) },
+      !isSub && { label: d.recurrence ? 'Change repeat…' : 'Repeat…', icon: 'refresh', hint: d.recurrence ? d.recurrence.text : 'make a copy on a schedule', onClick: () => setRepeat(true) },
+      !isSub && { label: 'Save as item template…', icon: 'spark', onClick: () => setTplName(it.name) },
       !isSub && { head: 'Move to group' },
       ...(!isSub ? d.groups.filter((g) => !g.archived && g.id !== it.group_id).map((g) => ({ label: g.name, icon: 'group', onClick: () => call('moveItem', it.id, { groupId: g.id }).then(changed, toastError) })) : []),
       !isSub && { label: 'Move to another board…', icon: 'arrowRight', onClick: async () => setMoveB(await call('allBoards')) },
@@ -64,6 +69,12 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
         : { label: 'Archive', icon: 'archive', onClick: () => call('archiveItem', it.id, true).then(() => { toast('Archived'); onChanged && onChanged(); onClose(); }, toastError) },
       { label: 'Delete', icon: 'trash', danger: true, onClick: async () => { if (await ask({ title: 'Delete this item?', body: 'It moves to the trash with its subitems, updates and files. You can restore it for 30 days, or press Ctrl+Z.' })) call('deleteItem', it.id).then(() => { onChanged && onChanged(); onClose(); }, toastError); } },
     ]} />` : null}
+    ${repeat ? html`<${RepeatEditor} it=${it} d=${d} onClose=${() => setRepeat(false)} onDone=${() => { setRepeat(false); changed(); }} />` : null}
+    ${tplName != null ? html`<${Modal} title="Save as item template" onClose=${() => setTplName(null)}>
+      <p class="small muted">Saves this item's values${d.subitems.length ? ` and its ${plural(d.subitems.length, 'subitem')}` : ''}. Add copies from the arrow next to New on this board.</p>
+      <label class="field mt">Template name<input class="input" autoFocus value=${tplName} onInput=${(e) => setTplName(e.target.value)} /></label>
+      <div class="row mt2"><span class="grow"></span><button class="btn" onClick=${() => setTplName(null)}>Cancel</button>
+        <button class="btn primary" onClick=${() => call('saveItemTemplate', it.id, tplName).then(() => { toast('Item template saved'); setTplName(null); onChanged && onChanged(); }, toastError)}>Save template</button></div></${Modal}>` : null}
     ${moveB ? html`<${Menu} anchor=${{ getBoundingClientRect: () => ({ left: window.innerWidth - 420, right: window.innerWidth - 120, top: 60, bottom: 80, width: 300 }) }} onClose=${() => setMoveB(null)} width=${300}
       items=${moveB.filter((b) => b.id !== d.board.id && !b.archived).map((b) => ({ label: b.name, hint: b.workspace, icon: 'table', onClick: () => call('moveItem', it.id, { boardId: b.id }).then(() => { toast(`Moved to ${b.name}`); changed(); }, toastError) }))} />` : null}
   </aside></div>`;
@@ -194,3 +205,26 @@ export function ActivityLog({ rows, people, openItem }) {
   </div>`)}</div>`;
 }
 void plural;
+
+const WDAYS = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [7, 'Sun']];
+function RepeatEditor({ it, d, onClose, onDone }) {
+  const cur = d.recurrence ? d.recurrence.rule : null;
+  const todayDow = ((new Date().getDay() + 6) % 7) + 1;
+  const [every, setEvery] = useState(cur ? cur.every : 1);
+  const [unit, setUnit] = useState(cur ? cur.unit : 'week');
+  const [days, setDays] = useState(cur && cur.weekdays && cur.weekdays.length ? cur.weekdays : [todayDow]);
+  const [start, setStart] = useState(d.recurrence ? d.recurrence.next_date : addDaysIso(todayIso(), unit === 'day' ? 1 : 7));
+  const [group, setGroup] = useState(cur && cur.groupId ? cur.groupId : '');
+  const save = () => call('setRecurrence', it.id, { every, unit, weekdays: unit === 'week' ? days : [], start, groupId: group || null })
+    .then((r) => { toast(`Repeats: ${r.text}`); onDone(); }, toastError);
+  return html`<${Modal} title=${`Repeat “${it.name}”`} onClose=${onClose}>
+    <p class="small muted">On each date a fresh copy of this item is added, with its dates moved to that day and its status, checkboxes and timers reset. The item itself stays as the pattern.</p>
+    <div class="row mt2" style="gap:8px"><span>Every</span><input class="input" type="number" min="1" max="365" style="width:70px" value=${every} onInput=${(e) => setEvery(Number(e.target.value) || 1)} />
+      <select class="input" style="width:auto" value=${unit} onChange=${(e) => setUnit(e.target.value)}><option value="day">${every > 1 ? 'days' : 'day'}</option><option value="week">${every > 1 ? 'weeks' : 'week'}</option><option value="month">${every > 1 ? 'months' : 'month'}</option></select></div>
+    ${unit === 'week' ? html`<div class="row mt" style="gap:4px">${WDAYS.map(([n, l]) => html`<button key=${n} class=${`btn small ${days.includes(n) ? 'primary' : ''}`} onClick=${() => setDays(days.includes(n) ? days.filter((x) => x !== n) : [...days, n].sort())}>${l}</button>`)}</div>` : null}
+    <div class="grid c2 mt2"><label class="field">First copy on<input class="input" type="date" value=${start} onInput=${(e) => setStart(e.target.value)} /></label>
+      <label class="field">Add copies to<select class="input" value=${group} onChange=${(e) => setGroup(e.target.value)}><option value="">Same group as this item</option>${d.groups.filter((g) => !g.archived).map((g) => html`<option key=${g.id} value=${g.id}>${g.name}</option>`)}</select></label></div>
+    <div class="row mt2">${d.recurrence ? html`<button class="btn ghost" onClick=${() => call('clearRecurrence', it.id).then(() => { toast('Stopped repeating'); onDone(); }, toastError)}>Stop repeating</button>` : null}
+      <span class="grow"></span><button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${unit === 'week' && !days.length} onClick=${save}>Save</button></div>
+  </${Modal}>`;
+}

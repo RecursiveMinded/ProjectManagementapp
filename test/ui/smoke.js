@@ -157,6 +157,27 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.keyboard.press('Escape');
       await page.waitForSelector('.tbl .doc-chip');
     });
+    await step('repeat an item and save an item template', async () => {
+      const row = page.locator('.tbl tbody tr:has-text("Plan team offsite")').first();
+      await row.hover();
+      await row.locator('.open-btn').click();
+      await page.waitForSelector('.drawer');
+      await page.click('.drawer button[aria-label="Item menu"]');
+      await page.click('.menu >> text=Repeat…');
+      await page.click('.modal button:has-text("Save")');
+      await page.waitForSelector('.drawer .rec-chip');
+      await page.click('.drawer button[aria-label="Item menu"]');
+      await page.click('.menu >> text=Save as item template');
+      await page.fill('.modal input.input', 'Offsite plan');
+      await page.click('.modal button:has-text("Save template")');
+      await page.waitForSelector('.modal', { state: 'detached' });
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.drawer', { state: 'detached' });
+      await page.waitForSelector('.tbl .rec-ic');
+      await page.click('.toolbar button[aria-label="More new options"]');
+      await page.click('.menu >> text=Offsite plan');
+      await page.waitForFunction(() => document.querySelectorAll('.tbl tbody tr .nm').length && [...document.querySelectorAll('.tbl .nm')].filter((x) => x.textContent.includes('Plan team offsite')).length >= 2);
+    });
     await step('portfolio', async () => {
       await page.click('.side .nav a:has-text("Portfolio")');
       await page.waitForSelector('table.pf tbody tr');

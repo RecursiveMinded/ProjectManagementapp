@@ -603,3 +603,6 @@ td.bad, .bad { color: var(--bad); } td.b, .b { font-weight: 700; }
 .ts td.click { cursor: pointer; } .ts td.click:hover { background: var(--brand-soft); }
 .ts tfoot td { font-weight: 600; background: var(--bg, #f7f7fb); }
 .ts.entries td { padding: 5px 10px; }
+
+.rec-ic { color: var(--brand); font-weight: 700; font-size: 13px; margin-left: 2px; cursor: default; }
+.rec-chip { border: 0; cursor: pointer; background: var(--brand-soft); color: var(--brand); font-weight: 600; }

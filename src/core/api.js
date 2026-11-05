@@ -9,6 +9,7 @@ const { Store } = require('./store');
 const { Automations, TRIGGERS, ACTIONS } = require('./automations');
 const { Dashboards, WIDGETS } = require('./dashboards');
 const { Reports } = require('./reports');
+const { Recurring } = require('./recurring');
 const T = require('./templates');
 const io = require('./io');
 const C = require('./columns');
@@ -40,6 +41,7 @@ class AppApi {
     this.automations = new Automations(this.store);
     this.dashboards = new Dashboards(this.store);
     this.reports = new Reports(this.store);
+    this.recurring = new Recurring(this.store);
     this.store.me();
     if (dataDir) this.autoBackup();
     try { this.store.purgeTrash({ olderThanDays: 30 }); } catch (_) { /* never block start-up */ }
@@ -166,7 +168,7 @@ class AppApi {
     this.db.run("INSERT INTO settings(key,value) VALUES('favorites',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [JSON.stringify(list)]);
     return list;
   }
-  getBoard(id) { return this.store.getBoard(id); }
+  getBoard(id) { const B = this.store.getBoard(id); B.recurring = this.recurring.forBoard(id); B.itemTemplates = this.recurring.itemTemplates(id); return B; }
   updateBoard(id, patch) { return this.store.updateBoard(id, patch); }
   duplicateBoard(id, opts) { return this.store.duplicateBoard(id, opts); }
   archiveBoard(id, archived) { return this.store.archiveBoard(id, archived); }
@@ -265,6 +267,7 @@ class AppApi {
       parent: row.parent_id ? B.items.find((x) => x.id === row.parent_id) || null : null,
       updates: this.store.updates(id), fileList: this.store.itemFiles(id),
       activity: this.store.activity({ itemId: id, limit: 150 }),
+      docs: B.docs, recurrence: row.parent_id ? null : this.recurring.get(id),
     };
   }
 
@@ -287,7 +290,20 @@ class AppApi {
   toggleAutomation(id, e) { return this.automations.toggle(id, e); }
   deleteAutomation(id) { return this.automations.remove(id); }
   automationLog(q) { return this.automations.log(q); }
-  runSchedule(at) { return this.automations.tick(at ? new Date(at) : new Date()); }
+  runSchedule(at) {
+    const when = at ? new Date(at) : new Date();
+    const made = this.recurring.tick(when);
+    return this.automations.tick(when) + made;
+  }
+
+  // ------------------------------------------- recurring items, item templates
+  getRecurrence(itemId) { return this.recurring.get(itemId); }
+  setRecurrence(itemId, rule) { const r = this.recurring.set(itemId, rule); this.recurring.tick(); return r; }
+  clearRecurrence(itemId) { return this.recurring.clear(itemId); }
+  itemTemplates(boardId) { return this.recurring.itemTemplates(boardId); }
+  saveItemTemplate(itemId, name) { return this.recurring.saveItemTemplate(itemId, name); }
+  deleteItemTemplate(id) { return this.recurring.deleteItemTemplate(id); }
+  addItemFromTemplate(templateId, opts) { return this.recurring.addFromTemplate(templateId, opts); }
 
   // --------------------------------------------------- portfolio, timesheets
   portfolio() { return this.reports.portfolio(); }

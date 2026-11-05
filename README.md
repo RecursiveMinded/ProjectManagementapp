@@ -12,6 +12,8 @@ The feature set was mapped from the public help documentation of a leading hoste
 - Items can have subitems with their own columns.
 - Items and groups can be dragged to reorder or move them, and duplicated, archived, restored or deleted.
 - Selecting several items brings up bulk actions: set a value, move, duplicate, archive or delete.
+- Recurring items: repeat any item every N days, weeks (on chosen weekdays) or months. Each copy gets its dates moved and its status, checkboxes and timers reset.
+- Item templates: save an item with its values and subitems, then add copies from the arrow next to New.
 - Each item has an updates feed with replies, pins and @mentions, plus a files tab and a full activity log.
 
 **Workdocs**

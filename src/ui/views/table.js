@@ -65,6 +65,7 @@ export function TableView({ B, cfg, setCfg, items, ctx, reload, openItem, select
                 <td class="name-cell"><div class="item-name">
                   <button class=${`sub-toggle ${subs.length ? 'has' : ''} ${open ? 'open' : ''}`} title=${subs.length ? plural(subs.length, 'subitem') : 'Add subitems'} onClick=${() => setOpenSubs({ ...openSubs, [it.id]: !open })}><${Icon} name="chev" size="14" />${subs.length ? subs.length : ''}</button>
                   <span class="nm"><${InlineText} value=${it.name} onSave=${(v) => call('renameItem', it.id, v).then(reload, toastError)} /></span>
+                  ${B.recurring && B.recurring[it.id] ? html`<span class="rec-ic" title=${`Repeats: ${B.recurring[it.id].text}`}>↻</span>` : null}
                   <button class="open-btn" onClick=${() => openItem(it.id)}><${Icon} name="expand" size="12" />Open</button>
                   <button class=${`upd-count ${B.updateCounts[it.id] ? '' : 'zero'}`} title="Updates" onClick=${() => openItem(it.id, 'updates')}><${Icon} name="msg" size="16" />${B.updateCounts[it.id] || ''}</button>
                 </div></td>

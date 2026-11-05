@@ -55,6 +55,22 @@ CREATE TABLE IF NOT EXISTS docs (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS recurrences (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL UNIQUE,
+  board_id TEXT NOT NULL,
+  rule TEXT NOT NULL,
+  next_date TEXT NOT NULL,
+  last_date TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS item_templates (
+  id TEXT PRIMARY KEY,
+  board_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS user_templates (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

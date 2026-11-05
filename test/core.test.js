@@ -414,3 +414,51 @@ test('portfolio and timesheets', async () => {
   assert.equal(api.getBoard(tasks.id).items[4].values[tc.id].total, 0);
   assert.throws(() => api.addTime(it.id, tc.id, { minutes: 0 }), /between/);
 });
+
+test('recurring items and item templates', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const R = require('../src/core/recurring');
+  // Rules
+  assert.equal(R.nextAfter({ every: 1, unit: 'day' }, '2026-03-10', '2026-03-01'), '2026-03-11');
+  assert.equal(R.nextAfter({ every: 1, unit: 'week', weekdays: [1, 4] }, '2026-03-10', '2026-03-09'), '2026-03-12');
+  assert.equal(R.nextAfter({ every: 2, unit: 'week', weekdays: [1] }, '2026-03-09', '2026-03-09'), '2026-03-23');
+  assert.equal(R.nextAfter({ every: 1, unit: 'month' }, '2026-01-31', '2026-01-31'), '2026-02-28');
+  assert.equal(R.describe({ every: 2, unit: 'week', weekdays: [1, 3] }), 'Every 2 weeks on Mon, Wed');
+
+  const tasks = api.bootstrap().workspaces[0].boards.find((b) => b.name === 'Team tasks');
+  let B = api.getBoard(tasks.id);
+  const st = col(B, 'Status') || B.columns.find((c) => c.type === 'status');
+  const due = B.columns.find((c) => c.type === 'date' && c.scope === 'item');
+  const src = B.items[0];
+  api.setValue(src.id, st.id, 'done');
+  const r = api.setRecurrence(src.id, { every: 1, unit: 'week', start: today() });
+  assert.equal(r.text, 'Every week');
+  B = api.getBoard(tasks.id);
+  const copies = B.items.filter((i) => i.name === src.name);
+  assert.equal(copies.length, 2, 'a copy is made on the start day');
+  const copy = copies.find((i) => i.id !== src.id);
+  assert.notEqual(copy.values[st.id], 'done', 'status reset');
+  if (due && src.values[due.id]) assert.equal(copy.values[due.id], today());
+  assert.ok(B.recurring[src.id].next > today());
+  api.runSchedule();
+  assert.equal(api.getBoard(tasks.id).items.filter((i) => i.name === src.name).length, 2, 'no duplicate on the same day');
+  api.runSchedule(addDays(today(), 7) + 'T12:00:00');
+  assert.equal(api.getBoard(tasks.id).items.filter((i) => i.name === src.name).length, 3);
+  api.clearRecurrence(src.id);
+  assert.equal(api.getRecurrence(src.id), null);
+
+  // Item templates keep values and subitems
+  const web = api.bootstrap().workspaces[0].boards.find((b) => b.name === 'Website relaunch');
+  const W = api.getBoard(web.id);
+  const parent = W.items.find((i) => W.subitems.some((s) => s.parent_id === i.id));
+  const nSubs = W.subitems.filter((s) => s.parent_id === parent.id).length;
+  const tid = api.saveItemTemplate(parent.id, 'Phase template');
+  assert.equal(api.getBoard(web.id).itemTemplates[0].name, 'Phase template');
+  const nid = api.addItemFromTemplate(tid, {});
+  const W2 = api.getBoard(web.id);
+  assert.equal(W2.subitems.filter((s) => s.parent_id === nid).length, nSubs);
+  assert.equal(W2.items.find((i) => i.id === nid).name, parent.name);
+  api.deleteItemTemplate(tid);
+  assert.equal(api.itemTemplates(web.id).length, 0);
+});

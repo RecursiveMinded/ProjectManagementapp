@@ -203,6 +203,7 @@ function Toolbar({ B, cfg, setCfg, view, reload, count }) {
   const [ga, openG, closeG] = useAnchor();
   const [na, openN, closeN] = useAnchor();
   const [ca, openC, closeC] = useAnchor();
+  const [delTpl, setDelTpl] = useState(false);
   const filterBtn = useRef(null);
   useEffect(() => { if (cfg.showFilter && filterBtn.current) { openF({ currentTarget: filterBtn.current }); setCfg({ ...cfg, showFilter: false }); } }, [cfg.showFilter]);
   const nFilters = (cfg.filters || []).filter((f) => f.column).length;
@@ -218,7 +219,14 @@ function Toolbar({ B, cfg, setCfg, view, reload, count }) {
     ${na ? html`<${Menu} anchor=${na} onClose=${closeN} items=${[
       { label: 'New group of items', icon: 'group', onClick: () => call('addGroup', B.board.id, { top: true }).then(reload, toastError) },
       { label: 'Import items from Excel or CSV', icon: 'upload', onClick: () => importInto(B, reload) },
+      ...((B.itemTemplates || []).length ? [{ sep: true }, { head: 'From an item template' },
+        ...B.itemTemplates.map((t) => ({ label: t.name, icon: 'spark', onClick: () => call('addItemFromTemplate', t.id, { groupId: firstGroup && firstGroup.id }).then(() => { toast(`Added “${t.name}”`); reload(); }, toastError) })),
+        { label: 'Delete an item template…', icon: 'trash', onClick: () => setDelTpl(true) }] : []),
     ]} />` : null}
+    ${delTpl ? html`<${Modal} title="Item templates" onClose=${() => setDelTpl(false)}>
+      ${(B.itemTemplates || []).map((t) => html`<div class="row" key=${t.id} style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="grow">${t.name}</span>
+        <button class="btn small ghost" onClick=${() => call('deleteItemTemplate', t.id).then(reload, toastError)}><${Icon} name="trash" size="14" /> Delete</button></div>`)}
+      ${!(B.itemTemplates || []).length ? html`<div class="muted small">No item templates left.</div>` : null}</${Modal}>` : null}
     <input class="input search" placeholder="Search this board" value=${cfg.search || ''} onInput=${(e) => setCfg({ ...cfg, search: e.target.value })} />
     <button class=${`btn ghost ${person ? 'active' : ''}`} onClick=${openP}>${person ? html`<${Avatar} person=${person} size=${20} />` : html`<${Icon} name="person" />`} ${person ? person.name.split(' ')[0] : 'Person'}</button>
     <button ref=${filterBtn} class=${`btn ghost ${nFilters ? 'active' : ''}`} onClick=${openF}><${Icon} name="filter" /> Filter${nFilters ? ` / ${nFilters}` : ''}</button>
