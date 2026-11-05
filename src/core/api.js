@@ -11,6 +11,7 @@ const { Dashboards, WIDGETS } = require('./dashboards');
 const { Reports } = require('./reports');
 const { Recurring } = require('./recurring');
 const { Meetings } = require('./meetings');
+const { Capture } = require('./capture');
 const T = require('./templates');
 const io = require('./io');
 const C = require('./columns');
@@ -44,6 +45,7 @@ class AppApi {
     this.reports = new Reports(this.store);
     this.recurring = new Recurring(this.store);
     this.meetings = new Meetings(this.store);
+    this.capture = new Capture(this.store, this.meetings);
     this.store.me();
     if (dataDir) this.autoBackup();
     try { this.store.purgeTrash({ olderThanDays: 30 }); } catch (_) { /* never block start-up */ }
@@ -69,6 +71,7 @@ class AppApi {
       workspaces: ws,
       people: this.store.people(),
       teams: this.store.teams(),
+      ai: this.capture.aiStatus(),
       favorites: this.favorites(),
       docs: this.docs(),
       userTemplates: this.userTemplates(),
@@ -370,6 +373,25 @@ class AppApi {
     const when = at ? new Date(at) : new Date();
     const made = this.recurring.tick(when) + this.meetings.tick(when);
     return this.automations.tick(when) + made;
+  }
+
+  // ------------------------------------------------------- quick capture
+  aiStatus() { return this.capture.aiStatus(); }
+  setAi(cfg) { return this.capture.setAi(cfg); }
+  async testAi() {
+    const r = await this.capture.read({ text: 'Call with Test Co tomorrow 10am. Sam to send the quote by Friday.' }, async () => '');
+    if (r.mode !== 'claude') throw new Error(r.notes[r.notes.length - 1] || 'Claude is not set up');
+    return { ok: true, records: r.records.length };
+  }
+  /** Read pasted or dropped notes into proposed records for review. */
+  readNotes({ text, files } = {}) { return this.capture.read({ text, files: files || [] }, (name, bytes) => this.notesText(name, bytes)); }
+  applyNotes(args) { return this.capture.apply(args); }
+  captureBoards() { return this.capture.context().boards.map((b) => ({ id: b.id, name: b.name, groups: b.groups, columns: b.columns.map((c) => ({ id: c.id, title: c.title })) })); }
+  async notesText(name, bytes) {
+    if (/\.docx$/i.test(name)) { const { value } = await require('mammoth').extractRawText({ buffer: Buffer.from(bytes) }); return value; }
+    if (/\.(txt|md|csv|tsv)$/i.test(name)) return Buffer.from(bytes).toString('utf8');
+    const r = await require('./extract').extract(name, bytes, (n, b) => io.readTable(n, b));
+    return r.text || (r.rows || []).map((row) => row.join('\t')).join('\n');
   }
 
   // ------------------------------------------------- customer calls and meetings
@@ -710,7 +732,7 @@ function cleanHtml(html) {
 }
 
 const PUBLIC_METHODS = Object.getOwnPropertyNames(AppApi.prototype).filter((m) => ![
-  'constructor', 'withLog', 'backupsDir', 'autoBackup', 'pruneBackups', 'filePath', 'takeUnshown', 'checkNotification', 'pushUndo', 'lastTrash',
+  'constructor', 'withLog', 'notesText', 'backupsDir', 'autoBackup', 'pruneBackups', 'filePath', 'takeUnshown', 'checkNotification', 'pushUndo', 'lastTrash',
 ].includes(m));
 
 module.exports = { AppApi, PUBLIC_METHODS, DEFAULT_SETTINGS };

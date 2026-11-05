@@ -226,6 +226,23 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.seg button:has-text("Past and held")');
       await page.waitForSelector('.meet-row:has-text("Proposal walkthrough")');
     });
+    await step('quick capture: notes to records with mapping', async () => {
+      await page.click('.side .capture-btn');
+      await page.fill('.modal .cap-text', 'Call with Northwind Traders tomorrow 2pm\nThey want quarterly billing.\n- Jordan to send revised quote by Friday');
+      await page.click('.modal button:has-text("Read notes")');
+      await page.waitForSelector('.cap-card >> nth=1');
+      await page.click('.modal button:has-text("Back to the notes")');
+      await page.fill('.modal .cap-text', '- Zebra crossing paint order');
+      await page.click('.modal button:has-text("Read notes")');
+      await page.waitForSelector('.cap-card.unsure');
+      if (!(await page.isDisabled('.modal button:has-text("Create 1 record")'))) throw new Error('unplaced record should block creating');
+      await page.selectOption('.cap-card select >> nth=1', { label: 'Bug tracker' });
+      await page.waitForSelector('.cap-card.unsure', { state: 'detached' });
+      await page.click('.modal button:has-text("Create 1 record")');
+      await page.waitForSelector('.drawer h2:has-text("Zebra crossing paint order")');
+      await page.click('.drawer button[aria-label="Close"]');
+      await page.waitForSelector('.scrim', { state: 'detached' });
+    });
     await step('my work', async () => { await page.click('.side .nav a:has-text("My work")'); await page.waitForSelector('h1:has-text("My work")'); });
     await step('inbox', async () => { await page.click('.side .nav a:has-text("Inbox")'); await page.waitForSelector('h1:has-text("Inbox")'); });
     await step('search palette', async () => {

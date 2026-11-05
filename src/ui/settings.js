@@ -4,8 +4,9 @@ import { html, Icon, toast, toastError, useLoad, Spinner, Avatar, Avatars, bytes
 import { C } from './model.js';
 import { call, native, isDesktop } from './api.js';
 import { useUpdate, checkForUpdates, installUpdate } from './update.js';
+import { AiSettings } from './capture.js';
 
-const TABS = [['profile', 'People & teams'], ['notify', 'Notifications'], ['look', 'Appearance'], ['data', 'Data & backups'], ['about', 'Updates & about']];
+const TABS = [['profile', 'People & teams'], ['notify', 'Notifications'], ['look', 'Appearance'], ['ai', 'AI'], ['data', 'Data & backups'], ['about', 'Updates & about']];
 
 export function Settings({ boot, reloadShell }) {
   const [tab, setTab] = useState('profile');
@@ -19,6 +20,7 @@ export function Settings({ boot, reloadShell }) {
       ${tab === 'profile' ? html`<${Team} boot=${boot} reloadShell=${reloadShell} />` : null}
       ${tab === 'notify' ? html`<${Notify} s=${s} save=${save} />` : null}
       ${tab === 'look' ? html`<${Look} s=${s} save=${save} />` : null}
+      ${tab === 'ai' ? html`<${AiSettings} />` : null}
       ${tab === 'data' ? html`<${Data} boot=${boot} s=${s} save=${save} reloadShell=${reloadShell} />` : null}
       ${tab === 'about' ? html`<${About} s=${s} save=${save} />` : null}
     </div></div>`;

@@ -16,6 +16,11 @@ The feature set was mapped from the public help documentation of a leading hoste
 - Item templates: save an item with its values and subitems, then add copies from the arrow next to New.
 - Each item has an updates feed with replies, pins and @mentions, plus a files tab and a full activity log.
 
+**Quick capture (Ctrl+J)**
+- Paste or drop rough notes (meeting notes, a to-do list, an email, a Word file, a PDF or a photo of handwriting) and Boardenda proposes the records: calls and meetings, action items with owners and due dates, new items on the right board and group with their columns filled in, and updates on existing items.
+- With an Anthropic API key (Settings > AI), Claude reads the notes and places each record using your boards, columns, people and customers; it reads photos directly. Without a key, a built-in reader works offline.
+- Anything it isn't sure about is highlighted with a question, and nothing is created until each one is mapped or confirmed.
+
 **Customer calls and meetings**
 - Log customer calls and plan meetings with date, time, length, where (phone, link or room), the customer, and the deal or item they are about.
 - Our team (people in Boardenda) and their side (outside contacts with company, email and phone).
@@ -131,7 +136,7 @@ npm run icons        # redraw build/icon.png and build/icon.ico (needs Python + 
 
 | Path | What it holds |
 | --- | --- |
-| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `meetings.js` (calls, series and action items), `api.js` (the API the UI calls) |
+| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `meetings.js` (calls, series and action items), `capture.js` (Quick capture), `api.js` (the API the UI calls) |
 | `src/ui/` | Preact + htm interface, bundled by esbuild into `dist/ui` |
 | `electron/` | Window, tray, scheduler, Windows notifications, native file dialogs, auto-update |
 | `dev/server.js` | The same API over HTTP, for browser testing |

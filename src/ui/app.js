@@ -15,6 +15,7 @@ import { selfTest } from './selftest.js';
 import { C } from './model.js';
 import { DocPage, DocDrawer } from './docs.js';
 import { MeetingsPage, MeetingDrawer, NewMeeting, openMeeting } from './meetings.js';
+import { CaptureModal, openCapture } from './capture.js';
 import { PortfolioPage, TimesheetPage } from './reports.js';
 
 window.__bdSelfTest = selfTest;
@@ -37,6 +38,7 @@ function App() {
   const [docOpen, setDocOpen] = useState(null);
   const [meetOpen, setMeetOpen] = useState(null);
   const [newMeet, setNewMeet] = useState(null);
+  const [capture, setCapture] = useState(false);
   const [newBoard, setNewBoard] = useState(null); // { workspaceId }
   const [closedWs, setClosedWs] = usePersist('closedWs', {});
   const itemReload = useRef(null);
@@ -72,7 +74,9 @@ function App() {
     const nm = (e) => setNewMeet(e.detail || {});
     window.addEventListener('bd-open-meeting', om);
     window.addEventListener('bd-new-meeting', nm);
-    return () => { window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); };
+    const oc = () => setCapture(true);
+    window.addEventListener('bd-capture', oc);
+    return () => { window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); window.removeEventListener('bd-capture', oc); };
   }, []);
 
   // Unread count and data changed by automations in the background.
@@ -90,6 +94,7 @@ function App() {
       const typing = e.target.closest && e.target.closest('input, textarea, select, [contenteditable]');
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key.toLowerCase() === 'p') { e.preventDefault(); if (document.querySelector('.doc-page')) document.querySelector('.doc-page .btn.small').click(); else window.dispatchEvent(new CustomEvent('bd-print')); return; }
+      if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'j') { e.preventDefault(); setCapture(true); return; }
       if (ctrl && e.shiftKey && e.key.toLowerCase() === 'b') { e.preventDefault(); setNewBoard({}); return; }
       if (!typing && !ctrl && !e.altKey) {
         if (Date.now() - gPrefix.current < 1200) {
@@ -150,6 +155,7 @@ function App() {
     <aside class="side" aria-label="Navigation">
       <div class="brand"><span class="brand-mark"><span></span></span>Boardenda</div>
       <div class="searchbox" role="button" tabindex="0" onClick=${() => setPalette(true)}><${Icon} name="search" />Search<kbd>Ctrl K</kbd></div>
+      <button class="capture-btn" onClick=${() => setCapture(true)} title="Turn rough notes into items, calls and action items"><${Icon} name="spark" />Quick capture<kbd>Ctrl J</kbd></button>
       <nav class="nav">
         ${navLink('home', 'Home', 'home')}
         ${navLink('mywork', 'My work', 'check')}
@@ -188,6 +194,7 @@ function App() {
       onClose=${() => setItem(null)} onChanged=${() => { if (itemReload.current) itemReload.current(); else bump(); }} />` : null}
     ${meetOpen ? html`<${MeetingDrawer} key=${meetOpen} id=${meetOpen} boot=${boot} openItem=${(id) => { setMeetOpen(null); openItem(id); }} onClose=${() => setMeetOpen(null)}
       onChanged=${() => { window.dispatchEvent(new CustomEvent('bd-meetings-changed')); if (itemReload.current) itemReload.current(); }} />` : null}
+    ${capture ? html`<${CaptureModal} boot=${boot} onClose=${() => setCapture(false)} onDone=${(made) => { setCapture(false); bump(); window.dispatchEvent(new CustomEvent('bd-meetings-changed')); if (made.first && made.first.kind === 'meeting') openMeeting(made.first.id); else if (made.first && made.first.kind === 'item') openItem(made.first.id); }} />` : null}
     ${newMeet ? html`<${NewMeeting} boot=${boot} preset=${newMeet} onClose=${() => setNewMeet(null)} onCreated=${(id) => { setNewMeet(null); bump(); setItem(null); openMeeting(id); }} />` : null}
     ${docOpen ? html`<${DocDrawer} key=${docOpen} id=${docOpen} nav=${nav} onClose=${() => { setDocOpen(null); bump(); }} />` : null}
     ${palette ? html`<${SearchPalette} boot=${boot} nav=${nav} openItem=${openItem} onClose=${() => setPalette(false)} />` : null}
@@ -204,7 +211,7 @@ const SHORTCUTS = [
   ['Ctrl+K', 'Search and commands'], ['Ctrl+Z', 'Undo the last change'], ['Ctrl+P', 'Print or save the board or doc as PDF'],
   ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'],
   ['g h', 'Go to Home'], ['g m', 'Go to My work'], ['g c', 'Go to Calendar'], ['g d', 'Go to Dependencies'], ['g i', 'Go to Inbox'],
-  ['g p', 'Go to Portfolio'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
+  ['g p', 'Go to Portfolio'], ['Ctrl J', 'Quick capture: turn notes into records'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
 ];
 
 /** Always-visible update control: check, watch the download, restart to install. */
