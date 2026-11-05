@@ -161,7 +161,7 @@ export function Archive({ refreshShell }) {
   </div>`;
 }
 
-const KIND = { board: 'Board', group: 'Group', column: 'Column', item: 'Item', subitem: 'Subitem' };
+const KIND = { board: 'Board', group: 'Group', column: 'Column', item: 'Item', subitem: 'Subitem', doc: 'Doc' };
 function Trash({ refreshShell }) {
   const [list, reload] = useLoad(() => call('trash'), []);
   const act = (p, msg) => p.then(() => { reload(); refreshShell(); if (msg) toast(msg); }, toastError);
@@ -187,7 +187,7 @@ export function SearchPalette({ onClose, nav, openItem, boot }) {
     ...boot.workspaces.flatMap((w) => w.boards.map((b) => [`Open board: ${b.name}`, () => nav('board', b.id)])),
     ...boot.dashboards.map((d) => [`Open dashboard: ${d.name}`, () => nav('dashboard', d.id)]),
   ].filter(([l]) => !q || l.toLowerCase().includes(q.toLowerCase())).slice(0, q ? 6 : 8);
-  const all = [...res.map((r) => ({ label: r.name, sub: r.kind === 'update' ? `Update: ${r.snippet}` : `${r.boardName}${r.groupName ? ` · ${r.groupName}` : ''}`, icon: r.kind === 'board' ? 'table' : r.kind === 'update' ? 'msg' : r.kind === 'subitem' ? 'sub' : 'list', go: () => (r.kind === 'board' ? nav('board', r.id) : openItem(r.subId || r.id)) })),
+  const all = [...res.map((r) => ({ label: r.name, sub: r.kind === 'update' ? `Update: ${r.snippet}` : r.kind === 'doc' ? `Doc${r.snippet ? ` · ${r.snippet}` : ''}` : `${r.boardName}${r.groupName ? ` · ${r.groupName}` : ''}`, icon: r.kind === 'board' ? 'table' : r.kind === 'doc' ? 'para' : r.kind === 'update' ? 'msg' : r.kind === 'subitem' ? 'sub' : 'list', go: () => (r.kind === 'board' ? nav('board', r.id) : r.kind === 'doc' ? nav('doc', r.id) : openItem(r.subId || r.id)) })),
     ...commands.map(([l, go]) => ({ label: l, icon: 'arrowRight', go }))];
   const run = (x) => { onClose(); x.go(); };
   return html`<div><div class="scrim" style="z-index:94" onClick=${onClose}></div><div class="palette" role="dialog" aria-label="Search">

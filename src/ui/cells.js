@@ -31,6 +31,20 @@ export function Cell({ col, item, B, ctx, onSet, reload, compact = false, readon
   if (T === 'button') {
     return html`<div class="cell center"><button class="cell-btn" style=${`background:${C.colorHex(col.settings.color)}`} onClick=${async (e) => { e.stopPropagation(); try { await call('clickButton', item.id, col.id); reload && reload(); } catch (er) { toastError(er); } }}>${col.settings.label || 'Click'}</button></div>`;
   }
+  if (T === 'doc') {
+    const d = v && ctx.docs && ctx.docs[v];
+    const openDoc = async (e) => {
+      e.stopPropagation();
+      try {
+        const id = d ? v : await call('createItemDoc', item.id, col.id);
+        if (!d) reload && reload();
+        window.dispatchEvent(new CustomEvent('bd-open-doc', { detail: id }));
+      } catch (er) { toastError(er); }
+    };
+    if (ro && !d) return html`<div class="cell"></div>`;
+    return html`<div class="cell click doc-cell" tabindex="0" onClick=${openDoc} onKeyDown=${(e) => { if (e.key === 'Enter') openDoc(e); }}>
+      ${d ? html`<span class="chip doc-chip"><${Icon} name="para" size="12" />${d.title}</span>` : html`<span class="placeholder doc-add"><${Icon} name="plus" size="13" /> Doc</span>`}</div>`;
+  }
   if (T === 'time_tracking') return html`<${TimerCell} col=${col} item=${item} v=${v} reload=${reload} />`;
   if (T === 'vote') {
     const me = B.people.find((p) => p.is_me);

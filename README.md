@@ -14,11 +14,18 @@ The feature set was mapped from the public help documentation of a leading hoste
 - Selecting several items brings up bulk actions: set a value, move, duplicate, archive or delete.
 - Each item has an updates feed with replies, pins and @mentions, plus a files tab and a full activity log.
 
-**36 column types**
+**Workdocs**
+- Rich notes in any workspace: headings, lists, checklists, quotes, code, links and highlights, saved as you type.
+- Markdown-style shortcuts (`#`, `-`, `[]`), pasting keeps formatting, and Print or PDF.
+- A **Doc** column gives each item its own doc, opened beside the board.
+- Docs are searchable, and deleted docs go to the trash.
+
+**37 column types**
 - Basic values: text, long text, numbers (with unit and summary), checkbox, rating, vote.
 - Labels, people and teams: status, priority, dropdown, tags, people, team.
 - Dates and time: date, timeline, week, hour, world clock, time tracking.
 - Contact and place: link, email, phone, location, country, colour.
+- Docs: a rich doc per item.
 - Files and links between items: files, connect boards, mirror (list, sum, average, min, max, count, earliest or latest), dependency.
 - Calculated values: formula, progress, auto number, item ID, creation log, last updated, subitem count.
 - Button, which runs an automation when clicked.

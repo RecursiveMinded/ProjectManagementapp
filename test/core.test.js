@@ -336,3 +336,35 @@ test('critical path and baseline variance', () => {
   assert.ok(S.criticalPath(nodes, links, { type: 'fs', lagDays: 1 }).critical.has('B'));
   assert.deepEqual(S.variance({ start: '2026-01-01', end: '2026-01-05' }, { start: '2026-01-03', end: '2026-01-08' }), { start: 2, end: 3 });
 });
+
+test('docs: workspace docs, item Doc column, search, trash and cleaning', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const ws = api.bootstrap().workspaces[0];
+  const id = api.saveDoc({ workspaceId: ws.id, title: 'Launch brief', html: '<h1>Goals</h1><p onclick="x()">Ship <b>v2</b></p><script>alert(1)</script><a href="javascript:alert(1)">x</a>' });
+  const d = api.getDoc(id);
+  assert.equal(d.title, 'Launch brief');
+  assert.ok(!/script|onclick|javascript/i.test(d.html), d.html);
+  assert.match(d.html, /<b>v2<\/b>/);
+  assert.equal(api.bootstrap().docs.length, 2, 'the sample doc and the new one');
+  assert.equal(api.search('launch brief')[0].kind, 'doc');
+  api.saveDoc({ id, title: 'Brief' });
+  assert.equal(api.getDoc(id).title, 'Brief');
+  assert.match(api.getDoc(id).html, /Goals/);
+
+  const b = ws.boards.find((x) => x.name === 'Website relaunch');
+  const colId = api.addColumn(b.id, { type: 'doc', title: 'Spec' });
+  const it = api.getBoard(b.id).items[0];
+  const did = api.createItemDoc(it.id, colId);
+  assert.equal(api.createItemDoc(it.id, colId), did);
+  const B = api.getBoard(b.id);
+  assert.equal(B.items[0].values[colId], did);
+  assert.equal(B.docs[did].title, it.name);
+  assert.equal(api.getDoc(did).item.id, it.id);
+  assert.equal(api.bootstrap().docs.length, 2, 'item docs stay out of the sidebar');
+
+  api.deleteDoc(id);
+  assert.throws(() => api.getDoc(id), /no longer exists/);
+  assert.match(api.undo(), /Deleted doc/);
+  assert.equal(api.getDoc(id).title, 'Brief');
+});

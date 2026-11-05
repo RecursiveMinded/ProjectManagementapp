@@ -153,6 +153,7 @@ class Store {
   deleteWorkspace(id) {
     this.db.tx(() => {
       for (const b of this.db.all('SELECT id FROM boards WHERE workspace_id=?', [id])) this.deleteBoard(b.id);
+      this.db.run('DELETE FROM docs WHERE workspace_id=? AND item_id IS NULL', [id]);
       this.db.run('DELETE FROM workspaces WHERE id=?', [id]);
     });
   }
@@ -623,7 +624,8 @@ class Store {
       }
       this.insertRows('boards', p.boards);
       const boardId = t.board_id;
-      if (t.kind !== 'board' && !this.db.get('SELECT id FROM boards WHERE id=?', [boardId])) throw new Error(`Restore the board “${t.board_name}” first`);
+      this.insertRows('docs', p.docs);
+      if (t.kind !== 'board' && t.kind !== 'doc' && !this.db.get('SELECT id FROM boards WHERE id=?', [boardId])) throw new Error(`Restore the board “${t.board_name}” first`);
       this.insertRows('groups', p.groups);
       this.insertRows('columns', p.columns);
       for (const it of p.items || []) {
@@ -929,8 +931,17 @@ class Store {
     for (const f of this.db.all('SELECT f.id, f.name, f.size, f.item_id FROM files f JOIN items i ON i.id=f.item_id WHERE i.board_id=?', [id])) files[f.id] = f;
     const updateCounts = Object.fromEntries(this.db.all('SELECT u.item_id, COUNT(*) AS n FROM updates u JOIN items i ON i.id=u.item_id WHERE i.board_id=? GROUP BY u.item_id', [id]).map((r) => [r.item_id, r.n]));
     const ws = this.db.get('SELECT id, name FROM workspaces WHERE id=?', [board.workspace_id]);
+    const docs = {};
+    const docCols = columns.filter((c) => c.type === 'doc');
+    if (docCols.length) {
+      const ids = [...new Set(rows.flatMap((r) => docCols.map((c) => r.data[c.id]).filter(Boolean)))];
+      for (let i = 0; i < ids.length; i += 500) {
+        const chunk = ids.slice(i, i + 500);
+        for (const d of this.db.all(`SELECT id, title, updated_at FROM docs WHERE id IN (${chunk.map(() => '?').join(',')})`, chunk)) docs[d.id] = d;
+      }
+    }
     return {
-      board, workspace: ws, groups, columns, items, subitems, files, updateCounts,
+      board, workspace: ws, groups, columns, items, subitems, files, updateCounts, docs,
       linked: ctx.linked, people: this.people(), teams: this.teams(), views: this.views(id),
       automations: this.db.get('SELECT COUNT(*) AS n FROM automations WHERE board_id=? AND enabled=1', [id]).n,
     };
@@ -1055,6 +1066,11 @@ class Store {
     }
     for (const u of this.db.all(`SELECT u.id, u.body, u.item_id, i.name, i.board_id, b.name AS board_name FROM updates u JOIN items i ON i.id=u.item_id JOIN boards b ON b.id=i.board_id WHERE LOWER(u.body) LIKE ? LIMIT 100`, [like])) {
       out.push({ kind: 'update', id: u.item_id, name: u.name, snippet: u.body.slice(0, 160), boardId: u.board_id, boardName: u.board_name, score: 0.5 });
+    }
+    for (const d of this.db.all('SELECT id, title, html FROM docs WHERE LOWER(title) LIKE ? OR LOWER(html) LIKE ? LIMIT 50', [like, like])) {
+      const text = d.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+      const i = text.toLowerCase().indexOf(s);
+      out.push({ kind: 'doc', id: d.id, name: d.title, snippet: i >= 0 ? text.slice(Math.max(0, i - 40), i + 120).trim() : '', score: d.title.toLowerCase().includes(s) ? 2.5 : 0.8 });
     }
     for (const b of this.db.all('SELECT id, name, description FROM boards WHERE archived=0 AND (LOWER(name) LIKE ? OR LOWER(description) LIKE ?)', [like, like])) {
       out.push({ kind: 'board', id: b.id, name: b.name, boardId: b.id, boardName: b.name, score: 3 });

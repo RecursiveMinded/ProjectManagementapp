@@ -44,6 +44,17 @@ CREATE TABLE IF NOT EXISTS trash (
   payload TEXT NOT NULL,
   deleted_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS docs (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT,
+  item_id TEXT,
+  title TEXT NOT NULL DEFAULT 'Untitled',
+  html TEXT NOT NULL DEFAULT '',
+  position REAL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS user_templates (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

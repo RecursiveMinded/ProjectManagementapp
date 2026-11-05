@@ -64,6 +64,7 @@ class AppApi {
       people: this.store.people(),
       teams: this.store.teams(),
       favorites: this.favorites(),
+      docs: this.docs(),
       userTemplates: this.userTemplates(),
       me: this.store.me(),
       settings: this.getSettings(),
@@ -95,6 +96,51 @@ class AppApi {
       return io.importBoardFile(this.store, t.payload, { workspaceId, name: name || t.name });
     }
     return T.build(this.store, this.automations, template, { workspaceId, name, sample });
+  }
+
+  // ------------------------------------------------------------------ docs
+  /** Workspace docs (not the ones attached to items) for the sidebar. */
+  docs() { return this.db.all('SELECT id, workspace_id, title, updated_at FROM docs WHERE item_id IS NULL ORDER BY position, created_at'); }
+  getDoc(id) {
+    const d = this.db.get('SELECT * FROM docs WHERE id=?', [id]);
+    if (!d) throw new Error('This doc no longer exists');
+    const item = d.item_id ? this.db.get('SELECT i.id, i.name, i.board_id AS boardId, b.name AS boardName FROM items i JOIN boards b ON b.id=i.board_id WHERE i.id=?', [d.item_id]) : null;
+    const ws = d.workspace_id ? this.db.get('SELECT id, name FROM workspaces WHERE id=?', [d.workspace_id]) : null;
+    const author = d.created_by ? this.db.get('SELECT id, name FROM people WHERE id=?', [d.created_by]) : null;
+    return { ...d, item, workspace: ws, author };
+  }
+  saveDoc({ id, workspaceId, itemId, title, html } = {}) {
+    const ts = now();
+    if (id) {
+      const d = this.db.get('SELECT * FROM docs WHERE id=?', [id]);
+      if (!d) throw new Error('This doc no longer exists');
+      this.db.run('UPDATE docs SET title=?, html=?, workspace_id=?, updated_at=? WHERE id=?', [
+        title != null ? String(title).trim() || 'Untitled' : d.title, html != null ? cleanHtml(html) : d.html, workspaceId || d.workspace_id, ts, id]);
+      return id;
+    }
+    const nid = uid('d');
+    const ws = workspaceId || (this.db.get('SELECT id FROM workspaces ORDER BY position LIMIT 1') || {}).id || this.store.saveWorkspace({ name: 'Main workspace' });
+    const pos = (this.db.get('SELECT MAX(position) AS p FROM docs').p || 0) + 1;
+    this.db.run('INSERT INTO docs(id,workspace_id,item_id,title,html,position,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
+      [nid, ws, itemId || null, String(title || 'Untitled').trim() || 'Untitled', cleanHtml(html || ''), pos, this.store.me().id, ts, ts]);
+    return nid;
+  }
+  /** Create the doc behind an item's Doc column and link it. */
+  createItemDoc(itemId, columnId) {
+    const it = this.store.itemRow(itemId);
+    const existing = it.data[columnId];
+    if (existing && this.db.get('SELECT id FROM docs WHERE id=?', [existing])) return existing;
+    const b = this.db.get('SELECT workspace_id FROM boards WHERE id=?', [it.board_id]);
+    const id = this.saveDoc({ workspaceId: b && b.workspace_id, itemId, title: it.name, html: '' });
+    this.store.setValue(itemId, columnId, id);
+    return id;
+  }
+  deleteDoc(id) {
+    const d = this.db.get('SELECT * FROM docs WHERE id=?', [id]);
+    if (!d) return;
+    this.store.toTrash('doc', d.title, null, 'Docs', { docs: [d] });
+    this.db.run('DELETE FROM docs WHERE id=?', [id]);
+    this.lastTrash(`Deleted doc “${d.title}”`);
   }
 
   // ------------------------------------------------- your templates, folders
@@ -511,6 +557,17 @@ class AppApi {
       dbBytes: this.db.exportBytes().length, dataDir: this.dataDir, integrity: this.db.integrityCheck(),
     };
   }
+}
+
+/** Keep doc HTML to plain formatting: no scripts, styles, handlers or script URLs. */
+function cleanHtml(html) {
+  return String(html || '')
+    .replace(/<(script|style|iframe|object|embed|link|meta|base|form|svg|math)[\s\S]*?(<\/\1\s*>|$)/gi, '')
+    .replace(/<\/?(script|style|iframe|object|embed|link|meta|base|form|svg|math)\b[^>]*>/gi, '')
+    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s+style\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/(href|src)\s*=\s*("|')?\s*(javascript|vbscript|data):[^"'\s>]*("|')?/gi, '$1="#"')
+    .slice(0, 2000000);
 }
 
 const PUBLIC_METHODS = Object.getOwnPropertyNames(AppApi.prototype).filter((m) => ![

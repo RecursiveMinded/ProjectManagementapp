@@ -522,3 +522,43 @@ button.cal-more:hover { color: var(--brand); }
 .var-tag { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 0 5px; margin-left: 6px; flex: none; }
 .var-tag.late { color: var(--bad); background: rgba(216, 58, 82, .1); }
 .var-tag.early { color: #1f8a5a; background: rgba(43, 182, 115, .12); }
+
+/* Workdocs */
+.doc-page { max-width: 900px; margin: 0 auto; }
+.doc-editor { display: flex; flex-direction: column; gap: 8px; }
+.doc-title { font-size: 30px; font-weight: 700; letter-spacing: -.02em; border: 0; outline: 0; background: transparent; color: var(--text); padding: 4px 0; width: 100%; }
+.doc-meta .doc-state.saving { color: var(--muted); }
+.doc-meta .doc-state.error { color: var(--bad); }
+.doc-tools { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.doc-tools button { min-width: 30px; height: 28px; border: 0; background: none; border-radius: 6px; cursor: pointer; color: var(--text); font-size: 13px; display: inline-grid; place-items: center; padding: 0 6px; }
+.doc-tools button:hover { background: var(--brand-soft); color: var(--brand); }
+.doc-tools .sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+.doc-body { min-height: 360px; outline: 0; padding: 8px 2px 40px; line-height: 1.65; font-size: 15px; color: var(--text); }
+.doc-body h1 { font-size: 26px; margin: 18px 0 6px; } .doc-body h2 { font-size: 21px; margin: 16px 0 6px; } .doc-body h3 { font-size: 17px; margin: 14px 0 4px; }
+.doc-body p, .doc-body div { margin: 4px 0; }
+.doc-body ul, .doc-body ol { padding-left: 24px; margin: 4px 0; }
+.doc-body blockquote { border-left: 3px solid var(--brand); margin: 8px 0; padding: 2px 14px; color: var(--muted); }
+.doc-body pre { background: var(--bg, #f4f4f8); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 13px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+.doc-body code { background: var(--bg, #f4f4f8); border-radius: 4px; padding: 0 4px; font: 13px ui-monospace, Consolas, monospace; }
+.doc-body hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+.doc-body a { color: var(--brand); }
+.doc-body mark { background: #fff3a3; color: inherit; }
+.doc-body table { border-collapse: collapse; } .doc-body td, .doc-body th { border: 1px solid var(--line); padding: 4px 8px; }
+.doc-body ul.checklist { list-style: none; padding-left: 4px; }
+.doc-body ul.checklist > li { position: relative; padding-left: 26px; }
+.doc-body ul.checklist > li::before { content: ''; position: absolute; left: 2px; top: .35em; width: 14px; height: 14px; border: 1.5px solid var(--faint, #a3a2bb); border-radius: 4px; cursor: pointer; }
+.doc-body ul.checklist > li.done { color: var(--muted); text-decoration: line-through; }
+.doc-body ul.checklist > li.done::before { background: var(--good, #2bb673); border-color: var(--good, #2bb673); }
+.doc-body ul.checklist > li.done::after { content: ''; position: absolute; left: 7px; top: calc(.35em + 2px); width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.doc-hint { border-top: 1px dashed var(--line); padding-top: 6px; }
+.doc-cell .doc-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-cell .doc-add { display: none; align-items: center; gap: 3px; font-size: 12px; }
+.doc-cell:hover .doc-add, .doc-cell:focus .doc-add { display: inline-flex; }
+
+@media print {
+  .side, .toolbar, .tabs, .doc-tools, .doc-hint, .toast, .scrim, .upd-btn, .board-head .btn, .doc-page > .row, .fav-btn, .add-row, .add-col, .bulk-bar { display: none !important; }
+  .app { display: block !important; height: auto !important; }
+  .main, .page, .view-body { overflow: visible !important; height: auto !important; }
+  body { background: #fff !important; }
+  .doc-body { min-height: 0; }
+}

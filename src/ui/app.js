@@ -13,6 +13,7 @@ import { DependenciesPage } from './dependencies.js';
 import { useUpdate, installUpdate, checkForUpdates } from './update.js';
 import { selfTest } from './selftest.js';
 import { C } from './model.js';
+import { DocPage, DocDrawer } from './docs.js';
 
 window.__bdSelfTest = selfTest;
 
@@ -31,6 +32,7 @@ function App() {
   const [version, setVersion] = useState(0);
   const [item, setItem] = useState(null); // { id, tab }
   const [palette, setPalette] = useState(false);
+  const [docOpen, setDocOpen] = useState(null);
   const [newBoard, setNewBoard] = useState(null); // { workspaceId }
   const [closedWs, setClosedWs] = usePersist('closedWs', {});
   const itemReload = useRef(null);
@@ -60,7 +62,9 @@ function App() {
   useEffect(() => {
     const h = async () => { try { const label = await call('undoLabel'); if (label) toast(label, '', { label: 'Undo', run: doUndo }); } catch (_) { /* ignore */ } };
     window.addEventListener('bd-undoable', h);
-    return () => window.removeEventListener('bd-undoable', h);
+    const od = (e) => setDocOpen(e.detail);
+    window.addEventListener('bd-open-doc', od);
+    return () => { window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); };
   }, []);
 
   // Unread count and data changed by automations in the background.
@@ -100,6 +104,7 @@ function App() {
   if (r.name === 'board') page = html`<${BoardPage} key=${r.id} boardId=${r.id} openItem=${openItem} refreshShell=${reloadShell} nav=${nav} version=${version} />`;
   else if (r.name === 'dashboard') page = html`<${DashboardPage} key=${r.id} id=${r.id} boot=${boot} nav=${nav} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
   else if (r.name === 'dependencies') page = html`<${DependenciesPage} openItem=${openItem} nav=${nav} version=${version} />`;
+  else if (r.name === 'doc') page = html`<${DocPage} key=${r.id} id=${r.id} nav=${nav} openItem=${openItem} refreshShell=${reloadShell} />`;
   else if (r.name === 'calendar') page = html`<${CalendarPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'mywork') page = html`<${MyWork} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'inbox') page = html`<${Inbox} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
@@ -131,7 +136,7 @@ function App() {
         <div class="sect">Workspaces<span class="row" style="gap:2px"><button title="New board" aria-label="New board" onClick=${() => setNewBoard({})}><${Icon} name="plus" size=${14} /></button>
           <button title="New workspace" aria-label="New workspace" onClick=${createWorkspace}><${Icon} name="folder" size=${14} /></button></span></div>
         ${boot.workspaces.map((w) => html`<${Workspace} key=${w.id} w=${w} route=${r} nav=${nav} closed=${!!closedWs[w.id]} toggle=${() => setClosedWs({ ...closedWs, [w.id]: !closedWs[w.id] })}
-          reloadShell=${reloadShell} newBoard=${() => setNewBoard({ workspaceId: w.id })} />`)}
+          reloadShell=${reloadShell} newBoard=${() => setNewBoard({ workspaceId: w.id })} docs=${(boot.docs || []).filter((d) => d.workspace_id === w.id)} />`)}
         ${!boot.workspaces.length ? html`<div class="small" style="padding:6px 10px;color:#8584a3">No boards yet.</div>` : null}
         <div class="sect">Dashboards<button title="New dashboard" aria-label="New dashboard" onClick=${createDashboard}><${Icon} name="plus" size=${14} /></button></div>
         ${boot.dashboards.map((d) => html`<a key=${d.id} class=${`ws-board ${r.name === 'dashboard' && r.id === d.id ? 'on' : ''}`} style="padding-left:10px" onClick=${() => nav('dashboard', d.id)}><${Icon} name="dashboard" size=${15} /><span class="clip">${d.name}</span></a>`)}
@@ -150,6 +155,7 @@ function App() {
     </main></div>
     ${item ? html`<${ItemPanel} key=${item.id + item.t} id=${item.id} tab=${item.tab} openItem=${openItem} nav=${nav}
       onClose=${() => setItem(null)} onChanged=${() => { if (itemReload.current) itemReload.current(); else bump(); }} />` : null}
+    ${docOpen ? html`<${DocDrawer} key=${docOpen} id=${docOpen} nav=${nav} onClose=${() => { setDocOpen(null); bump(); }} />` : null}
     ${palette ? html`<${SearchPalette} boot=${boot} nav=${nav} openItem=${openItem} onClose=${() => setPalette(false)} />` : null}
     ${newBoard ? html`<${NewBoard} boot=${boot} workspaceId=${newBoard.workspaceId} onClose=${() => setNewBoard(null)}
       onCreated=${async (id) => { setNewBoard(null); await reloadShell(); nav('board', id); }} />` : null}
@@ -180,7 +186,7 @@ function UpdateButton({ update }) {
     <${Icon} name="refresh" size=${15} />${busy || st === 'checking' ? 'Checking for updates…' : 'Check for updates'}<span class="v">v${update.current}</span></button>`;
 }
 
-function Workspace({ w, route, nav, closed, toggle, reloadShell, newBoard }) {
+function Workspace({ w, route, nav, closed, toggle, reloadShell, newBoard, docs = [] }) {
   const [a, open, close] = useAnchor();
   const [rename, setRename] = useState(null);
   const color = C.colorHex(w.color || 'indigo');
@@ -191,6 +197,7 @@ function Workspace({ w, route, nav, closed, toggle, reloadShell, newBoard }) {
       <${Icon} name="table" size=${15} /><span class="clip">${b.name}</span><span class="n">${b.items}</span></a>`;
   const items = [
     { label: 'New board here', icon: 'plus', onClick: newBoard },
+    { label: 'New doc here', icon: 'para', onClick: async () => { try { const id = await call('saveDoc', { workspaceId: w.id, title: 'Untitled doc' }); await reloadShell(); nav('doc', id); } catch (e) { toastError(e); } } },
     { label: 'Rename', icon: 'edit', onClick: () => setRename({ name: w.name, color: w.color || 'indigo' }) },
     { sep: true },
     { label: 'Delete workspace', icon: 'trash', danger: true, onClick: async () => {
@@ -206,7 +213,8 @@ function Workspace({ w, route, nav, closed, toggle, reloadShell, newBoard }) {
     ${closed ? null : html`${loose.map(boardLink)}
       ${folders.map((f) => html`<div key=${f}>
         <div class="ws-folder" onClick=${() => setShut({ ...shut, [f]: !shut[f] })}><${Icon} name="folder" size=${14} /><span class="clip grow">${f}</span><span class="n">${shut[f] ? '▸' : '▾'}</span></div>
-        ${shut[f] ? null : w.boards.filter((b) => b.folder === f).map((b) => boardLink(b, true))}</div>`)}`}
+        ${shut[f] ? null : w.boards.filter((b) => b.folder === f).map((b) => boardLink(b, true))}</div>`)}
+      ${docs.map((d) => html`<a key=${d.id} class=${`ws-board ${route.name === 'doc' && route.id === d.id ? 'on' : ''}`} onClick=${() => nav('doc', d.id)}><${Icon} name="para" size=${15} /><span class="clip">${d.title}</span></a>`)}`}
     ${a ? html`<${Menu} anchor=${a} onClose=${close} items=${items} />` : null}
     ${rename ? html`<${Modal} title="Rename workspace" onClose=${() => setRename(null)}>
       <label class="field">Name<input class="input" autoFocus value=${rename.name} onInput=${(e) => setRename({ ...rename, name: e.target.value })} /></label>

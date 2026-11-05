@@ -10,7 +10,7 @@ export function ctxOf(B) {
   const itemNames = Object.fromEntries(Object.entries(B.linked || {}).map(([k, v]) => [k, v.name]));
   for (const it of [...(B.items || []), ...(B.subitems || [])]) itemNames[it.id] = it.name;
   const teams = Object.fromEntries((B.teams || []).map((t) => [t.id, t]));
-  return { people, teams, files: B.files || {}, itemNames };
+  return { people, teams, files: B.files || {}, docs: B.docs || {}, itemNames };
 }
 
 export const FILTER_OPS = {

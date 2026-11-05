@@ -131,6 +131,30 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.waitForSelector('.dep-row');
       await page.click('.dep-n >> nth=0');
     });
+    await step('workdoc: open, edit and save', async () => {
+      await page.click('.side .ws-board:has-text("Relaunch kickoff notes")');
+      await page.waitForSelector('.doc-body h2');
+      await page.click('.doc-body');
+      await page.keyboard.press('Control+End');
+      await page.keyboard.press('Enter');
+      await page.keyboard.type('Added by the smoke test');
+      await page.waitForSelector('.doc-state.saved');
+      await page.waitForTimeout(800);
+      await page.click('.side .nav a:has-text("Home")');
+      await page.click('.side .ws-board:has-text("Relaunch kickoff notes")');
+      await page.waitForSelector('.doc-body >> text=Added by the smoke test');
+    });
+    await step('doc column on an item', async () => {
+      await page.click('.ws-board:has-text("Team tasks")');
+      await page.click('.tabs .tab:has-text("Main table")');
+      await page.click('.tbl .add-col button');
+      await page.click('.pop .mi:text-is("Doc")');
+      await page.waitForSelector('.tbl th:has-text("Doc")');
+      await page.locator('.tbl tbody tr .doc-cell').first().click();
+      await page.waitForSelector('.drawer .doc-body');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.tbl .doc-chip');
+    });
     await step('my work', async () => { await page.click('.side .nav a:has-text("My work")'); await page.waitForSelector('h1:has-text("My work")'); });
     await step('inbox', async () => { await page.click('.side .nav a:has-text("Inbox")'); await page.waitForSelector('h1:has-text("Inbox")'); });
     await step('search palette', async () => {

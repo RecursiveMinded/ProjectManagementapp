@@ -230,6 +230,14 @@ function sampleWorkspace(store, automations, dashboards) {
     dashboards.saveWidget(dash, { type: 'list', title: 'Due in the next 14 days', size: 'm', config: { boardIds: [project, tasks, crm], dueWithin: 14 } });
     dashboards.saveWidget(dash, { type: 'timeline', title: 'Project timeline', size: 'l', config: { boardIds: [project] } });
     dashboards.saveWidget(dash, { type: 'countdown', title: 'Launch day', size: 's', config: { date: addDays(today(), 28) } });
+    const ts = new Date().toISOString();
+    store.db.run('INSERT INTO docs(id,workspace_id,item_id,title,html,position,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)', [
+      `d_sample_${ws}`, ws, null, 'Relaunch kickoff notes',
+      '<h2>Why we are relaunching</h2><p>The current site is slow on phones and hard to update. The relaunch should <b>halve page load time</b> and let marketing publish without a developer.</p>'
+      + '<h2>Decisions</h2><ul><li>Design system first, then templates.</li><li>Pilot with five customers before launch.</li></ul>'
+      + '<h2>Waiting on other teams</h2><p>Legal reviews launch copy. IT Security approves the new hosting. Both are tracked on the <i>Waiting on team</i> column; nobody is contacted from Boardenda.</p>'
+      + '<h2>Next steps</h2><ul class="checklist"><li class="done">Agree goals and scope</li><li>Share research summary</li><li>Book pilot customer calls</li></ul>',
+      1, store.me().id, ts, ts]);
   });
   return ws;
 }

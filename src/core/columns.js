@@ -38,6 +38,7 @@ const TYPES = {
   phone: { label: 'Phone', group: 'Useful', icon: 'phone', value: 'string' },
   location: { label: 'Location', group: 'Useful', icon: 'pin', value: 'string (address)' },
   files: { label: 'Files', group: 'Useful', icon: 'paperclip', value: '[file id]' },
+  doc: { label: 'Doc', group: 'Useful', icon: 'para', value: 'doc id' },
   rating: { label: 'Rating', group: 'Useful', icon: 'star', value: 'number 0..max', defaults: () => ({ max: 5 }) },
   vote: { label: 'Vote', group: 'Useful', icon: 'vote', value: '[person id]' },
   country: { label: 'Country', group: 'Useful', icon: 'globe', value: 'ISO country code' },
@@ -104,6 +105,7 @@ function textOf(col, v, ctx = {}) {
     case 'tags': return (Array.isArray(v) ? v : []).join(', ');
     case 'link': return typeof v === 'object' ? (v.text || v.url || '') : String(v);
     case 'files': return (Array.isArray(v) ? v : []).map((id) => (ctx.files && ctx.files[id] ? ctx.files[id].name : '')).filter(Boolean).join(', ');
+    case 'doc': return ctx.docs && ctx.docs[v] ? ctx.docs[v].title : '';
     case 'connect': case 'dependency': return (Array.isArray(v) ? v : []).map((id) => (ctx.itemNames && ctx.itemNames[id]) || '').filter(Boolean).join(', ');
     case 'time_tracking': return fmtDuration(trackedSeconds(v));
     case 'progress': return `${Math.round(Number(v) || 0)}%`;
