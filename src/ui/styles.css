@@ -606,3 +606,6 @@ td.bad, .bad { color: var(--bad); } td.b, .b { font-weight: 700; }
 
 .rec-ic { color: var(--brand); font-weight: 700; font-size: 13px; margin-left: 2px; cursor: default; }
 .rec-chip { border: 0; cursor: pointer; background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+/* Menu labels never shrink to nothing; long hints are cut instead. */
+.mi > .grow { flex: 1 0 auto; }
+.mi > .faint.small { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

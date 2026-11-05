@@ -57,9 +57,9 @@ export function ItemPanel({ id, tab: initialTab, onClose, onChanged, openItem, n
       ${tab === 'files' ? html`<${Files} d=${d} changed=${changed} />` : null}
       ${tab === 'activity' ? html`<${ActivityLog} rows=${d.activity} people=${d.people} />` : null}
     </div>
-    ${menu ? html`<${Menu} anchor=${menu} onClose=${closeMenu} align="right" items=${[
+    ${menu ? html`<${Menu} anchor=${menu} onClose=${closeMenu} align="right" width=${260} items=${[
       { label: 'Duplicate', icon: 'copy', onClick: () => call('duplicateItem', it.id).then((nid) => { changed(); openItem(nid); }, toastError) },
-      !isSub && { label: d.recurrence ? 'Change repeat…' : 'Repeat…', icon: 'refresh', hint: d.recurrence ? d.recurrence.text : 'make a copy on a schedule', onClick: () => setRepeat(true) },
+      !isSub && { label: d.recurrence ? 'Change repeat…' : 'Repeat…', icon: 'refresh', hint: d.recurrence ? d.recurrence.text : 'on a schedule', onClick: () => setRepeat(true) },
       !isSub && { label: 'Save as item template…', icon: 'spark', onClick: () => setTplName(it.name) },
       !isSub && { head: 'Move to group' },
       ...(!isSub ? d.groups.filter((g) => !g.archived && g.id !== it.group_id).map((g) => ({ label: g.name, icon: 'group', onClick: () => call('moveItem', it.id, { groupId: g.id }).then(changed, toastError) })) : []),
