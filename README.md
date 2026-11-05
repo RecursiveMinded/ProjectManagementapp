@@ -7,7 +7,8 @@ The feature set was mapped from the public help documentation of a leading hoste
 ## Features
 
 **Boards, groups and items**
-- Workspaces hold boards. A board holds coloured, collapsible groups, and each group holds items.
+- Workspaces hold boards, optionally in folders. Star boards and dashboards to pin them under Favorites.
+- A board holds coloured, collapsible groups, and each group holds items.
 - Items can have subitems with their own columns.
 - Items and groups can be dragged to reorder or move them, and duplicated, archived, restored or deleted.
 - Selecting several items brings up bulk actions: set a value, move, duplicate, archive or delete.
@@ -75,6 +76,7 @@ The feature set was mapped from the public help documentation of a leading hoste
 
 **Templates**
 - Blank, project plan, team tasks, sales pipeline, bug tracker and content calendar.
+- Save any board as your own template, with or without its items, and start new boards from it.
 - A sample workspace and dashboard you can explore on first launch.
 
 ## Install

@@ -11,7 +11,7 @@ const { Dashboards, WIDGETS } = require('./dashboards');
 const T = require('./templates');
 const io = require('./io');
 const C = require('./columns');
-const { today, addDays, now, mondayOf, parseJson } = require('./util');
+const { today, addDays, now, mondayOf, parseJson, uid } = require('./util');
 
 const DEFAULT_SETTINGS = {
   theme: 'system',
@@ -63,6 +63,8 @@ class AppApi {
       workspaces: ws,
       people: this.store.people(),
       teams: this.store.teams(),
+      favorites: this.favorites(),
+      userTemplates: this.userTemplates(),
       me: this.store.me(),
       settings: this.getSettings(),
       dashboards: this.dashboards.list(),
@@ -86,7 +88,36 @@ class AppApi {
   setMe(patch) { const me = this.store.me(); return this.store.savePerson({ ...me, ...patch, id: me.id }); }
 
   // ---------------------------------------------------------------- boards
-  createBoard({ template = 'blank', workspaceId, name, sample = false } = {}) { return T.build(this.store, this.automations, template, { workspaceId, name, sample }); }
+  createBoard({ template = 'blank', workspaceId, name, sample = false } = {}) {
+    if (String(template).startsWith('user:')) {
+      const t = this.db.get('SELECT * FROM user_templates WHERE id=?', [template.slice(5)]);
+      if (!t) throw new Error('That template no longer exists');
+      return io.importBoardFile(this.store, t.payload, { workspaceId, name: name || t.name });
+    }
+    return T.build(this.store, this.automations, template, { workspaceId, name, sample });
+  }
+
+  // ------------------------------------------------- your templates, folders
+  /** Save a board's structure (and optionally its items) as a reusable template. */
+  saveAsTemplate(boardId, { name, description = '', withItems = false } = {}) {
+    const f = JSON.parse(io.exportBoardFile(this.store, boardId));
+    if (!withItems) { f.items = []; f.updates = []; }
+    const id = uid('u');
+    const n = String(name || f.board.name).trim();
+    this.db.run('INSERT INTO user_templates(id,name,description,with_items,payload,created_at) VALUES(?,?,?,?,?,?)', [id, n, description, withItems ? 1 : 0, JSON.stringify(f), now()]);
+    return id;
+  }
+  userTemplates() { return this.db.all('SELECT id, name, description, with_items, created_at FROM user_templates ORDER BY created_at DESC'); }
+  deleteTemplate(id) { this.db.run('DELETE FROM user_templates WHERE id=?', [id]); }
+  setBoardFolder(boardId, folder) { return this.store.updateBoard(boardId, { folder: String(folder || '').trim() }); }
+  favorites() { const r = this.db.get("SELECT value FROM settings WHERE key='favorites'"); return parseJson(r && r.value, []); }
+  toggleFavorite(kind, id) {
+    const list = this.favorites();
+    const i = list.findIndex((f) => f.kind === kind && f.id === id);
+    if (i >= 0) list.splice(i, 1); else list.push({ kind, id });
+    this.db.run("INSERT INTO settings(key,value) VALUES('favorites',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [JSON.stringify(list)]);
+    return list;
+  }
   getBoard(id) { return this.store.getBoard(id); }
   updateBoard(id, patch) { return this.store.updateBoard(id, patch); }
   duplicateBoard(id, opts) { return this.store.duplicateBoard(id, opts); }

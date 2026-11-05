@@ -15,12 +15,14 @@ export function NewBoard({ boot, onClose, onCreated, workspaceId }) {
   const [ws, setWs] = useState(workspaceId || (boot.workspaces[0] || {}).id || '');
   const [sample, setSample] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [utpls, setUtpls] = useState(boot.userTemplates || []);
+  const tplName = tpl.startsWith('user:') ? ((utpls.find((t) => `user:${t.id}` === tpl) || {}).name || 'New board') : boot.catalog.templates[tpl].name;
   const create = async () => {
     setBusy(true);
     try {
       let wid = ws;
       if (!wid) wid = await call('saveWorkspace', { name: 'Main workspace' });
-      const id = await call('createBoard', { template: tpl, workspaceId: wid, name: name.trim() || boot.catalog.templates[tpl].name, sample });
+      const id = await call('createBoard', { template: tpl, workspaceId: wid, name: name.trim() || tplName, sample });
       onCreated(id);
     } catch (e) { toastError(e); } finally { setBusy(false); }
   };
@@ -42,13 +44,18 @@ export function NewBoard({ boot, onClose, onCreated, workspaceId }) {
     input.click();
   };
   return html`<${Modal} title="New board" onClose=${onClose} wide>
+    ${(boot.userTemplates || []).length ? html`<div class="small muted" style="margin-bottom:6px">Built in</div>` : null}
     <div class="grid c3">${Object.entries(boot.catalog.templates).map(([k, t]) => html`<button key=${k} class="tpl" style=${tpl === k ? 'border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)' : ''} onClick=${() => setTpl(k)}>
       <span class="ic" style=${`background:${TPL_STYLE[k][0]}`}><${Icon} name=${TPL_STYLE[k][1]} /></span><b>${t.name}</b><span class="small muted">${t.description}</span></button>`)}</div>
+    ${utpls.length ? html`<div class="small muted mt2" style="margin-bottom:6px">Your templates</div>
+      <div class="grid c3">${utpls.map((t) => html`<div key=${t.id} role="button" tabindex="0" class="tpl user-tpl" style=${tpl === `user:${t.id}` ? 'border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)' : ''} onClick=${() => setTpl(`user:${t.id}`)}>
+        <span class="ic" style="background:#5b5bd6"><${Icon} name="spark" /></span><b>${t.name}</b><span class="small muted">${t.description || (t.with_items ? 'Structure and items' : 'Structure only')}</span>
+        <button class="tpl-del" title="Delete template" aria-label=${`Delete template ${t.name}`} onClick=${async (e) => { e.stopPropagation(); if (await ask({ title: 'Delete template?', body: `“${t.name}” will no longer be offered. Boards made from it are not affected.` })) { try { await call('deleteTemplate', t.id); setUtpls(utpls.filter((x) => x.id !== t.id)); if (tpl === `user:${t.id}`) setTpl('blank'); } catch (err) { toastError(err); } } }}><${Icon} name="trash" size=${14} /></button></div>`)}</div>` : null}
     <div class="grid c2 mt2">
-      <label class="field">Board name<input class="input" placeholder=${boot.catalog.templates[tpl].name} value=${name} onInput=${(e) => setName(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Enter') create(); }} /></label>
+      <label class="field">Board name<input class="input" placeholder=${tplName} value=${name} onInput=${(e) => setName(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Enter') create(); }} /></label>
       <label class="field">Workspace<select class="input" value=${ws} onChange=${(e) => setWs(e.target.value)}>${boot.workspaces.map((w) => html`<option value=${w.id}>${w.name}</option>`)}${!boot.workspaces.length ? html`<option value="">Main workspace</option>` : null}</select></label>
     </div>
-    ${tpl !== 'blank' ? html`<label class="check mt2"><input type="checkbox" checked=${sample} onChange=${(e) => setSample(e.target.checked)} /> Include example items</label>` : null}
+    ${tpl !== 'blank' && !tpl.startsWith('user:') ? html`<label class="check mt2"><input type="checkbox" checked=${sample} onChange=${(e) => setSample(e.target.checked)} /> Include example items</label>` : null}
     <div class="row mt2"><button class="btn ghost" onClick=${importFile}><${Icon} name="upload" /> Import from Excel, CSV or a board file</button><span class="grow"></span>
       <button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${busy} onClick=${create}>Create board</button></div>
   </${Modal}>`;

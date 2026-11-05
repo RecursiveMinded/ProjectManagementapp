@@ -289,3 +289,30 @@ test('trash and undo: deleted boards, groups, columns and items come back', asyn
   assert.equal(api.purgeTrash(), 1);
   assert.equal(api.trash().length, 0);
 });
+
+test('your templates, favorites and folders', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const ws = api.bootstrap().workspaces[0];
+  const b = ws.boards.find((x) => x.name === 'Website relaunch');
+  const src = api.getBoard(b.id);
+  const tid = api.saveAsTemplate(b.id, { name: 'My plan', description: 'Reusable' });
+  assert.equal(api.userTemplates()[0].name, 'My plan');
+  const nb = api.createBoard({ template: `user:${tid}`, workspaceId: ws.id });
+  const N = api.getBoard(nb);
+  assert.equal(N.board.name, 'My plan');
+  assert.equal(N.items.length, 0);
+  assert.equal(N.columns.length, src.columns.length);
+  const withItems = api.createBoard({ template: `user:${api.saveAsTemplate(b.id, { name: 'Full', withItems: true })}`, workspaceId: ws.id });
+  assert.equal(api.getBoard(withItems).items.length, src.items.length);
+  api.deleteTemplate(tid);
+  assert.equal(api.userTemplates().length, 1);
+  assert.throws(() => api.createBoard({ template: `user:${tid}`, workspaceId: ws.id }), /no longer exists/);
+
+  assert.deepEqual(api.toggleFavorite('board', b.id), [{ kind: 'board', id: b.id }]);
+  assert.equal(api.bootstrap().favorites.length, 1);
+  assert.deepEqual(api.toggleFavorite('board', b.id), []);
+
+  api.setBoardFolder(nb, '  Q4  ');
+  assert.equal(api.bootstrap().workspaces[0].boards.find((x) => x.id === nb).folder, 'Q4');
+});

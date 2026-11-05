@@ -490,3 +490,18 @@ button.cal-more:hover { color: var(--brand); }
 .dep-teams { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .dep-items a { cursor: pointer; }
 .toast-act { margin-left: 12px; background: none; border: 1px solid rgba(255,255,255,.4); color: inherit; border-radius: 6px; padding: 2px 10px; font-weight: 700; cursor: pointer; }
+
+/* favorites, folders, your templates */
+.fav-btn { background: none; border: 0; cursor: pointer; color: var(--faint, #a3a2bb); padding: 4px; border-radius: 6px; display: inline-grid; place-items: center; }
+.fav-btn:hover { background: var(--hover, rgba(0,0,0,.05)); color: #f5a623; }
+.fav-btn.on { color: #f5a623; }
+.fav-btn.on svg { fill: #f5a623; }
+.side .fav-star { color: #f5a623; }
+.side .ws-folder { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 14px; border-radius: 8px; color: #b9b8d3; cursor: pointer; font-size: 13px; min-width: 0; }
+.side .ws-folder:hover { background: var(--side-2); }
+.side .ws-board.in-folder { padding-left: 26px; }
+.user-tpl { position: relative; }
+.tpl-del { position: absolute; top: 10px; right: 10px; background: none; border: 0; cursor: pointer; color: var(--faint, #a3a2bb); padding: 4px; border-radius: 6px; opacity: 0; }
+.user-tpl:hover .tpl-del, .tpl-del:focus { opacity: 1; }
+.tpl-del:hover { color: #d83a52; background: var(--hover, rgba(0,0,0,.05)); }
+.side .fav-star svg { fill: currentColor; }

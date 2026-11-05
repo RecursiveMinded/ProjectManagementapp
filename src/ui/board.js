@@ -67,7 +67,11 @@ function BoardHeader({ B, reload, view, setViewId, openAutos, openActivity, nav 
   const [vmenu, setVmenu] = useState(null);
   const [renameV, setRenameV] = useState(null);
   const [moveWs, setMoveWs] = useState(false);
+  const [saveTpl, setSaveTpl] = useState(false);
+  const [fav, setFav] = useState(false);
   const b = B.board;
+  useEffect(() => { call('favorites').then((l) => setFav(l.some((f) => f.kind === 'board' && f.id === b.id)), () => {}); }, [b.id]);
+  const toggleFav = async () => { try { const l = await call('toggleFavorite', 'board', b.id); setFav(l.some((f) => f.kind === 'board' && f.id === b.id)); reload(); } catch (e) { toastError(e); } };
   const exportX = async () => { try { const bytes = await call('exportXlsx', [b.id]); await saveAs(`${saveFileName(b.name)}.xlsx`, bytes, [{ name: 'Excel', extensions: ['xlsx'] }]); } catch (e) { toastError(e); } };
   const exportC = async () => { try { await saveAs(`${saveFileName(b.name)}.csv`, await call('exportCsv', b.id), [{ name: 'CSV', extensions: ['csv'] }]); } catch (e) { toastError(e); } };
   const exportB = async () => { try { await saveAs(`${saveFileName(b.name)}.boardenda.json`, await call('exportBoardFile', b.id), [{ name: 'Boardenda board', extensions: ['json'] }]); } catch (e) { toastError(e); } };
@@ -78,7 +82,8 @@ function BoardHeader({ B, reload, view, setViewId, openAutos, openActivity, nav 
     <div class="row">
       <div class="grow">
         <div class="crumbs"><a onClick=${() => nav('home')}>${B.workspace ? B.workspace.name : 'Workspace'}</a>${b.folder ? html`<span>/ ${b.folder}</span>` : null}</div>
-        <div class="board-title"><${InlineText} value=${b.name} onSave=${(v) => call('updateBoard', b.id, { name: v }).then(reload, toastError)} /></div>
+        <div class="board-title row" style="gap:6px"><${InlineText} value=${b.name} onSave=${(v) => call('updateBoard', b.id, { name: v }).then(reload, toastError)} />
+          <button class=${`fav-btn ${fav ? 'on' : ''}`} title=${fav ? 'Remove from favorites' : 'Add to favorites'} aria-label=${fav ? 'Remove from favorites' : 'Add to favorites'} onClick=${toggleFav}><${Icon} name="star" size=${18} /></button></div>
         <div class="board-desc"><${InlineText} value=${b.description} placeholder="Add a board description" onSave=${(v) => call('updateBoard', b.id, { description: v }).then(reload, toastError)} /></div>
       </div>
       <div class="row" style="align-self:flex-start">
@@ -109,6 +114,7 @@ function BoardHeader({ B, reload, view, setViewId, openAutos, openActivity, nav 
       { sep: true },
       { label: 'Duplicate with items', icon: 'copy', onClick: () => call('duplicateBoard', b.id, { withItems: true }).then((id) => { toast('Board duplicated'); nav('board', id); }, toastError) },
       { label: 'Duplicate structure only', icon: 'copy', onClick: () => call('duplicateBoard', b.id, { withItems: false }).then((id) => { toast('Board duplicated'); nav('board', id); }, toastError) },
+      { label: 'Save as template…', icon: 'spark', hint: 'reuse this setup', onClick: () => setSaveTpl(true) },
       { label: 'Move to workspace or folder', icon: 'folder', onClick: () => setMoveWs('move') },
       { label: 'Board settings', icon: 'gear', hint: `items: ${b.item_noun}`, onClick: () => setMoveWs('settings') },
       { sep: true },
@@ -116,8 +122,25 @@ function BoardHeader({ B, reload, view, setViewId, openAutos, openActivity, nav 
       { label: 'Delete board', icon: 'trash', danger: true, onClick: async () => { if (await ask({ title: 'Delete board?', body: `“${b.name}” moves to the trash with its items, updates and files. You can restore it for 30 days.` })) call('deleteBoard', b.id).then(() => nav('home'), toastError); } },
     ]} />` : null}
     ${moveWs ? html`<${BoardSettings} B=${B} mode=${moveWs} onClose=${() => setMoveWs(false)} reload=${reload} />` : null}
+    ${saveTpl ? html`<${SaveTemplate} B=${B} onClose=${() => setSaveTpl(false)} reload=${reload} />` : null}
   </div>`;
   void native;
+}
+
+function SaveTemplate({ B, onClose, reload }) {
+  const [name, setName] = useState(B.board.name);
+  const [desc, setDesc] = useState(B.board.description || '');
+  const [withItems, setWithItems] = useState(false);
+  const save = async () => {
+    try { await call('saveAsTemplate', B.board.id, { name, description: desc, withItems }); toast('Template saved. Find it under New board → Your templates.'); reload(); onClose(); } catch (e) { toastError(e); }
+  };
+  return html`<${Modal} title="Save as template" onClose=${onClose}>
+    <p class="muted small">Groups, columns, views and automations are saved. New boards made from it start the same way.</p>
+    <label class="field mt">Template name<input class="input" autoFocus value=${name} onInput=${(e) => setName(e.target.value)} /></label>
+    <label class="field mt">Description<input class="input" value=${desc} onInput=${(e) => setDesc(e.target.value)} placeholder="What is this template for?" /></label>
+    <label class="check mt2"><input type="checkbox" checked=${withItems} onChange=${(e) => setWithItems(e.target.checked)} /> Include the current items</label>
+    <div class="row mt2"><span class="grow"></span><button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${!name.trim()} onClick=${save}>Save template</button></div>
+  </${Modal}>`;
 }
 
 function BoardSettings({ B, mode, onClose, reload }) {

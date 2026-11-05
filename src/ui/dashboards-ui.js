@@ -15,6 +15,7 @@ export function DashboardPage({ id, boot, nav, openItem, refreshShell, version }
   return html`<div class="page">
     <div class="page-head"><div class="grow"><h1><${InlineText} value=${d.name} onSave=${(v) => call('saveDashboard', { id, name: v }).then(() => { load(); refreshShell(); }, toastError)} /></h1>
       <div class="small muted mt">Showing ${d.boards.length ? d.boards.map((b) => b.name).join(', ') : 'no boards yet'} · <a onClick=${() => setBoards(true)}>Choose boards</a></div></div>
+      <button class=${`fav-btn ${(boot.favorites || []).some((f) => f.kind === 'dashboard' && f.id === id) ? 'on' : ''}`} title="Favorite" aria-label="Toggle favorite" onClick=${() => call('toggleFavorite', 'dashboard', id).then(refreshShell, toastError)}><${Icon} name="star" size=${18} /></button>
       <button class="btn primary" onClick=${() => setEdit({ type: 'numbers', size: 's', config: {} })}><${Icon} name="plus" /> Add widget</button>
       <button class="btn icon" aria-label="Delete dashboard" onClick=${async () => { if (await ask({ title: 'Delete dashboard?', body: 'Boards and items are not affected.' })) call('deleteDashboard', id).then(() => { refreshShell(); nav('home'); }, toastError); }}><${Icon} name="trash" /></button></div>
     ${!d.widgets.length ? html`<div class="empty"><${Icon} name="dashboard" /><h3>Add your first widget</h3><div>Numbers, charts, progress, workload, timelines and lists across the boards you choose.</div></div>` : null}

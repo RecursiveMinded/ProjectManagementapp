@@ -107,6 +107,10 @@ function App() {
   else if (r.name === 'settings') page = html`<${Settings} boot=${boot} reloadShell=${reloadShell} />`;
   else page = html`<${Home} key=${version} boot=${boot} nav=${nav} openItem=${openItem} newBoard=${() => setNewBoard({})} reloadShell=${async () => { await reloadShell(); bump(); }} />`;
 
+  const favs = (boot.favorites || []).map((f) => {
+    const t = f.kind === 'board' ? boot.workspaces.flatMap((w) => w.boards).find((b) => b.id === f.id) : boot.dashboards.find((d) => d.id === f.id);
+    return t ? { ...f, name: t.name } : null;
+  }).filter(Boolean);
   const navLink = (name, label, icon, badge) => html`<a class=${r.name === name ? 'on' : ''} onClick=${() => nav(name)}><${Icon} name=${icon} />${label}${badge ? html`<span class="badge">${badge}</span>` : null}</a>`;
 
   return html`<${Fragment}><div class="app">
@@ -121,6 +125,9 @@ function App() {
         ${navLink('inbox', 'Inbox', 'inbox', boot.unread || null)}
       </nav>
       <div class="scroll">
+        ${favs.length ? html`<div class="sect">Favorites</div>
+          ${favs.map((f) => html`<a key=${f.kind + f.id} class=${`ws-board ${r.name === f.kind && r.id === f.id ? 'on' : ''}`} style="padding-left:10px" onClick=${() => nav(f.kind, f.id)}>
+            <${Icon} name=${f.kind === 'board' ? 'table' : 'dashboard'} size=${15} /><span class="clip">${f.name}</span><span class="n fav-star"><${Icon} name="star" size=${12} /></span></a>`)}` : null}
         <div class="sect">Workspaces<span class="row" style="gap:2px"><button title="New board" aria-label="New board" onClick=${() => setNewBoard({})}><${Icon} name="plus" size=${14} /></button>
           <button title="New workspace" aria-label="New workspace" onClick=${createWorkspace}><${Icon} name="folder" size=${14} /></button></span></div>
         ${boot.workspaces.map((w) => html`<${Workspace} key=${w.id} w=${w} route=${r} nav=${nav} closed=${!!closedWs[w.id]} toggle=${() => setClosedWs({ ...closedWs, [w.id]: !closedWs[w.id] })}
@@ -177,6 +184,11 @@ function Workspace({ w, route, nav, closed, toggle, reloadShell, newBoard }) {
   const [a, open, close] = useAnchor();
   const [rename, setRename] = useState(null);
   const color = C.colorHex(w.color || 'indigo');
+  const [shut, setShut] = useState({});
+  const folders = [...new Set(w.boards.map((b) => b.folder).filter(Boolean))].sort();
+  const loose = w.boards.filter((b) => !b.folder);
+  const boardLink = (b, inFolder) => html`<a key=${b.id} class=${`ws-board ${inFolder ? 'in-folder' : ''} ${route.name === 'board' && route.id === b.id ? 'on' : ''}`} onClick=${() => nav('board', b.id)}>
+      <${Icon} name="table" size=${15} /><span class="clip">${b.name}</span><span class="n">${b.items}</span></a>`;
   const items = [
     { label: 'New board here', icon: 'plus', onClick: newBoard },
     { label: 'Rename', icon: 'edit', onClick: () => setRename({ name: w.name, color: w.color || 'indigo' }) },
@@ -191,8 +203,10 @@ function Workspace({ w, route, nav, closed, toggle, reloadShell, newBoard }) {
       <span class="ws-icon" style=${`background:${color}`}>${(w.name[0] || 'W').toUpperCase()}</span><span class="clip grow">${w.name}</span>
       <button class="btn icon" style="background:none;border:0;color:inherit;padding:2px" aria-label="Workspace menu" onClick=${(e) => { e.stopPropagation(); open(e); }}><${Icon} name="dots" size=${14} /></button>
     </div>
-    ${closed ? null : w.boards.map((b) => html`<a key=${b.id} class=${`ws-board ${route.name === 'board' && route.id === b.id ? 'on' : ''}`} onClick=${() => nav('board', b.id)}>
-      <${Icon} name="table" size=${15} /><span class="clip">${b.name}</span><span class="n">${b.items}</span></a>`)}
+    ${closed ? null : html`${loose.map(boardLink)}
+      ${folders.map((f) => html`<div key=${f}>
+        <div class="ws-folder" onClick=${() => setShut({ ...shut, [f]: !shut[f] })}><${Icon} name="folder" size=${14} /><span class="clip grow">${f}</span><span class="n">${shut[f] ? '▸' : '▾'}</span></div>
+        ${shut[f] ? null : w.boards.filter((b) => b.folder === f).map((b) => boardLink(b, true))}</div>`)}`}
     ${a ? html`<${Menu} anchor=${a} onClose=${close} items=${items} />` : null}
     ${rename ? html`<${Modal} title="Rename workspace" onClose=${() => setRename(null)}>
       <label class="field">Name<input class="input" autoFocus value=${rename.name} onInput=${(e) => setRename({ ...rename, name: e.target.value })} /></label>

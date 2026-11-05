@@ -223,7 +223,7 @@ function exportBoardFile(store, boardId) {
   }, null, 1);
 }
 
-function importBoardFile(store, text, { workspaceId } = {}) {
+function importBoardFile(store, text, { workspaceId, name } = {}) {
   const f = parseJson(text, null);
   if (!f || f.format !== 'boardenda.board') throw new Error('This is not a Boardenda board file');
   const db = store.db;
@@ -242,7 +242,7 @@ function importBoardFile(store, text, { workspaceId } = {}) {
     const ws = workspaceId || (db.get('SELECT id FROM workspaces ORDER BY position LIMIT 1') || {}).id || store.saveWorkspace({ name: 'Main workspace' });
     const ts = new Date().toISOString();
     db.run('INSERT INTO boards(id,workspace_id,folder,name,description,item_noun,position,settings,next_seq,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
-      [nb, ws, '', f.board.name, f.board.description || '', f.board.item_noun || 'item', Date.now() / 1e12, remap(f.board.settings), f.board.next_seq || 1, ts, ts]);
+      [nb, ws, '', name || f.board.name, f.board.description || '', f.board.item_noun || 'item', Date.now() / 1e12, remap(f.board.settings), f.board.next_seq || 1, ts, ts]);
     for (const g of f.groups) db.run('INSERT INTO groups(id,board_id,name,color,position,collapsed,archived) VALUES(?,?,?,?,?,?,?)', [map[g.id], nb, g.name, g.color, g.position, 0, g.archived || 0]);
     for (const c of f.columns) db.run('INSERT INTO columns(id,board_id,scope,title,type,description,position,width,settings) VALUES(?,?,?,?,?,?,?,?,?)', [map[c.id], nb, c.scope, c.title, c.type, c.description || '', c.position, c.width || 0, remap(c.settings)]);
     const items = [...f.items].sort((a, b) => (a.parent_id ? 1 : 0) - (b.parent_id ? 1 : 0));

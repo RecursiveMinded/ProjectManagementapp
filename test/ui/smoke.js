@@ -129,6 +129,24 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.modal button:has-text("Create board")');
       await page.waitForSelector('.board-title:has-text("QA"), h1:has-text("QA")');
     });
+    await step('favorite, folder and save as template', async () => {
+      await page.click('.board-head .fav-btn');
+      await page.waitForSelector('.side .sect:has-text("Favorites")');
+      await page.click('button[aria-label="Board menu"]');
+      await page.click('.menu >> text=Move to workspace or folder');
+      await page.fill('.modal input[placeholder="e.g. Q4 projects"]', 'Quality');
+      await page.click('.modal button:has-text("Save")');
+      await page.waitForSelector('.side .ws-folder:has-text("Quality")');
+      await page.click('button[aria-label="Board menu"]');
+      await page.click('.menu >> text=Save as template');
+      await page.fill('.modal input.input >> nth=0', 'QA setup');
+      await page.click('.modal button:has-text("Save template")');
+      await page.waitForSelector('.scrim', { state: 'detached' });
+      await page.click('.side .sect button[title="New board"]');
+      await page.click('.user-tpl:has-text("QA setup")');
+      await page.click('.modal button:has-text("Create board")');
+      await page.waitForSelector('.board-title:has-text("QA setup")');
+    });
     await step('settings', async () => { await page.click('.side .foot button[title=Settings]'); await page.waitForSelector('h1:has-text("Settings")'); });
     await step('desktop self test', async () => {
       const r = await page.evaluate(() => window.__bdSelfTest());
