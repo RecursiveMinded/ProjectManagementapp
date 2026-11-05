@@ -147,6 +147,7 @@ label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .toolbar { display: flex; align-items: center; gap: 6px; padding: 10px 24px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .toolbar .search { width: 200px; height: 30px; }
 .toolbar .btn.active { color: var(--brand); background: var(--brand-soft); border-color: transparent; }
+.gantt-bar .btn.active { color: var(--brand); background: var(--brand-soft); border-color: transparent; }
 .view-body { flex: 1; overflow: auto; position: relative; }
 
 /* --------------------------------------------------------------- table */
@@ -505,3 +506,19 @@ button.cal-more:hover { color: var(--brand); }
 .user-tpl:hover .tpl-del, .tpl-del:focus { opacity: 1; }
 .tpl-del:hover { color: #d83a52; background: var(--hover, rgba(0,0,0,.05)); }
 .side .fav-star svg { fill: currentColor; }
+.tbl tr.ruled td { background: linear-gradient(var(--rule), var(--rule)), var(--panel); }
+.tbl tr.ruled td.stripe { background: var(--rule-solid); }
+.tbl tr.ruled.selected td { background: var(--brand-soft); }
+.filter-row.color-rule { grid-template-columns: 1fr 120px 1fr auto 28px; }
+.swatch.sm { width: 16px; height: 16px; cursor: pointer; padding: 0; }
+.color-rule .swatches { display: flex; gap: 3px; flex-wrap: nowrap; }
+/* Gantt: baselines, critical path, milestones */
+.g-base { position: absolute; top: 30px; height: 4px; border-radius: 3px; background: var(--faint, #a3a2bb); opacity: .55; }
+.g-bar.crit { box-shadow: 0 0 0 2px var(--bad), var(--shadow); }
+.g-bar.milestone.crit { box-shadow: 0 0 0 2px var(--bad); }
+.g-row.crit .clip { color: var(--bad); font-weight: 600; }
+.g-arrows path.crit { stroke-dasharray: none; }
+.ms-dot { width: 9px; height: 9px; transform: rotate(45deg); background: var(--brand); border-radius: 2px; flex: none; margin-right: 8px; }
+.var-tag { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 0 5px; margin-left: 6px; flex: none; }
+.var-tag.late { color: var(--bad); background: rgba(216, 58, 82, .1); }
+.var-tag.early { color: #1f8a5a; background: rgba(43, 182, 115, .12); }

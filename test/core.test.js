@@ -316,3 +316,23 @@ test('your templates, favorites and folders', async () => {
   api.setBoardFolder(nb, '  Q4  ');
   assert.equal(api.bootstrap().workspaces[0].boards.find((x) => x.id === nb).folder, 'Q4');
 });
+
+test('critical path and baseline variance', () => {
+  const S = require('../src/core/schedule');
+  // A(1-3) -> B(4-6) -> D(7-10);  A -> C(4-5) -> D ;  E(1-2) unlinked
+  const nodes = [
+    { id: 'A', start: '2026-01-01', end: '2026-01-03' }, { id: 'B', start: '2026-01-04', end: '2026-01-06' },
+    { id: 'C', start: '2026-01-04', end: '2026-01-05' }, { id: 'D', start: '2026-01-07', end: '2026-01-10' },
+    { id: 'E', start: '2026-01-01', end: '2026-01-02' },
+  ];
+  const links = [{ from: 'A', to: 'B' }, { from: 'B', to: 'D' }, { from: 'A', to: 'C' }, { from: 'C', to: 'D' }];
+  const r = S.criticalPath(nodes, links);
+  assert.deepEqual([...r.critical].sort(), ['A', 'B', 'D']);
+  assert.equal(r.float.C, 1);
+  assert.ok(r.links.has('A>B') && r.links.has('B>D') && !r.links.has('C>D'));
+  assert.equal(r.finish, '2026-01-10');
+  assert.equal(S.criticalPath(nodes, []).critical.size, 0);
+  // A lag of 1 day on finish-to-start: the chain with no gap has negative float and stays critical.
+  assert.ok(S.criticalPath(nodes, links, { type: 'fs', lagDays: 1 }).critical.has('B'));
+  assert.deepEqual(S.variance({ start: '2026-01-01', end: '2026-01-05' }, { start: '2026-01-03', end: '2026-01-08' }), { start: 2, end: 3 });
+});

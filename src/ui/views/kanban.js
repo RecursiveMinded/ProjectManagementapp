@@ -2,7 +2,7 @@
 import { useState } from 'preact/hooks';
 import { html, Icon, toastError, Avatars, shortDate } from '../lib.js';
 import { call } from '../api.js';
-import { C, firstCol } from '../model.js';
+import { C, firstCol, ruleColor } from '../model.js';
 import { renderValue } from '../cells.js';
 
 export function KanbanView({ B, cfg, setCfg, items, ctx, reload, openItem }) {
@@ -58,7 +58,7 @@ export function KanbanView({ B, cfg, setCfg, items, ctx, reload, openItem }) {
             const g = B.groups.find((x) => x.id === it.group_id);
             const done = statusCol && C.isDoneLabel(statusCol, it.values[statusCol.id]);
             const subs = B.subitems.filter((s) => s.parent_id === it.id);
-            return html`<div key=${it.id} class="k-card" draggable="true" onDragStart=${() => setDrag(it.id)} onClick=${() => openItem(it.id)}>
+            return html`<div key=${it.id} class="k-card" style=${ruleColor(B, cfg, it, ctx) ? `border-left:4px solid ${ruleColor(B, cfg, it, ctx)}` : ''} draggable="true" onDragStart=${() => setDrag(it.id)} onClick=${() => openItem(it.id)}>
               <div class="row" style="gap:6px"><span class="swatch" style=${`background:${g ? C.colorHex(g.color) : '#999'};width:8px;height:8px;border-radius:50%`}></span><span class="small faint clip">${g ? g.name : ''}</span></div>
               <div class="k-name" style=${done ? 'text-decoration:line-through;opacity:.7' : ''}>${it.name}</div>
               <div class="k-meta">${cardCols.map((c) => html`<span key=${c.id} title=${c.title}>${c.type === 'people' ? html`<${Avatars} ids=${it.values[c.id]} people=${ctx.people} size=${22} />` : c.type === 'date' ? (it.values[c.id] ? html`<span><${Icon} name="calendar" size="12" /> ${shortDate(it.values[c.id])}</span>` : null) : renderValue(c, it.values[c.id], B, ctx, true, it)}</span>`)}

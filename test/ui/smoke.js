@@ -47,6 +47,23 @@ const SHOTS = process.env.SHOTS_DIR || '';
     for (const view of ['Gantt', 'Kanban', 'Workload']) {
       await step(`${view} view`, async () => { await page.click(`.tabs .tab:has-text("${view}")`); await page.waitForSelector(view === 'Gantt' ? '.gantt' : view === 'Kanban' ? '.kanban' : '.wl'); });
     }
+    await step('gantt critical path and baseline', async () => {
+      await page.click('.tabs .tab:has-text("Gantt")');
+      await page.click('button:has-text("Critical path")');
+      await page.waitForSelector('.g-bar.crit');
+      await page.click('button:has-text("Baseline")');
+      await page.click('.menu >> text=Save baseline');
+      await page.waitForSelector('.g-base');
+    });
+    await step('conditional colouring', async () => {
+      await page.click('.tabs .tab:has-text("Main table")');
+      await page.click('.toolbar button:has-text("Colour")');
+      await page.click('.pop button:has-text("Add rule")');
+      await page.waitForSelector('.tbl tr.ruled');
+      await page.click('.pop button:has-text("Clear all")');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.tbl tr.ruled', { state: 'detached' });
+    });
     await step('add an item', async () => {
       await page.click('.tabs .tab:has-text("Main table")');
       await page.fill('.add-row input >> nth=0', 'Smoke test task');

@@ -203,3 +203,15 @@ export function firstCol(B, types, scope = 'item') {
   const t = Array.isArray(types) ? types : [types];
   return B.columns.find((c) => c.scope === scope && t.includes(c.type)) || null;
 }
+
+/** Colour from the view's conditional colouring rules (first match wins), or null. */
+export function ruleColor(B, cfg, it, ctx) {
+  const rules = (cfg && cfg.colors) || [];
+  if (!rules.length) return null;
+  const cols = Object.fromEntries(B.columns.map((c) => [c.id, c]));
+  for (const r of rules) {
+    if (!r.column || !r.op || !r.color) continue;
+    if (test(r, cols[r.column], it, ctx)) return C.colorHex(r.color);
+  }
+  return null;
+}

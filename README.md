@@ -38,6 +38,10 @@ The feature set was mapped from the public help documentation of a leading hoste
 - Table: group summaries, column resize and reorder, filters with AND/OR, multi-level sort, hidden columns, group by any column.
 - Kanban: lanes by status, people or dropdown.
 - Gantt timeline: day, week or month zoom, drag to move or resize, and dependency arrows.
+  - Critical path: highlights the chain of linked items that sets the finish date, and shows each item's slack.
+  - Baselines: save a snapshot of the plan, then see the original dates under each bar and how many days each item has slipped.
+  - Milestones: mark items with a checkbox column and they show as diamonds.
+- Conditional colouring: rules such as "Status is Stuck" colour rows, kanban cards and Gantt bars.
 - Calendar, chart (bars, columns, pie or donut), and workload by person and week against capacity.
 - Form: submissions become items.
 - Files gallery.

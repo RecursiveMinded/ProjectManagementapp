@@ -167,6 +167,7 @@ function Toolbar({ B, cfg, setCfg, view, reload, count }) {
   const [ha, openH, closeH] = useAnchor();
   const [ga, openG, closeG] = useAnchor();
   const [na, openN, closeN] = useAnchor();
+  const [ca, openC, closeC] = useAnchor();
   const filterBtn = useRef(null);
   useEffect(() => { if (cfg.showFilter && filterBtn.current) { openF({ currentTarget: filterBtn.current }); setCfg({ ...cfg, showFilter: false }); } }, [cfg.showFilter]);
   const nFilters = (cfg.filters || []).filter((f) => f.column).length;
@@ -189,8 +190,10 @@ function Toolbar({ B, cfg, setCfg, view, reload, count }) {
     <button class=${`btn ghost ${(cfg.sort || []).length ? 'active' : ''}`} onClick=${openS}><${Icon} name="sort" /> Sort${(cfg.sort || []).length ? ` / ${(cfg.sort || []).length}` : ''}</button>
     ${view.type === 'table' ? html`<button class=${`btn ghost ${(cfg.hidden || []).length ? 'active' : ''}`} onClick=${openH}><${Icon} name="hide" /> Hide${(cfg.hidden || []).length ? ` / ${(cfg.hidden || []).length}` : ''}</button>
       <button class=${`btn ghost ${cfg.groupBy ? 'active' : ''}`} onClick=${openG}><${Icon} name="group" /> Group by</button>` : null}
+    ${['table', 'kanban', 'timeline'].includes(view.type) ? html`<button class=${`btn ghost ${(cfg.colors || []).length ? 'active' : ''}`} onClick=${openC}><${Icon} name="palette" /> Colour${(cfg.colors || []).length ? ` / ${(cfg.colors || []).length}` : ''}</button>` : null}
     <span class="grow"></span>
     <span class="small faint">${count} shown</span>
+    ${ca ? html`<${Popover} anchor=${ca} onClose=${closeC} width=${780}><${ColorRules} B=${B} cfg=${cfg} setCfg=${setCfg} /></${Popover}>` : null}
     ${pa ? html`<${Popover} anchor=${pa} onClose=${closeP} width=${260}><div class="pad col" style="gap:4px"><b class="small">Show items assigned to</b>
       ${B.people.map((p) => html`<button key=${p.id} class=${`mi ${cfg.person === p.id ? 'active' : ''}`} onClick=${() => { setCfg({ ...cfg, person: cfg.person === p.id ? null : p.id }); closeP(); }}><${Avatar} person=${p} size=${22} />${p.name}${p.is_me ? ' (you)' : ''}</button>`)}
       ${cfg.person ? html`<button class="btn small" onClick=${() => { setCfg({ ...cfg, person: null }); closeP(); }}>Clear</button>` : null}</div></${Popover}>` : null}
@@ -224,26 +227,50 @@ async function importInto(B, reload) {
   input.click();
 }
 
+function ruleValue(B, cols, f, setF) {
+  if (['empty', 'not_empty', 'today', 'this_week', 'overdue'].includes(f.op)) return html`<span></span>`;
+  if (f.column === '__group') {
+    return html`<select class="input" value=${Array.isArray(f.value) ? f.value[0] : f.value} onChange=${(e) => setF({ value: [e.target.value] })}><option value="">Choose…</option>${B.groups.map((g) => html`<option value=${g.id}>${g.name}</option>`)}</select>`;
+  }
+  const col = cols.find((c) => c.id === f.column);
+  if (!col) return html`<input class="input" value=${f.value || ''} onInput=${(e) => setF({ value: e.target.value })} />`;
+  const multi = (opts) => html`<select class="input" value=${Array.isArray(f.value) ? f.value[0] || '' : f.value || ''} onChange=${(e) => setF({ value: e.target.value ? [e.target.value] : [] })}><option value="">Choose…</option>${opts.map((o) => html`<option value=${o.value}>${o.label}</option>`)}</select>`;
+  if (C.LABEL_TYPES.has(col.type)) return multi([...(col.settings.labels || []).map((l) => ({ value: l.id, label: l.label })), { value: '__empty', label: '(empty)' }]);
+  if (col.type === 'people') return multi([{ value: '__me', label: 'Me' }, ...B.people.map((p) => ({ value: p.id, label: p.name }))]);
+  if (col.type === 'team') return multi((B.teams || []).map((t) => ({ value: t.id, label: t.name })));
+  if (col.type === 'dropdown') return multi((col.settings.options || []).map((o) => ({ value: o.id, label: o.label })));
+  if (col.type === 'country') return multi(C.COUNTRIES.map(([k, n]) => ({ value: k, label: n })));
+  if (['before', 'after'].includes(f.op)) return html`<input class="input" type="date" value=${f.value || ''} onInput=${(e) => setF({ value: e.target.value })} />`;
+  return html`<input class="input" value=${f.value || ''} onInput=${(e) => setF({ value: e.target.value })} />`;
+}
+
+const RULE_COLORS = ['coral', 'tangerine', 'sun', 'mint', 'teal', 'sky', 'indigo', 'grape', 'rose', 'slate'];
+
+/** Conditional colouring: rows (and cards and bars) that match a rule take its colour. */
+function ColorRules({ B, cfg, setCfg }) {
+  const rules = cfg.colors || [];
+  const cols = B.columns.filter((c) => c.scope === 'item');
+  const setR = (i, patch) => setCfg({ ...cfg, colors: rules.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
+  const palette = RULE_COLORS.filter((c) => C.COLOR[c]);
+  return html`<div class="pad">
+    <div class="row between" style="margin-bottom:4px"><b>Colour items when…</b>${rules.length ? html`<button class="btn ghost small" onClick=${() => setCfg({ ...cfg, colors: [] })}>Clear all</button>` : null}</div>
+    <div class="small muted" style="margin-bottom:8px">The first matching rule wins. Applies to rows, kanban cards and Gantt bars in this view.</div>
+    ${rules.map((r, i) => html`<div class="filter-row color-rule" key=${i}>
+      <select class="input" value=${r.column} onChange=${(e) => setR(i, { column: e.target.value, op: opsFor(cols.find((c) => c.id === e.target.value))[0], value: [] })}>
+        <option value="__name">Name</option><option value="__group">Group</option>${cols.map((c) => html`<option value=${c.id}>${c.title}</option>`)}</select>
+      <select class="input" value=${r.op} onChange=${(e) => setR(i, { op: e.target.value })}>${(r.column === '__name' ? ['contains', 'is'] : r.column === '__group' ? ['is', 'is_not'] : opsFor(cols.find((c) => c.id === r.column))).map((o) => html`<option value=${o}>${FILTER_OPS[o]}</option>`)}</select>
+      ${ruleValue(B, cols, r, (patch) => setR(i, patch))}
+      <span class="swatches">${palette.map((c) => html`<button key=${c} class="swatch sm" title=${c} aria-label=${`Colour ${c}`} style=${`background:${C.colorHex(c)};${r.color === c ? 'outline:2px solid var(--text);outline-offset:1px' : ''}`} onClick=${() => setR(i, { color: c })}></button>`)}</span>
+      <button class="btn icon ghost small" aria-label="Remove rule" onClick=${() => setCfg({ ...cfg, colors: rules.filter((_, j) => j !== i) })}><${Icon} name="x" size="14" /></button></div>`)}
+    <button class="btn small" onClick=${() => { const c = cols.find((x) => C.LABEL_TYPES.has(x.type)) || cols[0]; setCfg({ ...cfg, colors: [...rules, { column: c ? c.id : '__name', op: c ? opsFor(c)[0] : 'contains', value: [], color: 'coral' }] }); }}><${Icon} name="plus" size="14" /> Add rule</button>
+  </div>`;
+}
+
 function FilterBuilder({ B, cfg, setCfg }) {
   const filters = cfg.filters || [];
   const cols = B.columns.filter((c) => c.scope === 'item');
   const setF = (i, patch) => setCfg({ ...cfg, filters: filters.map((f, j) => (j === i ? { ...f, ...patch } : f)) });
-  const valueInput = (f, i) => {
-    if (['empty', 'not_empty', 'today', 'this_week', 'overdue'].includes(f.op)) return html`<span></span>`;
-    if (f.column === '__group') {
-      return html`<select class="input" value=${Array.isArray(f.value) ? f.value[0] : f.value} onChange=${(e) => setF(i, { value: [e.target.value] })}><option value="">Choose…</option>${B.groups.map((g) => html`<option value=${g.id}>${g.name}</option>`)}</select>`;
-    }
-    const col = cols.find((c) => c.id === f.column);
-    if (!col) return html`<input class="input" value=${f.value || ''} onInput=${(e) => setF(i, { value: e.target.value })} />`;
-    const multi = (opts) => html`<select class="input" value=${Array.isArray(f.value) ? f.value[0] || '' : f.value || ''} onChange=${(e) => setF(i, { value: e.target.value ? [e.target.value] : [] })}><option value="">Choose…</option>${opts.map((o) => html`<option value=${o.value}>${o.label}</option>`)}</select>`;
-    if (C.LABEL_TYPES.has(col.type)) return multi([...(col.settings.labels || []).map((l) => ({ value: l.id, label: l.label })), { value: '__empty', label: '(empty)' }]);
-    if (col.type === 'people') return multi([{ value: '__me', label: 'Me' }, ...B.people.map((p) => ({ value: p.id, label: p.name }))]);
-    if (col.type === 'team') return multi((B.teams || []).map((t) => ({ value: t.id, label: t.name })));
-    if (col.type === 'dropdown') return multi((col.settings.options || []).map((o) => ({ value: o.id, label: o.label })));
-    if (col.type === 'country') return multi(C.COUNTRIES.map(([k, n]) => ({ value: k, label: n })));
-    if (['before', 'after'].includes(f.op)) return html`<input class="input" type="date" value=${f.value || ''} onInput=${(e) => setF(i, { value: e.target.value })} />`;
-    return html`<input class="input" value=${f.value || ''} onInput=${(e) => setF(i, { value: e.target.value })} />`;
-  };
+  const valueInput = (f, i) => ruleValue(B, cols, f, (patch) => setF(i, patch));
   return html`<div class="pad">
     <div class="row between" style="margin-bottom:8px"><b>Filter items</b>${filters.length ? html`<button class="btn ghost small" onClick=${() => setCfg({ ...cfg, filters: [] })}>Clear all</button>` : null}</div>
     ${filters.map((f, i) => html`<div class="filter-row" key=${i}>

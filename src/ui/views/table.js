@@ -4,7 +4,8 @@ import { useState, useRef } from 'preact/hooks';
 import { html, Icon, Menu, useAnchor, InlineText, toastError, toast, ask, plural } from '../lib.js';
 import { call } from '../api.js';
 import { Cell, ColorDot } from '../cells.js';
-import { C, sections, summary } from '../model.js';
+import { C, sections, summary, ruleColor } from '../model.js';
+import { hexA } from '../lib.js';
 import { ColumnPicker, ColumnSettings } from '../columns-ui.js';
 
 const DEFAULT_W = { text: 160, long_text: 200, status: 140, priority: 130, people: 110, date: 120, timeline: 170, numbers: 110, formula: 140, mirror: 160, connect: 170, dependency: 160, tags: 160, dropdown: 160, link: 150, files: 140, progress: 130, time_tracking: 130, checkbox: 90, rating: 120, button: 120 };
@@ -53,8 +54,9 @@ export function TableView({ B, cfg, setCfg, items, ctx, reload, openItem, select
             ${s.items.map((it) => {
               const subs = subsOf(it.id);
               const open = openSubs[it.id];
+              const rc = ruleColor(B, cfg, it, ctx);
               return html`
-              <tr key=${it.id} class=${`${selected.has(it.id) ? 'selected' : ''} ${drag === it.id ? 'dragging' : ''}`} draggable=${byGroup}
+              <tr key=${it.id} class=${`${selected.has(it.id) ? 'selected' : ''} ${drag === it.id ? 'dragging' : ''} ${rc ? 'ruled' : ''}`} style=${rc ? `--rule:${hexA(rc, 0.16)};--rule-solid:${rc}` : ''} draggable=${byGroup}
                 onDragStart=${(e) => { setDrag(it.id); e.dataTransfer.effectAllowed = 'move'; }} onDragEnd=${() => setDrag(null)}
                 onDragOver=${(e) => { e.preventDefault(); e.currentTarget.classList.add('drop-before'); }} onDragLeave=${(e) => e.currentTarget.classList.remove('drop-before')}
                 onDrop=${(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('drop-before'); dropOn(it, s); }}>
