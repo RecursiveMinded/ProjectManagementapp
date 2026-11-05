@@ -330,6 +330,13 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.modal button:has-text("Save contact")');
       await page.waitForSelector('.drawer .cust-card:has-text("Robin Ops")');
       await page.click('.drawer button[aria-label="Close"]');
+      if (!(await page.locator('.paste-cust').count())) await page.click('button:has-text("Paste an email or signature")');
+      await page.fill('.paste-box', 'Thanks,\nLee Wong\nField Engineer | Wong Labs Inc.\nlee@wonglabs.test\nM: +1 555 0201');
+      await page.click('.paste-cust button:has-text("Read details")');
+      await page.waitForSelector('.paste-review');
+      await page.click('.paste-review button:has-text("Create customer")');
+      await page.waitForSelector('.drawer .cust-card:has-text("Lee Wong")');
+      await page.click('.drawer button[aria-label="Close"]');
       await page.fill('.customers-page input[placeholder^="Search"]', 'smk-777');
       await page.waitForSelector('.cust-table tr:has-text("Smoke Corp")');
       // Assign through the item panel menu.

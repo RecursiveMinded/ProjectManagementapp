@@ -8,7 +8,7 @@ import { C } from './model.js';
 export const IMPORT_ACCEPT = '.xlsx,.csv,.tsv,.txt,.md,.docx,.pdf,.png,.jpg,.jpeg,.bmp,.gif,.webp,.tif,.tiff';
 
 const ROLES = [['__name', 'Item name'], ['__group', 'Group'], ['__parent', 'Subitem of'], ['skip', 'Skip this column']];
-const TYPES = ['text', 'long_text', 'status', 'priority', 'people', 'team', 'date', 'timeline', 'numbers', 'checkbox', 'dropdown', 'tags', 'email', 'phone', 'link', 'location', 'country', 'rating'];
+const TYPES = ['text', 'long_text', 'status', 'priority', 'people', 'team', 'customer', 'date', 'timeline', 'numbers', 'checkbox', 'dropdown', 'tags', 'email', 'phone', 'link', 'location', 'country', 'rating'];
 
 export function pickFile(accept) {
   return new Promise((resolve) => {

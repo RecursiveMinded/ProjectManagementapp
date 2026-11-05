@@ -185,6 +185,52 @@ class Capture {
     return { records: parsed.records, model };
   }
 
+  /** Which model to use now: 'claude', 'local' (with its config) or 'basic'. */
+  async pickEngine() {
+    const cfg = this.aiConfig();
+    let engine = 'basic';
+    if (cfg.provider === 'anthropic' || (cfg.provider === 'auto' && cfg.key)) engine = cfg.key ? 'claude' : 'basic';
+    else if (cfg.provider === 'ollama' || cfg.provider === 'openai') engine = 'local';
+    else if (cfg.provider === 'auto') {
+      try { if ((await this.localModels({ ...cfg, provider: 'ollama' })).model) engine = 'local'; } catch (_) { /* Ollama not running */ }
+    }
+    return { engine, cfg, localCfg: engine === 'local' ? { ...cfg, provider: cfg.provider === 'openai' ? 'openai' : 'ollama' } : null };
+  }
+
+  /** One structured answer from the chosen model, or null when none is set up. */
+  async askJson({ system, text, schema }) {
+    const { engine, cfg, localCfg } = await this.pickEngine();
+    if (engine === 'claude') {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const Client = Anthropic.default || Anthropic;
+      const client = new Client({ apiKey: cfg.key, maxRetries: 2, timeout: 120000, ...(process.env.BOARDENDA_ANTHROPIC_BASE_URL ? { baseURL: process.env.BOARDENDA_ANTHROPIC_BASE_URL } : {}) });
+      const response = await client.beta.messages.create({
+        model: cfg.model, max_tokens: 8000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+        output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+        system: [{ type: 'text', text: system }], messages: [{ role: 'user', content: [{ type: 'text', text }] }],
+      });
+      if (response.stop_reason === 'refusal' || response.stop_reason === 'max_tokens') throw new Error('Claude could not read this text.');
+      const block = response.content.find((b) => b.type === 'text');
+      return { mode: 'claude', model: cfg.model, data: parseJson(block && block.text, null) };
+    }
+    if (engine === 'local') {
+      const { model } = await this.localModels(localCfg);
+      if (!model) return null;
+      let out;
+      if (localCfg.provider === 'openai') {
+        const r = await this.localFetch(localCfg, '/v1/chat/completions', { model, temperature: 0, messages: [{ role: 'system', content: system }, { role: 'user', content: text }],
+          response_format: { type: 'json_schema', json_schema: { name: 'answer', strict: true, schema } } }, 180000);
+        out = r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content;
+      } else {
+        const r = await this.localFetch(localCfg, '/api/chat', { model, stream: false, format: schema, options: { temperature: 0, num_ctx: 8192 },
+          messages: [{ role: 'system', content: system }, { role: 'user', content: text }] }, 180000);
+        out = r.message && r.message.content;
+      }
+      return { mode: 'local', model, data: parseJson(out, null) || parseJson((String(out || '').match(/\{[\s\S]*\}/) || [])[0], null) };
+    }
+    return null;
+  }
+
   // ------------------------------------------------------------- context
   /** What Boardenda already holds, so notes can be matched to it. */
   context() {

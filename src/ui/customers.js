@@ -6,6 +6,8 @@ import { html, Icon, Spinner, Drawer, Modal, Menu, useAnchor, toastError, toast,
 import { call, native } from './api.js';
 import { RichText } from './docs.js';
 import { MeetingRow, newMeeting } from './meetings.js';
+import { pickFile } from './importer.js';
+import { saveAs } from './api.js';
 
 export const STATUS = { prospect: ['Prospect', '#8a4fd8'], active: ['Active', '#2bb673'], on_hold: ['On hold', '#f2a516'], former: ['Former', '#9aa3b2'] };
 const DEVICE_STATUS = { active: ['In service', '#2bb673'], pending: ['Pending install', '#3aa0e8'], repair: ['Needs repair', '#e2445c'], retired: ['Retired', '#9aa3b2'] };
@@ -21,6 +23,9 @@ export function CustomersPage({ boot, version }) {
   const [q, setQ] = useState('');
   const [list, setList] = useState(null);
   const [adding, setAdding] = useState(false);
+  const [paste, setPaste] = usePersist('custPaste', true);
+  const [imp, setImp] = useState(null);
+  const [ia, openI, closeI] = useAnchor();
   const load = () => call('listCustomers', { q: q.trim() || undefined, status: opt.status || undefined }).then(setList, toastError);
   useEffect(() => { const t = setTimeout(load, q ? 150 : 0); return () => clearTimeout(t); }, [q, opt.status, version]);
   useEffect(() => { const h = () => load(); window.addEventListener('bd-customers-changed', h); return () => window.removeEventListener('bd-customers-changed', h); }, [q, opt.status]);
@@ -28,7 +33,15 @@ export function CustomersPage({ boot, version }) {
   const t = todayIso();
   return html`<div class="page customers-page">
     <div class="page-head"><h1>Customers</h1><span class="muted small">${list ? `${list.length} ${list.length === 1 ? 'account' : 'accounts'}` : ''}</span><span class="grow"></span>
+      <button class=${`btn ${paste ? 'active' : ''}`} onClick=${() => setPaste(!paste)}><${Icon} name="spark" /> Paste an email or signature</button>
+      <button class="btn" onClick=${openI}><${Icon} name="upload" /> Import</button>
       <button class="btn primary" onClick=${() => setAdding(true)}><${Icon} name="plus" /> New customer</button></div>
+    ${ia ? html`<${Menu} anchor=${ia} onClose=${closeI} align="right" items=${[
+      { label: 'Import customers…', icon: 'upload', hint: 'Excel, CSV, vCard', onClick: () => pickFile('.xlsx,.csv,.tsv,.txt,.vcf').then((f) => f && setImp(f)) },
+      { label: 'Download customer import sheet', icon: 'download', hint: 'blank, with examples', onClick: () => call('customerImportSheet').then((b) => saveAs('Boardenda customer import sheet.xlsx', b, [{ name: 'Excel', extensions: ['xlsx'] }]), toastError) },
+    ]} />` : null}
+    ${paste ? html`<${PasteCustomer} boot=${boot} onDone=${(id) => { load(); openCustomer(id); }} onHide=${() => setPaste(false)} />` : null}
+    ${imp ? html`<${CustomerImport} file=${imp} onClose=${() => setImp(null)} onDone=${() => { setImp(null); load(); }} />` : null}
     <div class="row" style="gap:8px;margin:-6px 0 12px;flex-wrap:wrap">
       <div class="seg">${[['', 'All'], ...Object.entries(STATUS).map(([k, [l]]) => [k, l])].map(([k, l]) => html`<button key=${k} class=${opt.status === k ? 'on' : ''} onClick=${() => setOpt({ ...opt, status: k })}>${l}</button>`)}</div>
       <input class="input" style="width:300px;height:30px" placeholder="Search names, contacts, emails, phones or serial numbers" value=${q} onInput=${(e) => setQ(e.target.value)} />
@@ -59,7 +72,10 @@ function NewCustomer({ onClose, onDone, preset = {} }) {
       changed(); onDone(id);
     } catch (e) { toastError(e); }
   };
+  const [pasting, setPasting] = useState(false);
+  if (pasting) return html`<${Modal} wide title="New customer from an email or signature" onClose=${onClose}><${PasteCustomer} compact onDone=${onDone} /></${Modal}>`;
   return html`<${Modal} title="New customer" onClose=${onClose}>
+    <div class="small mb"><a class="link" onClick=${() => setPasting(true)}><${Icon} name="spark" size="13" /> Paste an email or signature instead</a></div>
     <div class="grid2">
       <label class="field" style="grid-column:span 2">Customer or account name<input class="input" autoFocus value=${f.name} onInput=${(e) => set('name', e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && f.name.trim() && save()} /></label>
       <label class="field">Status<select class="input" value=${f.status} onChange=${(e) => set('status', e.target.value)}>${Object.entries(STATUS).map(([k, [l]]) => html`<option value=${k}>${l}</option>`)}</select></label>
@@ -224,6 +240,91 @@ function Files({ c, reload }) {
     <table class="plain mt2"><tbody>${c.files.map((f) => html`<tr key=${f.id}><td><a onClick=${() => native('openFile', { id: f.id }).catch(toastError)}><${Icon} name="file" size="14" /> ${f.name}</a></td><td class="small muted">${bytes(f.size)}</td><td class="small muted">${relTime(f.added_at)}</td>
       <td style="text-align:right"><button class="btn ghost small" onClick=${() => native('saveFileAs', { id: f.id, name: f.name }).catch(toastError)}>Save as</button><button class="btn icon ghost small" aria-label="Remove file" onClick=${() => call('removeFile', f.id).then(reload, toastError)}><${Icon} name="trash" size="14" /></button></td></tr>`)}</tbody></table>
   </div>`;
+}
+
+/** Paste an email, a thread or a signature and turn it into a customer with contacts. */
+export function PasteCustomer({ onDone, onHide, compact }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [r, setR] = useState(null);
+  const [target, setTarget] = useState('new');
+  const [keep, setKeep] = useState(false);
+  const read = async (t = text) => {
+    if (!t.trim()) return;
+    setBusy(true);
+    try { const x = await call('readCustomerText', { text: t }); setR(x); setTarget(x.match ? x.match.id : 'new'); } catch (e) { toastError(e); } finally { setBusy(false); }
+  };
+  const setCu = (k, v) => setR({ ...r, customer: { ...r.customer, [k]: v } });
+  const setK = (i, patch) => setR({ ...r, contacts: r.contacts.map((k, j) => (j === i ? { ...k, ...patch } : patch.primary ? { ...k, primary: false } : k)) });
+  const save = async () => {
+    try {
+      const id = await call('createCustomerFromText', { customerId: target === 'new' ? null : target, customer: { ...r.customer, status: r.customer.status || 'active' }, contacts: r.contacts, keepText: keep, text });
+      changed();
+      const n = r.contacts.filter((k) => k.include !== false).length;
+      toast(target === 'new' ? `${r.customer.name} added with ${n} ${n === 1 ? 'contact' : 'contacts'}` : `${n} ${n === 1 ? 'contact' : 'contacts'} added to ${r.match.name}`);
+      setR(null); setText(''); onDone && onDone(id);
+    } catch (e) { toastError(e); }
+  };
+  const inp = (label, k, ph) => html`<label class="field">${label}<input class="input" placeholder=${ph || ''} value=${r.customer[k] || ''} onInput=${(e) => setCu(k, e.target.value)} /></label>`;
+  return html`<div class=${`card paste-cust ${compact ? 'compact' : ''}`}>
+    <div class="row between"><div><b>Add a customer from an email or signature</b><div class="small muted">Paste an email, a whole thread or just a signature. Names, titles, emails, phones, website and address are picked out for you to check.</div></div>
+      ${onHide ? html`<button class="btn icon ghost" aria-label="Hide" onClick=${onHide}><${Icon} name="x" /></button>` : null}</div>
+    ${!r ? html`<textarea class="input paste-box" rows=${compact ? 6 : 5} placeholder=${'Paste here. For example:\n\nJane Doe\nVP of Operations | Acme Health Inc.\nT 617-555-0100 | M 617-555-0199\njane@acmehealth.com · www.acmehealth.com'} value=${text}
+        onInput=${(e) => setText(e.target.value)} onPaste=${(e) => { const t = e.clipboardData.getData('text'); if (t && !text.trim()) { e.preventDefault(); setText(t); read(t); } }} onKeyDown=${(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) read(); }}></textarea>
+      <div class="row" style="gap:8px"><button class="btn primary" disabled=${busy || !text.trim()} onClick=${() => read()}>${busy ? html`<${Spinner} /> Reading…` : html`<${Icon} name="spark" /> Read details`}</button>
+        <span class="small faint">Pasting into the empty box reads it straight away. Ctrl+Enter reads it too.</span></div>`
+    : html`<div class="paste-review">
+      <div class="small muted">${r.mode === 'basic' ? 'Read with the built-in reader.' : `Read with ${r.mode === 'claude' ? 'Claude' : 'the local model'}${r.model ? ` (${r.model})` : ''}.`} Check the details, then save.${(r.notes || []).map((n) => html` ${n}`)}</div>
+      ${r.match ? html`<div class="paste-match"><${Icon} name="building" size="15" /><span class="grow">This looks like <b>${r.match.name}</b>, already in Customers.</span>
+        <div class="seg"><button class=${target === r.match.id ? 'on' : ''} onClick=${() => setTarget(r.match.id)}>Add contacts to ${r.match.name}</button><button class=${target === 'new' ? 'on' : ''} onClick=${() => setTarget('new')}>Create a new customer</button></div></div>` : null}
+      ${target === 'new' ? html`<div class="grid3">
+        ${inp('Customer name', 'name', 'Company or account')}${inp('Industry', 'industry')}${inp('Website', 'website', 'https://')}
+        ${inp('Main phone', 'phone')}${inp('Main email', 'email')}${inp('Address', 'address')}</div>` : null}
+      <div class="small muted" style="margin-top:4px">Contacts</div>
+      <div class="paste-contacts">${r.contacts.map((k, i) => html`<div class=${`paste-contact ${k.include === false ? 'off' : ''}`} key=${i}>
+        <input type="checkbox" aria-label="Include this contact" checked=${k.include !== false} onChange=${(e) => setK(i, { include: e.target.checked })} />
+        <input class="input" aria-label="Name" placeholder="Name" value=${k.name} onInput=${(e) => setK(i, { name: e.target.value })} />
+        <input class="input" aria-label="Title" placeholder="Title" value=${k.title} onInput=${(e) => setK(i, { title: e.target.value })} />
+        <input class="input" aria-label="Email" placeholder="Email" value=${k.email} onInput=${(e) => setK(i, { email: e.target.value })} />
+        <input class="input" aria-label="Phone" placeholder="Phone" value=${k.phone} onInput=${(e) => setK(i, { phone: e.target.value })} />
+        <input class="input" aria-label="Mobile" placeholder="Mobile" value=${k.mobile} onInput=${(e) => setK(i, { mobile: e.target.value })} />
+        <label class="check small" title="Main contact"><input type="radio" name="paste-main" checked=${!!k.primary} onChange=${() => setK(i, { primary: true, include: true })} /> Main</label></div>`)}
+        <button class="btn ghost small" style="align-self:start" onClick=${() => setR({ ...r, contacts: [...r.contacts, { name: '', title: '', email: '', phone: '', mobile: '', include: true, primary: !r.contacts.length }] })}><${Icon} name="plus" size="12" /> Add a contact</button></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><label class="check small"><input type="checkbox" checked=${keep} onChange=${(e) => setKeep(e.target.checked)} /> Keep the pasted text in the customer's notes</label><span class="grow"></span>
+        <button class="btn" onClick=${() => setR(null)}>Back</button>
+        <button class="btn primary" disabled=${target === 'new' ? !String(r.customer.name || '').trim() : !r.contacts.some((k) => k.include !== false)} onClick=${save}>${target === 'new' ? 'Create customer' : 'Add contacts'}</button></div>
+    </div>`}
+  </div>`;
+}
+
+/** Import customers, contacts and devices from Excel, CSV or vCard, with a preview. */
+function CustomerImport({ file, onClose, onDone }) {
+  const [p, setP] = useState(null);
+  const [cols, setCols] = useState([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { call('previewCustomerImport', file.name, file.bytes).then((x) => { setP(x); setCols(x.columns); }, (e) => { toastError(e); onClose(); }); }, []);
+  if (!p) return html`<${Modal} title="Import customers" onClose=${onClose}><div class="row"><${Spinner} /> Reading ${file.name}…</div></${Modal}>`;
+  const nameIdx = (cols.find((c) => c.field === 'name') || cols.find((c) => c.field === 'contact') || {}).index;
+  const names = new Set(p.rows.map((r) => String(r[nameIdx] || '').trim().toLowerCase()).filter((n) => n && !/^example\b/.test(n)));
+  const run = async () => {
+    setBusy(true);
+    try {
+      const s = await call('importCustomers', { rows: p.rows, columns: cols });
+      changed();
+      toast(`${s.created} new and ${s.updated} updated customers, ${s.contacts} contacts, ${s.devices} devices${s.skipped ? `. ${s.skipped} rows skipped` : ''}`);
+      onDone();
+    } catch (e) { toastError(e); } finally { setBusy(false); }
+  };
+  return html`<${Modal} wide title=${`Import customers from ${file.name}`} onClose=${onClose}>
+    <div class="small muted mb">Choose what each column holds. Rows with the same customer name add more contacts or devices to that customer, and existing customers are updated. Rows starting with EXAMPLE are skipped.</div>
+    <div class="import-grid-wrap"><table class="plain cust-import"><thead><tr>${cols.map((c, i) => html`<th key=${i}><div class="small">${c.title}</div>
+      <select class="input" aria-label=${`What ${c.title} holds`} value=${c.field} onChange=${(e) => setCols(cols.map((x, j) => (j === i ? { ...x, field: e.target.value } : x)))}>
+        <option value="skip">Skip</option>${p.fields.map(([k, l]) => html`<option key=${k} value=${k}>${l}</option>`)}</select></th>`)}</tr></thead>
+      <tbody>${p.rows.slice(0, 8).map((r, ri) => html`<tr key=${ri} class=${/^\s*example\b/i.test(String(r[nameIdx] || '')) ? 'faint' : ''}>${cols.map((c, i) => html`<td key=${i} class=${c.field === 'skip' ? 'faint' : ''}>${r[i]}</td>`)}</tr>`)}</tbody></table></div>
+    ${p.total > 8 ? html`<div class="small muted mt2">…and ${p.total - 8} more rows.</div>` : null}
+    <div class="row mt"><span class="small muted">${names.size} ${names.size === 1 ? 'customer' : 'customers'} in ${p.total} rows</span><span class="grow"></span>
+      <button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${busy || nameIdx == null} onClick=${run}>${busy ? 'Importing…' : `Import ${names.size} ${names.size === 1 ? 'customer' : 'customers'}`}</button></div>
+  </${Modal}>`;
 }
 
 /** Pick a customer for an item from its panel menu. */

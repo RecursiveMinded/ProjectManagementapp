@@ -751,3 +751,18 @@ td.bad, .bad { color: var(--bad); } td.b, .b { font-weight: 700; }
 .card > .meet-row.cust-task { grid-template-columns: minmax(200px, 1fr) 130px 110px 60px; }
 .done-text { text-decoration: line-through; color: var(--muted); }
 @media (max-width: 1100px) { .cust-fields { grid-template-columns: 110px 1fr; } }
+.paste-cust { padding: 14px 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; }
+.paste-cust.compact { border: 0; padding: 0; margin: 0; box-shadow: none; }
+.paste-box { width: 100%; resize: vertical; font-family: inherit; min-height: 96px; }
+.paste-review { display: flex; flex-direction: column; gap: 10px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
+.paste-match { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-radius: 8px; background: var(--brand-soft, #efeefe); }
+.paste-contacts { display: flex; flex-direction: column; gap: 6px; }
+.paste-contact { display: grid; grid-template-columns: 20px 1.1fr 1.1fr 1.4fr 1fr 1fr auto; gap: 6px; align-items: center; }
+.paste-contact.off .input { opacity: .5; }
+.paste-contact .input { height: 32px; min-width: 0; }
+.cust-import th { min-width: 150px; vertical-align: bottom; padding: 6px; }
+.cust-import td { padding: 5px 8px; font-size: 12.5px; border-top: 1px solid var(--line); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.import-grid-wrap { overflow: auto; max-height: 50vh; border: 1px solid var(--line); border-radius: 8px; }
+a.link { color: var(--brand); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+@media (max-width: 1000px) { .grid3 { grid-template-columns: 1fr 1fr; } .paste-contact { grid-template-columns: 20px 1fr 1fr; } }

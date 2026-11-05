@@ -208,7 +208,13 @@ export function useLoad(fn, deps) {
 
 export function usePersist(key, initial) {
   const [v, setV] = useState(() => {
-    try { const s = localStorage.getItem(`bd.${key}`); return s ? { ...initial, ...JSON.parse(s) } : initial; } catch (_) { return initial; }
+    try {
+      const s = localStorage.getItem(`bd.${key}`);
+      if (!s) return initial;
+      const saved = JSON.parse(s);
+      const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+      return isObj(initial) ? (isObj(saved) ? { ...initial, ...saved } : initial) : (typeof saved === typeof initial ? saved : initial);
+    } catch (_) { return initial; }
   });
   const set = useCallback((nv) => {
     setV((old) => {

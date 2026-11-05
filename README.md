@@ -25,6 +25,8 @@ The feature set was mapped from the public help documentation of a leading hoste
 - A customer directory: one profile per account with account number, industry, main phone and email, website, address, owner, tags and rich notes.
 - Contacts (name, title, email, phone, mobile, main contact), devices (type, model, serial number, location, status, install date) and files on each profile.
 - A **Customer** column assigns a customer to any task; the profile lists every task and call for that customer. New names typed in a Customer column, on a call or in an import join the directory.
+- Paste an email, thread or signature and the customer is filled in for review: company, website, address and each contact's name, title, email, phone and mobile. Known companies are matched so contacts are added instead of duplicates. Uses the AI model from Settings when there is one, and a built-in reader otherwise.
+- Import customers, contacts and devices from Excel, CSV or vCard with a column-mapping preview, or start from the blank customer import sheet.
 - Search finds customers by name, contact, email, phone or device serial number.
 
 **Help and user guide**
@@ -146,7 +148,7 @@ npm run icons        # redraw build/icon.png and build/icon.ico (needs Python + 
 
 | Path | What it holds |
 | --- | --- |
-| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `meetings.js` (calls, series and action items), `customers.js` (customer directory), `capture.js` (Quick capture), `api.js` (the API the UI calls) |
+| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `meetings.js` (calls, series and action items), `customers.js` (customer directory), `customer-intake.js` (paste reader and customer import), `capture.js` (Quick capture), `api.js` (the API the UI calls) |
 | `src/ui/` | Preact + htm interface, bundled by esbuild into `dist/ui` |
 | `electron/` | Window, tray, scheduler, Windows notifications, native file dialogs, auto-update |
 | `dev/server.js` | The same API over HTTP, for browser testing |

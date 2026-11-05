@@ -726,3 +726,60 @@ test('customer directory: profiles, contacts, devices, Customer column, calls, i
   api.deleteCustomer(id);
   assert.equal(api.store.getBoard(board).items.find((x) => x.id === item).values[colId], undefined);
 });
+
+test('customers from a pasted email, and customer import with merging', async () => {
+  const api = await fresh();
+  const mail = `From: Anthony Acosta <anthony.acosta@ingenico-partners.com>
+To: Me <me@example.org>
+Cc: Sara Kim <sara.kim@ingenico-partners.com>
+Subject: RX3
+
+Hi, devices are on the way.
+
+Thanks,
+Anthony Acosta
+Senior Certification Manager | Ingenico Partners LLC
+1200 Market Street, Suite 400
+Philadelphia, PA 19107
+O: (215) 555-0134 | M: 215.555.0199
+www.ingenico-partners.com`;
+  const r = await api.readCustomerText({ text: mail });
+  assert.equal(r.mode, 'basic');
+  assert.equal(r.customer.name, 'Ingenico Partners LLC');
+  assert.match(r.customer.address, /1200 Market Street.*19107/);
+  const a = r.contacts[0];
+  assert.deepEqual([a.name, a.title, a.email, a.phone, a.mobile], ['Anthony Acosta', 'Senior Certification Manager', 'anthony.acosta@ingenico-partners.com', '(215) 555-0134', '215.555.0199']);
+  assert.equal(r.contacts.find((k) => k.email === 'me@example.org').include, false, 'other companies are left out');
+  assert.equal(r.contacts.find((k) => k.name === 'Sara Kim').include, true);
+  assert.equal(r.match, null);
+  const id = api.createCustomerFromText({ customer: r.customer, contacts: r.contacts, keepText: true, text: mail });
+  const c = api.getCustomer(id);
+  assert.equal(c.contacts.length, 2);
+  assert.equal(c.contacts[0].name, 'Anthony Acosta');
+  assert.match(c.notes, /Pasted/);
+  // A second paste from the same company is matched by email domain.
+  const r2 = await api.readCustomerText({ text: 'Lee Wong\nField Engineer\nlee.wong@ingenico-partners.com\nMobile +1 555 0201' });
+  assert.equal(r2.match && r2.match.id, id);
+  assert.equal(r2.contacts[0].mobile, '+1 555 0201');
+  api.createCustomerFromText({ customerId: id, customer: r2.customer, contacts: r2.contacts });
+  assert.equal(api.getCustomer(id).contacts.length, 3);
+  // Import: the blank sheet's EXAMPLE rows are skipped; rows merge by customer name.
+  const sheet = await api.customerImportSheet();
+  const pv = await api.previewCustomerImport('sheet.xlsx', sheet);
+  assert.equal(pv.columns.find((x) => x.title === 'Serial number').field, 'deviceSerial');
+  assert.equal(api.importCustomers({ rows: pv.rows, columns: pv.columns }).created, 0);
+  const csv = Buffer.from('Company,First Name,Last Name,Email,Mobile,Serial,Model\nIngenico Partners LLC,Sara,Kim,sara.kim@ingenico-partners.com,555 1111,SN-1,RX3\nGlobex,Hank,Scorpio,hank@globex.test,,SN-9,K2\nGlobex,Lisa,Ray,lisa@globex.test,,,\n');
+  const pc = await api.previewCustomerImport('list.csv', csv);
+  assert.deepEqual(pc.columns.map((x) => x.field), ['name', 'contactFirst', 'contactLast', 'contactEmail', 'contactMobile', 'deviceSerial', 'deviceModel']);
+  const s = api.importCustomers({ rows: pc.rows, columns: pc.columns });
+  assert.deepEqual([s.created, s.updated, s.contacts, s.devices], [1, 1, 2, 2]);
+  const ing = api.getCustomer(id);
+  assert.equal(ing.contacts.length, 3, 'existing contact updated, not duplicated');
+  assert.equal(ing.contacts.find((k) => k.name === 'Sara Kim').mobile, '555 1111');
+  assert.equal(ing.devices[0].serial, 'SN-1');
+  const vcf = Buffer.from('BEGIN:VCARD\nVERSION:3.0\nFN:Ola Nord\nORG:Nordic Foods;\nTITLE:Buyer\nEMAIL;TYPE=WORK:ola@nordic.test\nTEL;TYPE=CELL:+47 555 01 234\nEND:VCARD\n');
+  const pvv = await api.previewCustomerImport('cards.vcf', vcf);
+  api.importCustomers({ rows: pvv.rows, columns: pvv.columns });
+  const nf = api.listCustomers({ q: 'Nordic Foods' })[0];
+  assert.equal(api.getCustomer(nf.id).contacts[0].mobile, '+47 555 01 234');
+});

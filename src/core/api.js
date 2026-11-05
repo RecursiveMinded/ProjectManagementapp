@@ -11,6 +11,7 @@ const { Dashboards, WIDGETS } = require('./dashboards');
 const { Reports } = require('./reports');
 const { Recurring } = require('./recurring');
 const { Customers } = require('./customers');
+const intake = require('./customer-intake');
 const { Meetings } = require('./meetings');
 const { Capture } = require('./capture');
 const T = require('./templates');
@@ -468,6 +469,73 @@ class AppApi {
   addCustomerFile(customerId, f) { return this.customers.addFile(customerId, f); }
   customerSummary(id) { return this.customers.summary(id); }
   customerOptions() { return this.store.customersList(); }
+  /**
+   * Read a pasted email or signature into a proposed customer. Uses the AI model
+   * from Settings when one is set up, and the built-in reader otherwise.
+   */
+  async readCustomerText({ text } = {}) {
+    const t = String(text || '').slice(0, 30000);
+    if (!t.trim()) throw new Error('Paste an email or a signature first.');
+    const basic = intake.parseContactText(t);
+    let out = { mode: 'basic', model: null, ...basic, notes: [] };
+    try {
+      const contact = { type: 'object', additionalProperties: false, required: ['name', 'title', 'email', 'phone', 'mobile'],
+        properties: { name: { type: 'string' }, title: { type: 'string' }, email: { type: 'string' }, phone: { type: 'string' }, mobile: { type: 'string' } } };
+      const schema = { type: 'object', additionalProperties: false, required: ['company', 'industry', 'website', 'phone', 'address', 'contacts'],
+        properties: { company: { type: 'string' }, industry: { type: 'string' }, website: { type: 'string' }, phone: { type: 'string' }, address: { type: 'string' }, contacts: { type: 'array', items: contact } } };
+      const r = await this.capture.askJson({ schema, text: `<pasted>\n${t}\n</pasted>`,
+        system: 'You pull customer details out of pasted emails and email signatures for a customer directory. Return the customer company (not the email provider, and not the person who received the email), its industry if obvious, website, main company phone and postal address, and every person at that company with their job title, email, office or direct phone, and mobile. The first contact should be the person who wrote the email. Leave a field as an empty string when it is not in the text. Never invent details.' });
+      const d = r && r.data;
+      if (d && (d.company || (d.contacts || []).length)) {
+        const pick = (a, b) => (String(a || '').trim() || b || '');
+        out = { ...out, mode: r.mode, model: r.model,
+          customer: { name: pick(d.company, basic.customer.name), industry: pick(d.industry, basic.customer.industry), website: pick(d.website, basic.customer.website), phone: pick(d.phone, basic.customer.phone), email: basic.customer.email, address: pick(d.address, basic.customer.address) },
+          contacts: (d.contacts || []).filter((k) => k.name || k.email).map((k, i) => {
+            const b = basic.contacts.find((x) => (k.email && x.email.toLowerCase() === k.email.toLowerCase()) || (k.name && x.name.toLowerCase() === k.name.toLowerCase())) || {};
+            return { name: pick(k.name, b.name), title: pick(k.title, b.title), email: pick(k.email, b.email), phone: pick(k.phone, b.phone), mobile: pick(k.mobile, b.mobile), include: true, primary: i === 0 };
+          }) };
+        if (!out.contacts.length) out.contacts = basic.contacts;
+      }
+    } catch (e) { out.notes.push(`The AI model could not be used (${e.message || e}), so the built-in reader was used.`); }
+    // Is this someone we already know?
+    const name = out.customer.name;
+    const domains = new Set(out.contacts.map((k) => (k.email.split('@')[1] || '').toLowerCase()).filter((d) => d && !/^(gmail|yahoo|hotmail|outlook|live|icloud|aol|proton)/.test(d)));
+    let match = name ? this.customers.byName(name) : null;
+    if (!match && domains.size) {
+      for (const c of this.db.all('SELECT c.id, c.name, c.website, c.email, (SELECT GROUP_CONCAT(email, \' \') FROM customer_contacts WHERE customer_id=c.id) AS emails FROM customers c')) {
+        const hay = `${c.website} ${c.email} ${c.emails || ''}`.toLowerCase();
+        if ([...domains].some((d) => hay.includes(d))) { match = { id: c.id, name: c.name }; break; }
+      }
+    }
+    out.match = match ? { id: match.id, name: match.name } : null;
+    return out;
+  }
+  /** Save what the paste review screen shows: a new customer, or new contacts on an existing one. */
+  createCustomerFromText({ customerId, customer = {}, contacts = [], keepText, text } = {}) {
+    let id = customerId;
+    const clean = (k) => ({ name: String(k.name || '').trim() || String(k.email || '').split('@')[0], title: k.title || '', email: k.email || '', phone: k.phone || '', mobile: k.mobile || '', primary: !!k.primary });
+    const esc = (x) => String(x).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const note = keepText && text ? `<p><b>Pasted ${new Date().toISOString().slice(0, 10)}</b></p><pre>${esc(String(text).slice(0, 20000))}</pre>` : '';
+    if (id) {
+      const cur = this.customers.get(id);
+      const fill = {};
+      for (const k of ['industry', 'website', 'phone', 'email', 'address']) if (!cur[k] && customer[k]) fill[k] = customer[k];
+      if (note) fill.notes = `${cur.notes || ''}${note}`;
+      if (Object.keys(fill).length) this.customers.save({ id, ...fill });
+      for (const k of contacts.filter((x) => x.include !== false && (x.name || x.email))) {
+        const dup = cur.contacts.find((x) => (k.email && x.email.toLowerCase() === k.email.toLowerCase()) || (k.name && x.name.toLowerCase() === String(k.name).toLowerCase()));
+        const c = clean(k);
+        this.customers.saveContact(id, dup ? { ...dup, ...Object.fromEntries(Object.entries(c).filter(([f, v]) => v && f !== 'primary')) } : { ...c, primary: false });
+      }
+      return id;
+    }
+    id = this.customers.save({ name: customer.name, status: customer.status || 'active', industry: customer.industry, website: customer.website, phone: customer.phone, email: customer.email, address: customer.address, notes: note });
+    for (const k of contacts.filter((x) => x.include !== false && (x.name || x.email))) this.customers.saveContact(id, clean(k));
+    return id;
+  }
+  async previewCustomerImport(name, bytes) { return intake.previewCustomers(name, bytes); }
+  importCustomers(args) { return intake.importCustomers(this.customers, args); }
+  async customerImportSheet() { return intake.customerSheet(); }
   /** Assign a customer to an item through its board's Customer column, adding the column if needed. */
   assignCustomer(itemId, customerId) {
     const it = this.db.get('SELECT board_id, parent_id FROM items WHERE id=?', [itemId]);

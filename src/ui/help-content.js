@@ -242,11 +242,29 @@ The **Timesheets** page totals time from every Time tracking column by person an
 
 Search finds a customer by name, contact, email, phone or device serial number. **Copy card** puts the profile on the clipboard for an email.` },
   { id: 'new-customer', topic: 'customers', title: 'Add a customer', keys: 'new customer add account create contact', body: `
-1. Go to **Customers** and click **New customer**.
+1. Go to **Customers** and click **New customer**. (To fill it in from an email, see [[paste-customer]].)
 2. Enter the name, status (prospect, active, on hold or former) and, if you like, the main contact.
 3. Click **Create customer**. The profile opens so you can add more contacts, devices and notes.
 
 Customers are also added for you when you type a new name in a Customer column, log a call with a new customer, or import a sheet with a Customer column.` },
+  { id: 'paste-customer', topic: 'customers', title: 'Add a customer from an email or signature', keys: 'paste email signature copy create customer contact auto fill outlook', body: `
+1. Go to **Customers**. The **Paste an email or signature** box is at the top (click the button of that name if you closed it).
+2. Copy an email, a whole thread, or just someone's signature, and paste it into the box. It is read straight away.
+3. Check what was picked out: the company, website, address, and each person's name, title, email, phone and mobile. Fix anything, untick people you don't want, and choose the main contact.
+4. Click **Create customer**. The new profile opens.
+
+If the company is already in Customers (by name, or by the email domain), you can **Add contacts** to it instead of making a duplicate. Tick **Keep the pasted text in the customer's notes** to save the email too.
+
+> The built-in reader works offline. If an AI model is set up in **Settings › AI** (Ollama, a local server or Claude), it is used for better results. See [[ai-settings]].` },
+  { id: 'import-customers', topic: 'customers', title: 'Import customers', keys: 'import customers excel csv vcard vcf outlook contacts list spreadsheet', body: `
+1. Go to **Customers** and click **Import**, then **Import customers…**.
+2. Choose an Excel (.xlsx), CSV or vCard (.vcf) file. Outlook and most CRMs can export one of these.
+3. In the preview, choose what each column holds: customer name, account number, status, phone, website, address, tags, notes, contact name (or first and last name), title, email, phone and mobile, and device name, model, serial number and location.
+4. Click **Import**.
+
+Rows with the same customer name add more contacts or devices to that customer. Customers already in Boardenda are updated rather than duplicated, and contacts and devices are matched by email or serial number.
+
+For a ready-made layout, click **Import › Download customer import sheet**. Its EXAMPLE rows are skipped on import.` },
   { id: 'assign-customer', topic: 'customers', title: 'Assign a customer to a task', keys: 'assign customer task item column map link account', body: `
 - Add a **Customer** column to a board (the **+** at the end of the column headers), then click a cell and pick the customer. Type a new name to add it to the directory.
 - Or open the item and choose **⋯ › Assign customer…**. The board gets a Customer column if it doesn't have one.
