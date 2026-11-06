@@ -353,6 +353,46 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.drawer button[aria-label="Close"]');
       await page.waitForSelector('.tbl .cust-chip:has-text("Smoke Corp")');
     });
+    await step('reports: executive summary', async () => {
+      await page.click('.side a:has-text("Reports")');
+      await page.waitForSelector('.rpt h1:has-text("Executive summary")');
+      await page.waitForSelector('.rpt h2:has-text("Board health")');
+    });
+    await step('reports: weekly progress, last week, export', async () => {
+      await page.click('.rpt-kind:has-text("Weekly progress report")');
+      await page.waitForSelector('.rpt h1:has-text("Weekly progress report")');
+      await page.selectOption('.rpt-controls label:has-text("Period") select', 'this_month');
+      await page.waitForSelector('.rpt-meta:has-text("This month")');
+      await page.click('.rpt-summary-edit button:has-text("Write summary")');
+      await page.waitForSelector('.rpt-summary-edit textarea');
+      await page.waitForSelector('.rpt h2:has-text("Summary")');
+      await page.click('.rpt-controls button:has-text("Export")');
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.menu .mi:has-text("Markdown")')]);
+      if (!/Weekly progress report/.test(dl.suggestedFilename())) throw new Error(`unexpected report name ${dl.suggestedFilename()}`);
+    });
+    await step('reports: status overview and detailed status', async () => {
+      await page.click('.rpt-kind:has-text("Status overview")');
+      await page.waitForSelector('.rpt h2:has-text("Status by board")');
+      await page.click('.rpt-kind:has-text("Detailed status report")');
+      await page.waitForSelector('.rpt h1:has-text("Detailed status report")');
+      await page.click('.rpt-kind:has-text("Customer report")');
+      await page.waitForSelector('.rpt h1:has-text("Customer report")');
+    });
+    await step('reports: save and open a snapshot', async () => {
+      await page.click('.rpt-kind:has-text("Executive summary")');
+      await page.waitForSelector('.rpt h1:has-text("Executive summary")');
+      await page.click('.rpt-controls button:has-text("Save snapshot")');
+      await page.waitForSelector('.toast:has-text("Snapshot saved")');
+      await page.click('.tabs .tab:has-text("Snapshots")');
+      await page.click('.rpt-snap:has-text("Executive summary")');
+      await page.waitForSelector('.rpt h1:has-text("Executive summary")');
+      await page.fill('.card input[placeholder^="For example"]', 'Sent to the owners');
+      await page.keyboard.press('Tab');
+      await page.waitForSelector('.rpt-meta:has-text("Sent to the owners")');
+      await page.click('button:has-text("All snapshots")');
+      await page.waitForSelector('.rpt-snap:has-text("Sent to the owners")');
+      await page.click('.tabs .tab:has-text("Build a report")');
+    });
     await step('ask anything: folders, index, question with sources', async () => {
       const docs = fs.mkdtempSync(path.join(os.tmpdir(), 'boardenda-docs-'));
       fs.writeFileSync(path.join(docs, 'northwind-contract.txt'), 'Service agreement with Northwind Traders. Payment terms are net 45 days. The support line is open 8am to 6pm.');

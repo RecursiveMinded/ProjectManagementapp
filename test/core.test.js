@@ -849,3 +849,54 @@ test('ask: indexes chosen folders, searches files and business data, answers wit
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('reports: executive, weekly, overview, customer and detail reports, snapshots and auto weekly', async () => {
+  const api = await fresh();
+  api.loadSample();
+  const { resolvePeriod } = require('../src/core/briefs');
+  const lw = resolvePeriod({ preset: 'last_week' }, '2026-11-06');
+  assert.deepEqual([lw.from, lw.to, lw.prev.from, lw.prev.to], ['2026-10-26', '2026-11-01', '2026-10-19', '2026-10-25']);
+  const lm = resolvePeriod({ preset: 'last_month' }, '2026-03-15');
+  assert.deepEqual([lm.from, lm.to], ['2026-02-01', '2026-02-28']);
+  // Mark an item done now: it must show up as completed this week.
+  const B = api.store.getBoard(api.db.get("SELECT id FROM boards WHERE name='Website relaunch'").id);
+  const sc = B.columns.find((c) => c.scope === 'item' && c.type === 'status');
+  const target = B.items.find((i) => !(C.labelOf(sc, i.values[sc.id]) || {}).done);
+  api.store.setValue(target.id, sc.id, sc.settings.labels.find((l) => l.done).id);
+  const ex = api.buildReport({ kind: 'executive', period: { preset: 'this_week' } });
+  assert.equal(ex.title, 'Executive summary');
+  assert.ok(ex.sections.find((s) => s.id === 'wins').items.some((i) => i.itemId === target.id));
+  assert.ok(ex.sections.find((s) => s.id === 'health').rows.length >= 5);
+  const wk = api.buildReport({ kind: 'weekly', period: { preset: 'this_week' } });
+  assert.ok(wk.sections.find((s) => s.id === 'completed').rows.some((r) => r.item.itemId === target.id));
+  assert.ok(wk.sections.find((s) => s.id === 'moved'));
+  const scoped = api.buildReport({ kind: 'overview', scope: `board:${B.board.id}` });
+  assert.equal(scoped.sections.find((s) => s.id === 'mix').bars.length, 1);
+  assert.equal(api.buildReport({ kind: 'customer' }).title, 'Customer report');
+  const det = api.buildReport({ kind: 'detail' });
+  assert.ok(det.sections.every((s) => s.rows.every((r) => r.item)));
+  const me = api.store.me().id;
+  const mine = api.buildReport({ kind: 'detail', personId: me });
+  assert.ok(mine.kpis[0].value <= det.kpis[0].value);
+  assert.match(api.reportText(ex), /Board health/);
+  // Snapshots and comparison.
+  const s = api.saveReportSnapshot({ report: ex, summary: 'All good.' });
+  assert.equal(api.reportSnapshots().length, 1);
+  assert.equal(api.reportSnapshot(s.id).summary, 'All good.');
+  assert.equal(api.buildReport({ kind: 'executive', period: { preset: 'this_week' } }).compare.snapshotId, s.id);
+  api.updateReportSnapshot(s.id, { note: 'Sent' });
+  assert.equal(api.reportSnapshots()[0].note, 'Sent');
+  // Automatic weekly snapshot happens once per week.
+  assert.ok(api.briefs.maybeAutoWeekly(new Date()));
+  assert.equal(api.briefs.maybeAutoWeekly(new Date()), null);
+  assert.equal(api.reportTrend({ kind: 'weekly' }).length, 1);
+  api.setReportOptions({ autoWeekly: false });
+  assert.equal(api.reportOptions().config.autoWeekly, false);
+  api.deleteReportSnapshot(s.id);
+  assert.equal(api.reportSnapshots({ kind: 'executive' }).length, 0);
+  // Without a model, the summary is the highlights.
+  api.setAi({ provider: 'off' });
+  const sum = await api.reportSummary({ report: ex });
+  assert.equal(sum.mode, 'basic');
+  assert.match(sum.text, /completed/);
+});

@@ -20,6 +20,7 @@ import { PortfolioPage, TimesheetPage } from './reports.js';
 import { HelpPage } from './help.js';
 import { CustomersPage, CustomerDrawer } from './customers.js';
 import { AskPage } from './ask.js';
+import { ReportsPage } from './briefs.js';
 
 window.__bdSelfTest = selfTest;
 
@@ -108,7 +109,7 @@ function App() {
       if (!typing && !ctrl && !e.altKey) {
         if (Date.now() - gPrefix.current < 1200) {
           gPrefix.current = 0;
-          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets', l: 'meetings', u: 'customers', k: 'ask' }[e.key.toLowerCase()];
+          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets', l: 'meetings', u: 'customers', k: 'ask', r: 'reports' }[e.key.toLowerCase()];
           if (to) { e.preventDefault(); nav(to); return; }
         }
         if (e.key === 'g') { gPrefix.current = Date.now(); return; }
@@ -147,12 +148,13 @@ function App() {
   else if (r.name === 'portfolio') page = html`<${PortfolioPage} boot=${boot} nav=${nav} version=${version} />`;
   else if (r.name === 'timesheets') page = html`<${TimesheetPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'meetings') page = html`<${MeetingsPage} boot=${boot} openItem=${openItem} version=${version} />`;
+  else if (r.name === 'reports') page = html`<${ReportsPage} nav=${nav} version=${version} />`;
   else if (r.name === 'ask') page = html`<${AskPage} boot=${boot} />`;
   else if (r.name === 'customers') page = html`<${CustomersPage} boot=${boot} version=${version} />`;
   else if (r.name === 'help') page = html`<${HelpPage} id=${r.id} nav=${nav} />`;
   else if (r.name === 'calendar') page = html`<${CalendarPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'mywork') page = html`<${MyWork} boot=${boot} openItem=${openItem} version=${version} />`;
-  else if (r.name === 'inbox') page = html`<${Inbox} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
+  else if (r.name === 'inbox') page = html`<${Inbox} openItem=${openItem} refreshShell=${reloadShell} version=${version} nav=${nav} />`;
   else if (r.name === 'archive') page = html`<${Archive} refreshShell=${reloadShell} />`;
   else if (r.name === 'settings') page = html`<${Settings} boot=${boot} reloadShell=${reloadShell} />`;
   else page = html`<${Home} key=${version} boot=${boot} nav=${nav} openItem=${openItem} newBoard=${() => setNewBoard({})} reloadShell=${async () => { await reloadShell(); bump(); }} />`;
@@ -176,6 +178,7 @@ function App() {
         ${navLink('customers', 'Customers', 'building')}
         ${navLink('meetings', 'Calls and meetings', 'phone')}
         ${navLink('dependencies', 'Dependencies', 'dependency')}
+        ${navLink('reports', 'Reports', 'report')}
         ${navLink('portfolio', 'Portfolio', 'grid')}
         ${navLink('timesheets', 'Timesheets', 'timer')}
         ${navLink('inbox', 'Inbox', 'inbox', boot.unread || null)}
@@ -227,7 +230,7 @@ const SHORTCUTS = [
   ['Ctrl+K', 'Search and commands'], ['Ctrl+Z', 'Undo the last change'], ['Ctrl+P', 'Print or save the board or doc as PDF'],
   ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'],
   ['g h', 'Go to Home'], ['g m', 'Go to My work'], ['g c', 'Go to Calendar'], ['g d', 'Go to Dependencies'], ['g i', 'Go to Inbox'],
-  ['g p', 'Go to Portfolio'], ['Ctrl J', 'Quick capture: turn notes into records'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g u', 'Go to Customers'], ['g k', 'Ask anything (search your PC and business data)'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['F1', 'Help and user guide'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
+  ['g p', 'Go to Portfolio'], ['Ctrl J', 'Quick capture: turn notes into records'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g u', 'Go to Customers'], ['g k', 'Ask anything (search your PC and business data)'], ['g r', 'Go to Reports'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['F1', 'Help and user guide'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
 ];
 
 /** Always-visible update control: check, watch the download, restart to install. */

@@ -100,6 +100,11 @@ The feature set was mapped from the public help documentation of a leading hoste
   - start or stop timers, push dates.
 - Time-based automations run from the tray and catch up on one missed day.
 
+**Reports (g r)**
+- Executive summary, weekly progress report, status overview, customer report and detailed status report, for all boards, a workspace, a folder, one board or one person, over any period, compared with the period before.
+- Written summary drafted by the AI in Settings > AI (local Llama by default) and editable; export to PDF, Word, web page or Markdown, or copy as text.
+- Snapshots: frozen copies with notes, compared with the next report, plus an automatic weekly progress snapshot every Monday with a weekly trend chart.
+
 **Dashboards**
 - Combine widgets across boards: numbers, battery (status mix), chart, workload, item list, table, calendar, timeline, team ownership (who owns what and who is waited on), countdown and notes.
 
@@ -153,7 +158,7 @@ npm run icons        # redraw build/icon.png and build/icon.ico (needs Python + 
 
 | Path | What it holds |
 | --- | --- |
-| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `meetings.js` (calls, series and action items), `customers.js` (customer directory), `customer-intake.js` (paste reader and customer import), `capture.js` (Quick capture), `knowledge.js` (Ask: folder index and answers), `api.js` (the API the UI calls) |
+| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `meetings.js` (calls, series and action items), `customers.js` (customer directory), `customer-intake.js` (paste reader and customer import), `capture.js` (Quick capture), `knowledge.js` (Ask: folder index and answers), `briefs.js` (Reports and snapshots), `api.js` (the API the UI calls) |
 | `src/ui/` | Preact + htm interface, bundled by esbuild into `dist/ui` |
 | `electron/` | Window, tray, scheduler, Windows notifications, native file dialogs, auto-update |
 | `dev/server.js` | The same API over HTTP, for browser testing |

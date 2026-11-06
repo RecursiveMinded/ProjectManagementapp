@@ -9,6 +9,7 @@ const { Store } = require('./store');
 const { Automations, TRIGGERS, ACTIONS } = require('./automations');
 const { Dashboards, WIDGETS } = require('./dashboards');
 const { Reports } = require('./reports');
+const { Briefs } = require('./briefs');
 const { Recurring } = require('./recurring');
 const { Customers } = require('./customers');
 const intake = require('./customer-intake');
@@ -53,6 +54,7 @@ class AppApi {
     this.capture = new Capture(this.store, this.meetings);
     this.capture.customers = this.customers;
     this.knowledge = new Knowledge({ db: this.db, dataDir: this.dataDir, store: this.store, capture: this.capture, customers: this.customers, meetings: this.meetings });
+    this.briefs = new Briefs({ db: this.db, store: this.store, reports: this.reports, meetings: this.meetings, capture: this.capture });
     try {
       if (!this.db.get("SELECT value FROM settings WHERE key='customers_adopted'")) {
         this.customers.adoptCallCustomers();
@@ -413,8 +415,22 @@ class AppApi {
     const when = at ? new Date(at) : new Date();
     const made = this.recurring.tick(when) + this.meetings.tick(when);
     try { this.knowledge.maybeRefresh(); } catch (_) { /* never block the schedule */ }
+    try { this.briefs.maybeAutoWeekly(when); } catch (_) { /* never block the schedule */ }
     return this.automations.tick(when) + made;
   }
+
+  // --------------------------------------------------------------- reports
+  reportOptions() { return this.briefs.options(); }
+  buildReport(o) { return this.briefs.build(o); }
+  reportSummary(o) { return this.briefs.writeSummary(o); }
+  reportText(r) { return this.briefs.toText(r, { limit: 500 }); }
+  saveReportSnapshot(o) { return this.briefs.saveSnapshot(o); }
+  reportSnapshots(o) { return this.briefs.snapshots(o); }
+  reportSnapshot(id) { return this.briefs.snapshot(id); }
+  updateReportSnapshot(id, patch) { return this.briefs.updateSnapshot(id, patch); }
+  deleteReportSnapshot(id) { return this.briefs.deleteSnapshot(id); }
+  reportTrend(o) { return this.briefs.trend(o); }
+  setReportOptions(o) { return this.briefs.setConfig(o); }
 
   // ------------------------------------------------------------------- ask
   askStatus() { return this.knowledge.status(); }

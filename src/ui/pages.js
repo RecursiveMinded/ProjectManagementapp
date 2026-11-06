@@ -142,7 +142,7 @@ export function MyWork({ boot, openItem, version }) {
   </div>`;
 }
 
-export function Inbox({ openItem, refreshShell, version }) {
+export function Inbox({ openItem, refreshShell, version, nav }) {
   const [unread, setUnread] = useState(false);
   const [list, reload] = useLoad(() => call('notifications', { unreadOnly: unread, limit: 300 }), [unread, version]);
   const mark = async (ids, read = true) => { try { await call('markRead', ids, read); reload(); refreshShell(); } catch (e) { toastError(e); } };
@@ -152,8 +152,8 @@ export function Inbox({ openItem, refreshShell, version }) {
       <button class="btn" onClick=${() => mark('all')}><${Icon} name="check" /> Mark all read</button></div>
     <div class="card">
       ${list == null ? html`<div class="pad"><${Spinner} /></div>` : !list.length ? html`<div class="empty"><${Icon} name="inbox" /><h3>You're all caught up</h3><div>Mentions, assignments, automation notifications and reminders land here.</div></div>` : null}
-      ${(list || []).map((n) => html`<div key=${n.id} class=${`notif ${n.read ? '' : 'unread'}`} onClick=${() => { if (!n.read) mark([n.id]); if (n.item_id) openItem(n.item_id); }}>
-        <span class="ws-icon" style=${`background:${n.kind === 'mention' ? '#5b4fe0' : n.kind === 'assigned' ? '#13a89e' : '#ff9f43'}`}><${Icon} name=${n.kind === 'mention' ? 'msg' : n.kind === 'assigned' ? 'user' : 'bolt'} size="13" /></span>
+      ${(list || []).map((n) => html`<div key=${n.id} class=${`notif ${n.read ? '' : 'unread'}`} onClick=${() => { if (!n.read) mark([n.id]); if (n.item_id) openItem(n.item_id); else if (n.kind === 'report' && nav) { try { localStorage.setItem('bd.rpt.tab', JSON.stringify('snaps')); } catch (_) { /* ignore */ } nav('reports'); } }}>
+        <span class="ws-icon" style=${`background:${n.kind === 'mention' ? '#5b4fe0' : n.kind === 'assigned' ? '#13a89e' : '#ff9f43'}`}><${Icon} name=${n.kind === 'mention' ? 'msg' : n.kind === 'assigned' ? 'user' : n.kind === 'report' ? 'report' : 'bolt'} size="13" /></span>
         <div class="grow" style="min-width:0"><div style=${n.read ? '' : 'font-weight:650'}>${n.title}</div><div class="small muted">${n.body}</div></div>
         <span class="small faint" style="white-space:nowrap">${relTime(n.ts)}</span>
         <button class="btn icon ghost small" title=${n.read ? 'Mark unread' : 'Mark read'} onClick=${(e) => { e.stopPropagation(); mark([n.id], !n.read); }}><${Icon} name=${n.read ? 'eye' : 'check'} size="14" /></button></div>`)}
@@ -197,7 +197,7 @@ export function SearchPalette({ onClose, nav, openItem, boot }) {
     return () => clearTimeout(t);
   }, [q]);
   const commands = [
-    ['Go to Home', () => nav('home')], ['Go to My work', () => nav('mywork')], ['Go to Calendar', () => nav('calendar')], ['Ask anything: search PC files and business data', () => nav('ask')], ['Go to Customers', () => nav('customers')], ['Add a customer', () => nav('customers')], ['Go to Calls and meetings', () => nav('meetings')], ['Quick capture: turn notes into records', () => window.dispatchEvent(new CustomEvent('bd-capture'))], ['Log a customer call', () => window.dispatchEvent(new CustomEvent('bd-new-meeting', { detail: { kind: 'call' } }))], ['Go to Team dependencies', () => nav('dependencies')], ['Go to Portfolio', () => nav('portfolio')], ['Go to Timesheets', () => nav('timesheets')], ['Go to Inbox', () => nav('inbox')], ['Go to Settings', () => nav('settings')], ['Open help and user guide', () => nav('help')], ['Export user guide as PDF', () => exportGuide('pdf')],
+    ['Go to Home', () => nav('home')], ['Go to My work', () => nav('mywork')], ['Go to Calendar', () => nav('calendar')], ['Ask anything: search PC files and business data', () => nav('ask')], ['Go to Customers', () => nav('customers')], ['Add a customer', () => nav('customers')], ['Go to Calls and meetings', () => nav('meetings')], ['Quick capture: turn notes into records', () => window.dispatchEvent(new CustomEvent('bd-capture'))], ['Log a customer call', () => window.dispatchEvent(new CustomEvent('bd-new-meeting', { detail: { kind: 'call' } }))], ['Go to Team dependencies', () => nav('dependencies')], ['Go to Reports', () => nav('reports')], ['Executive summary report', () => { try { localStorage.setItem('bd.rpt.kind', JSON.stringify('executive')); localStorage.setItem('bd.rpt.tab', JSON.stringify('build')); } catch (_) { /* ignore */ } nav('reports'); }], ['Weekly progress report', () => { try { localStorage.setItem('bd.rpt.kind', JSON.stringify('weekly')); localStorage.setItem('bd.rpt.tab', JSON.stringify('build')); } catch (_) { /* ignore */ } nav('reports'); }], ['Go to Portfolio', () => nav('portfolio')], ['Go to Timesheets', () => nav('timesheets')], ['Go to Inbox', () => nav('inbox')], ['Go to Settings', () => nav('settings')], ['Open help and user guide', () => nav('help')], ['Export user guide as PDF', () => exportGuide('pdf')],
     ...boot.workspaces.flatMap((w) => w.boards.map((b) => [`Open board: ${b.name}`, () => nav('board', b.id)])),
     ...boot.dashboards.map((d) => [`Open dashboard: ${d.name}`, () => nav('dashboard', d.id)]),
     ...(boot.docs || []).map((d) => [`Open doc: ${d.title}`, () => nav('doc', d.id)]),

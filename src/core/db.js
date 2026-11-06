@@ -319,6 +319,19 @@ CREATE TABLE IF NOT EXISTS notifications (
   read INTEGER DEFAULT 0,
   shown INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS report_snapshots (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  scope_key TEXT NOT NULL DEFAULT 'all',
+  period_from TEXT,
+  period_to TEXT,
+  data TEXT NOT NULL,
+  summary TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  auto INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT

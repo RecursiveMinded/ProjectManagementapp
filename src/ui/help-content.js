@@ -224,6 +224,34 @@ Add a **Button** column, then add an automation that starts with "When a button 
 3. Click **Add widget**.
 
 Widgets: numbers, battery (the mix of statuses), chart, workload, item list, table, calendar, timeline, team ownership (who owns what and who is waited on), countdown and notes. Each widget can be small, medium or full width.` },
+  { id: 'reports', topic: 'dash', title: 'Reports: executive summaries, weekly progress and snapshots', keys: 'report reports executive summary weekly progress status overview snapshot customer detailed export pdf word g r', body: `
+Click **Reports** in the sidebar, or press \`g\` then \`r\`. Pick a report on the left. It is built straight away from your boards, customers and calls.
+
+## Report types
+- **Executive summary**: headline numbers, board health, key accomplishments, risks and issues, what is due in the next two weeks and open follow-ups from calls.
+- **Weekly progress report**: what was completed, status changes, new items, overdue work, what is due next week, calls and meetings, time logged and workload by person.
+- **Status overview**: the status mix of every board, progress by group, workload by person and open work by customer.
+- **Customer report**: open work, overdue items, calls and follow-ups for each customer.
+- **Detailed status report**: every open item by board and group, with status, owner, due date, customer and the latest update.
+
+## Choose what it covers
+- **Boards**: all boards, one workspace, one folder or one board.
+- **Period**: this week, last week, this or last month, the last 7 or 30 days, this quarter, or your own dates. Numbers are compared with the period before.
+- **People**: everyone, or only items owned by one person (a personal weekly report).
+
+Click any item, board, customer or call in a report to open it.
+
+## Written summary
+Click **Write summary** and the AI chosen in **Settings › AI** (by default the Llama model in Ollama on this PC) drafts a short summary for leadership. Edit it before you share. Without a model, the highlights are used. See [[ai-settings]].
+
+## Snapshots
+- Click **Save snapshot** to keep a frozen copy of a report. It does not change when boards change, so you can see what you reported and when.
+- The next time you build the same report, each number shows what it was at the last snapshot.
+- Open **Snapshots** to see saved copies, add a note such as "sent to the owners", export them again or delete them.
+- Every Monday Boardenda saves last week's progress report for all boards and tells you in the Inbox. The **Weekly trend** chart is built from these. Turn this off on the Snapshots tab.
+
+## Share a report
+Click **Export** for a PDF, a Word document, a web page, Markdown, or **Copy as text** to paste into an email.` },
   { id: 'portfolio', topic: 'dash', title: 'Portfolio', keys: 'portfolio projects health status overview all boards', body: `
 The **Portfolio** page lists every board with its owner, progress, dates, overdue and blocked counts, and health. Health is worked out from the board automatically, or you can set it by hand and add a status note.` },
   { id: 'timesheets', topic: 'dash', title: 'Timesheets', keys: 'timesheet hours time week person export csv', body: `
