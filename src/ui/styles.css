@@ -824,3 +824,18 @@ a.link { color: var(--brand); cursor: pointer; display: inline-flex; align-items
 .rpt-spark i { flex: 1; background: var(--brand); border-radius: 2px 2px 0 0; min-width: 4px; }
 @media (max-width: 900px) { .rpt-layout { grid-template-columns: 1fr; } .rpt-kinds { position: static; flex-direction: row; overflow-x: auto; } .rpt-kind { min-width: 220px; } }
 @media print { .side, .rpt-kinds, .rpt-controls, .rpt-summary-edit, .tabs, .page-head { display: none !important; } .rpt-paper { border: 0; padding: 0; } }
+
+/* Collapsible sidebar */
+.side .sect.click { cursor: pointer; user-select: none; border-radius: 6px; }
+.side .sect.click:hover { color: #c9c8e2; }
+.side .sect .n { font-size: 11px; color: #8584a3; letter-spacing: 0; }
+.side .chev { flex: none; transition: transform .15s ease; opacity: .75; }
+.side .chev.open { transform: rotate(90deg); }
+.side .ws-head { gap: 8px; }
+.side .ws-head .n { font-size: 11px; color: #8584a3; font-weight: 400; }
+.side .ws-folder .n { margin-left: auto; font-size: 11px; color: #8584a3; }
+.side .nav a { padding: 6px 10px; }
+.side .nav.compact { flex-direction: row; flex-wrap: wrap; gap: 2px; padding: 0 10px; }
+.side .nav.compact a { position: relative; padding: 7px; gap: 0; }
+.side .nav.compact .dot { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.side > .sect.click:first-of-type { margin-top: 10px; }

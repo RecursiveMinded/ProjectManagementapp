@@ -406,6 +406,25 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.keyboard.press('Enter');
       await page.waitForSelector('.ask-msg.bot .ask-src:has-text("northwind-contract.txt")', { timeout: 30000 });
     });
+    await step('sidebar: collapse menu, workspaces and folders', async () => {
+      await page.click('.side .sect:has-text("Menu")');
+      await page.waitForSelector('.side .nav.compact a[aria-label="Reports"]');
+      await page.click('.side .nav.compact a[aria-label="Reports"]');
+      await page.waitForSelector('h1:has-text("Reports")');
+      await page.click('.side .ws-board:has-text("Team tasks")');
+      await page.click('.side .ws-head:has-text("Sample workspace")');
+      if (await page.locator('.side .ws-board:has-text("Website relaunch")').count()) throw new Error('workspace did not collapse');
+      await page.waitForSelector('.side .ws-board.on:has-text("Team tasks")');
+      await page.click('.side .ws-head:has-text("Sample workspace")');
+      await page.waitForSelector('.side .ws-board:has-text("Website relaunch")');
+      await page.click('.side button[aria-label="Collapse all workspaces"]');
+      await page.click('.side button[aria-label="Expand all workspaces"]');
+      await page.click('.side .sect:has-text("Workspaces")');
+      if (await page.locator('.side .ws-head').count()) throw new Error('workspaces section did not collapse');
+      await page.click('.side .sect:has-text("Workspaces")');
+      await page.click('.side .sect:has-text("Menu")');
+      await page.waitForSelector('.side .nav a:has-text("Help and guide")');
+    });
     await step('settings', async () => { await page.click('.side .foot button[title=Settings]'); await page.waitForSelector('h1:has-text("Settings")'); });
     await step('settings: AI and Ask folders', async () => { await page.click('.page button:text-is("AI")'); await page.waitForSelector('.ask-setup:has-text("boardenda-docs")'); });
     await step('desktop self test', async () => {

@@ -46,6 +46,8 @@ function App() {
   const [capture, setCapture] = useState(false);
   const [newBoard, setNewBoard] = useState(null); // { workspaceId }
   const [closedWs, setClosedWs] = usePersist('closedWs', {});
+  const [side, setSide] = usePersist('sideOpen', { menu: true, favs: true, ws: true, dash: true });
+  const flip = (k) => setSide({ ...side, [k]: !side[k] });
   const itemReload = useRef(null);
   const update = useUpdate();
 
@@ -163,38 +165,34 @@ function App() {
     const t = f.kind === 'board' ? boot.workspaces.flatMap((w) => w.boards).find((b) => b.id === f.id) : boot.dashboards.find((d) => d.id === f.id);
     return t ? { ...f, name: t.name } : null;
   }).filter(Boolean);
-  const navLink = (name, label, icon, badge) => html`<a class=${r.name === name ? 'on' : ''} onClick=${() => nav(name)}><${Icon} name=${icon} />${label}${badge ? html`<span class="badge">${badge}</span>` : null}</a>`;
+  const allShut = boot.workspaces.length > 0 && boot.workspaces.every((w) => closedWs[w.id]);
+  const NAV = [['home', 'Home', 'home'], ['mywork', 'My work', 'check'], ['ask', 'Ask anything', 'msg'], ['calendar', 'Calendar', 'calendar'], ['customers', 'Customers', 'building'],
+    ['meetings', 'Calls and meetings', 'phone'], ['dependencies', 'Dependencies', 'dependency'], ['reports', 'Reports', 'report'], ['portfolio', 'Portfolio', 'grid'],
+    ['timesheets', 'Timesheets', 'timer'], ['inbox', 'Inbox', 'inbox', boot.unread || null], ['help', 'Help and guide', 'help']];
+  const navLink = (name, label, icon, badge) => html`<a key=${name} class=${r.name === name ? 'on' : ''} onClick=${() => nav(name)}><${Icon} name=${icon} />${label}${badge ? html`<span class="badge">${badge}</span>` : null}</a>`;
 
   return html`<${Fragment}><div class="app">
     <aside class="side" aria-label="Navigation">
       <div class="brand"><span class="brand-mark"><span></span></span>Boardenda</div>
       <div class="searchbox" role="button" tabindex="0" onClick=${() => setPalette(true)}><${Icon} name="search" />Search<kbd>Ctrl K</kbd></div>
       <button class="capture-btn" onClick=${() => setCapture(true)} title="Turn rough notes into items, calls and action items"><${Icon} name="spark" />Quick capture<kbd>Ctrl J</kbd></button>
-      <nav class="nav">
-        ${navLink('home', 'Home', 'home')}
-        ${navLink('mywork', 'My work', 'check')}
-        ${navLink('ask', 'Ask anything', 'msg')}
-        ${navLink('calendar', 'Calendar', 'calendar')}
-        ${navLink('customers', 'Customers', 'building')}
-        ${navLink('meetings', 'Calls and meetings', 'phone')}
-        ${navLink('dependencies', 'Dependencies', 'dependency')}
-        ${navLink('reports', 'Reports', 'report')}
-        ${navLink('portfolio', 'Portfolio', 'grid')}
-        ${navLink('timesheets', 'Timesheets', 'timer')}
-        ${navLink('inbox', 'Inbox', 'inbox', boot.unread || null)}
-        ${navLink('help', 'Help and guide', 'help')}
-      </nav>
+      <div class="sect click" role="button" aria-expanded=${side.menu ? 'true' : 'false'} onClick=${() => flip('menu')}><span class="row" style="gap:4px"><${Icon} name="chev" size=${12} cls=${`chev ${side.menu ? 'open' : ''}`} />Menu</span></div>
+      ${side.menu ? html`<nav class="nav">${NAV.map(([n, l, i, b]) => navLink(n, l, i, b))}</nav>`
+        : html`<nav class="nav compact">${NAV.map(([n, l, i, b]) => html`<a key=${n} class=${r.name === n ? 'on' : ''} title=${l} aria-label=${l} onClick=${() => nav(n)}><${Icon} name=${i} />${b ? html`<span class="dot"></span>` : null}</a>`)}</nav>`}
       <div class="scroll">
-        ${favs.length ? html`<div class="sect">Favorites</div>
-          ${favs.map((f) => html`<a key=${f.kind + f.id} class=${`ws-board ${r.name === f.kind && r.id === f.id ? 'on' : ''}`} style="padding-left:10px" onClick=${() => nav(f.kind, f.id)}>
+        ${favs.length ? html`<div class="sect click" role="button" onClick=${() => flip('favs')}><span class="row" style="gap:4px"><${Icon} name="chev" size=${12} cls=${`chev ${side.favs ? 'open' : ''}`} />Favorites</span><span class="n">${side.favs ? '' : favs.length}</span></div>
+          ${(side.favs ? favs : favs.filter((f) => r.name === f.kind && r.id === f.id)).map((f) => html`<a key=${f.kind + f.id} class=${`ws-board ${r.name === f.kind && r.id === f.id ? 'on' : ''}`} style="padding-left:10px" onClick=${() => nav(f.kind, f.id)}>
             <${Icon} name=${f.kind === 'board' ? 'table' : 'dashboard'} size=${15} /><span class="clip">${f.name}</span><span class="n fav-star"><${Icon} name="star" size=${12} /></span></a>`)}` : null}
-        <div class="sect">Workspaces<span class="row" style="gap:2px"><button title="New board" aria-label="New board" onClick=${() => setNewBoard({})}><${Icon} name="plus" size=${14} /></button>
+        <div class="sect click" role="button" onClick=${() => flip('ws')}><span class="row" style="gap:4px"><${Icon} name="chev" size=${12} cls=${`chev ${side.ws ? 'open' : ''}`} />Workspaces</span><span class="row" style="gap:2px" onClick=${(e) => e.stopPropagation()}>
+          ${side.ws && boot.workspaces.length > 0 ? html`<button title=${allShut ? 'Expand all workspaces' : 'Collapse all workspaces'} aria-label=${allShut ? 'Expand all workspaces' : 'Collapse all workspaces'} onClick=${() => setClosedWs(allShut ? {} : Object.fromEntries(boot.workspaces.map((w) => [w.id, true])))}><${Icon} name=${allShut ? 'unfoldAll' : 'foldAll'} size=${14} /></button>` : null}
+          <button title="New board" aria-label="New board" onClick=${() => setNewBoard({})}><${Icon} name="plus" size=${14} /></button>
           <button title="New workspace" aria-label="New workspace" onClick=${createWorkspace}><${Icon} name="folder" size=${14} /></button></span></div>
-        ${boot.workspaces.map((w) => html`<${Workspace} key=${w.id} w=${w} route=${r} nav=${nav} closed=${!!closedWs[w.id]} toggle=${() => setClosedWs({ ...closedWs, [w.id]: !closedWs[w.id] })}
+        ${side.ws ? null : (() => { const b = r.name === 'board' && boot.workspaces.flatMap((w) => w.boards).find((x) => x.id === r.id); return b ? html`<a class="ws-board on" style="padding-left:10px"><${Icon} name="table" size=${15} /><span class="clip">${b.name}</span></a>` : null; })()}
+        ${(side.ws ? boot.workspaces : []).map((w) => html`<${Workspace} key=${w.id} w=${w} route=${r} nav=${nav} closed=${!!closedWs[w.id]} toggle=${() => setClosedWs({ ...closedWs, [w.id]: !closedWs[w.id] })}
           reloadShell=${reloadShell} newBoard=${() => setNewBoard({ workspaceId: w.id })} docs=${(boot.docs || []).filter((d) => d.workspace_id === w.id)} />`)}
-        ${!boot.workspaces.length ? html`<div class="small" style="padding:6px 10px;color:#8584a3">No boards yet.</div>` : null}
-        <div class="sect">Dashboards<button title="New dashboard" aria-label="New dashboard" onClick=${createDashboard}><${Icon} name="plus" size=${14} /></button></div>
-        ${boot.dashboards.map((d) => html`<a key=${d.id} class=${`ws-board ${r.name === 'dashboard' && r.id === d.id ? 'on' : ''}`} style="padding-left:10px" onClick=${() => nav('dashboard', d.id)}><${Icon} name="dashboard" size=${15} /><span class="clip">${d.name}</span></a>`)}
+        ${side.ws && !boot.workspaces.length ? html`<div class="small" style="padding:6px 10px;color:#8584a3">No boards yet.</div>` : null}
+        <div class="sect click" role="button" onClick=${() => flip('dash')}><span class="row" style="gap:4px"><${Icon} name="chev" size=${12} cls=${`chev ${side.dash ? 'open' : ''}`} />Dashboards</span><span class="row" style="gap:6px">${side.dash || !boot.dashboards.length ? null : html`<span class="n">${boot.dashboards.length}</span>`}<button title="New dashboard" aria-label="New dashboard" onClick=${(e) => { e.stopPropagation(); createDashboard(); }}><${Icon} name="plus" size=${14} /></button></span></div>
+        ${(side.dash ? boot.dashboards : boot.dashboards.filter((d) => r.name === 'dashboard' && r.id === d.id)).map((d) => html`<a key=${d.id} class=${`ws-board ${r.name === 'dashboard' && r.id === d.id ? 'on' : ''}`} style="padding-left:10px" onClick=${() => nav('dashboard', d.id)}><${Icon} name="dashboard" size=${15} /><span class="clip">${d.name}</span></a>`)}
       </div>
       <${UpdateButton} update=${update} />
       <div class="foot">
@@ -259,7 +257,10 @@ function Workspace({ w, route, nav, closed, toggle, reloadShell, newBoard, docs 
   const [a, open, close] = useAnchor();
   const [rename, setRename] = useState(null);
   const color = C.colorHex(w.color || 'indigo');
-  const [shut, setShut] = useState({});
+  const [shutAll, setShutAll] = usePersist('closedFolders', {});
+  const shut = Object.fromEntries(Object.entries(shutAll).filter(([k]) => k.startsWith(`${w.id}|`)).map(([k, v]) => [k.slice(w.id.length + 1), v]));
+  const setShut = (next) => { const rest = Object.fromEntries(Object.entries(shutAll).filter(([k]) => !k.startsWith(`${w.id}|`))); setShutAll({ ...rest, ...Object.fromEntries(Object.entries(next).filter(([, v]) => v).map(([k, v]) => [`${w.id}|${k}`, v])) }); };
+  const active = route.name === 'board' ? w.boards.find((b) => b.id === route.id) : null;
   const folders = [...new Set(w.boards.map((b) => b.folder).filter(Boolean))].sort();
   const loose = w.boards.filter((b) => !b.folder);
   const boardLink = (b, inFolder) => html`<a key=${b.id} class=${`ws-board ${inFolder ? 'in-folder' : ''} ${route.name === 'board' && route.id === b.id ? 'on' : ''}`} onClick=${() => nav('board', b.id)}>
@@ -275,14 +276,14 @@ function Workspace({ w, route, nav, closed, toggle, reloadShell, newBoard, docs 
     } },
   ];
   return html`<div>
-    <div class="ws-head" onClick=${toggle} onContextMenu=${(e) => { e.preventDefault(); open(e); }}>
-      <span class="ws-icon" style=${`background:${color}`}>${(w.name[0] || 'W').toUpperCase()}</span><span class="clip grow">${w.name}</span>
+    <div class="ws-head" role="button" aria-expanded=${closed ? 'false' : 'true'} onClick=${toggle} onContextMenu=${(e) => { e.preventDefault(); open(e); }}>
+      <${Icon} name="chev" size=${12} cls=${`chev ${closed ? '' : 'open'}`} /><span class="ws-icon" style=${`background:${color}`}>${(w.name[0] || 'W').toUpperCase()}</span><span class="clip grow">${w.name}</span>${closed ? html`<span class="n">${w.boards.length}</span>` : null}
       <button class="btn icon" style="background:none;border:0;color:inherit;padding:2px" aria-label="Workspace menu" onClick=${(e) => { e.stopPropagation(); open(e); }}><${Icon} name="dots" size=${14} /></button>
     </div>
-    ${closed ? null : html`${loose.map(boardLink)}
+    ${closed ? (active ? boardLink(active, false) : null) : html`${loose.map(boardLink)}
       ${folders.map((f) => html`<div key=${f}>
-        <div class="ws-folder" onClick=${() => setShut({ ...shut, [f]: !shut[f] })}><${Icon} name="folder" size=${14} /><span class="clip grow">${f}</span><span class="n">${shut[f] ? '▸' : '▾'}</span></div>
-        ${shut[f] ? null : w.boards.filter((b) => b.folder === f).map((b) => boardLink(b, true))}</div>`)}
+        <div class="ws-folder" onClick=${() => setShut({ ...shut, [f]: !shut[f] })}><${Icon} name="chev" size=${11} cls=${`chev ${shut[f] ? '' : 'open'}`} /><${Icon} name="folder" size=${14} /><span class="clip grow">${f}</span><span class="n">${w.boards.filter((b) => b.folder === f).length}</span></div>
+        ${shut[f] ? (active && active.folder === f ? boardLink(active, true) : null) : w.boards.filter((b) => b.folder === f).map((b) => boardLink(b, true))}</div>`)}
       ${docs.map((d) => html`<a key=${d.id} class=${`ws-board ${route.name === 'doc' && route.id === d.id ? 'on' : ''}`} onClick=${() => nav('doc', d.id)}><${Icon} name="para" size=${15} /><span class="clip">${d.title}</span></a>`)}`}
     ${a ? html`<${Menu} anchor=${a} onClose=${close} items=${items} />` : null}
     ${rename ? html`<${Modal} title="Rename workspace" onClose=${() => setRename(null)}>
