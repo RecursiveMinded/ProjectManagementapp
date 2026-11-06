@@ -783,3 +783,69 @@ www.ingenico-partners.com`;
   const nf = api.listCustomers({ q: 'Nordic Foods' })[0];
   assert.equal(api.getCustomer(nf.id).contacts[0].mobile, '+47 555 01 234');
 });
+
+test('ask: indexes chosen folders, searches files and business data, answers with a local model', async () => {
+  const http = require('http');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bd-kb-'));
+  fs.mkdirSync(path.join(dir, 'Contracts'));
+  fs.mkdirSync(path.join(dir, 'node_modules'));
+  fs.writeFileSync(path.join(dir, 'Contracts', 'Northwind MSA.md'), '# Master services agreement\n\nNorthwind Traders pays net 45 days. The renewal date is 2027-03-31 and the support line is open 8am to 6pm.');
+  fs.writeFileSync(path.join(dir, 'pricing.csv'), 'Plan,Price\nBasic,49\nPro,99\n');
+  fs.writeFileSync(path.join(dir, 'node_modules', 'skip.md'), 'renewal renewal renewal');
+  fs.writeFileSync(path.join(dir, 'photo.png'), 'not text');
+  let chatBody = null;
+  const vec = (t) => ['renewal', 'price', 'support', 'northwind'].map((w) => (String(t).toLowerCase().includes(w) ? 1 : 0.01));
+  const srv = http.createServer((req, res) => {
+    let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      if (req.url === '/api/tags') return res.end(JSON.stringify({ models: [{ name: 'llama3.2:3b' }, { name: 'nomic-embed-text:latest' }] }));
+      const body = JSON.parse(b || '{}');
+      if (req.url === '/api/embed') return res.end(JSON.stringify({ embeddings: body.input.map(vec) }));
+      chatBody = body;
+      return res.end(JSON.stringify({ message: { role: 'assistant', content: 'The renewal date is 2027-03-31 [1].' } }));
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const api = await fresh();
+    api.setAi({ provider: 'ollama', localUrl: `http://127.0.0.1:${srv.address().port}` });
+    await api.askAddFolder(dir);
+    await assert.rejects(async () => api.askAddFolder(path.join(dir, 'nope')), /does not exist/);
+    await api.knowledge.index();
+    let st = await api.askStatus();
+    assert.equal(st.files, 2, 'node_modules and pictures are skipped');
+    assert.ok(st.embedded > 0, 'chunks are embedded with the embedding model');
+    assert.equal(st.embedModel, 'nomic-embed-text:latest');
+    const hits = await api.askSearch('When is the Northwind renewal?');
+    assert.match(hits[0].name, /Northwind MSA/);
+    // Business data and files go to the local chat model, with numbered sources.
+    api.saveCustomer({ name: 'Northwind Traders', phone: '555 0100' });
+    const r = await api.ask({ question: 'When is the Northwind renewal and what is their phone?' });
+    assert.equal(r.mode, 'local');
+    assert.equal(r.model, 'llama3.2:3b');
+    assert.match(r.answer, /2027-03-31/);
+    assert.ok(r.sources.some((s) => s.kind === 'customer' && s.name === 'Northwind Traders'));
+    assert.ok(r.sources.some((s) => s.kind === 'file' && /Northwind MSA/.test(s.name)));
+    const sent = chatBody.messages[chatBody.messages.length - 1].content;
+    assert.match(sent, /net 45 days/);
+    assert.match(sent, /555 0100/);
+    // Changes are picked up; deleted files drop out.
+    fs.unlinkSync(path.join(dir, 'pricing.csv'));
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'Support escalations go to Priya.');
+    await api.knowledge.index();
+    st = await api.askStatus();
+    assert.equal(st.files, 2);
+    assert.equal(st.job.removed, 1);
+    // Claude is not sent file passages unless allowed; with no model, matches are returned.
+    api.setAi({ provider: 'off' });
+    const basic = await api.ask({ question: 'support escalations' });
+    assert.equal(basic.mode, 'basic');
+    assert.equal(basic.answer, null);
+    assert.match(basic.sources.find((s) => s.kind === 'file').snippet, /Priya/);
+    await api.askRemoveFolder(dir);
+    assert.equal((await api.askStatus()).files, 0);
+  } finally {
+    srv.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -353,7 +353,21 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.drawer button[aria-label="Close"]');
       await page.waitForSelector('.tbl .cust-chip:has-text("Smoke Corp")');
     });
+    await step('ask anything: folders, index, question with sources', async () => {
+      const docs = fs.mkdtempSync(path.join(os.tmpdir(), 'boardenda-docs-'));
+      fs.writeFileSync(path.join(docs, 'northwind-contract.txt'), 'Service agreement with Northwind Traders. Payment terms are net 45 days. The support line is open 8am to 6pm.');
+      const api = (m, ...a) => page.evaluate(async ([m, a]) => (await fetch(`/api/${m}`, { method: 'POST', body: JSON.stringify(a) })).json(), [m, a]);
+      await api('askAddFolder', docs);
+      await api('askIndex');
+      for (let i = 0; i < 40; i++) { const s = await api('askStatus'); if (!(s.job && s.job.running) && s.files) break; await page.waitForTimeout(250); }
+      await page.click('.side a:has-text("Ask anything")');
+      await page.waitForSelector('.ask-page .page-head:has-text("1 folder")');
+      await page.fill('.ask-input textarea', 'What are the payment terms for Northwind?');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('.ask-msg.bot .ask-src:has-text("northwind-contract.txt")', { timeout: 30000 });
+    });
     await step('settings', async () => { await page.click('.side .foot button[title=Settings]'); await page.waitForSelector('h1:has-text("Settings")'); });
+    await step('settings: AI and Ask folders', async () => { await page.click('.page button:text-is("AI")'); await page.waitForSelector('.ask-setup:has-text("boardenda-docs")'); });
     await step('desktop self test', async () => {
       const r = await page.evaluate(() => window.__bdSelfTest());
       if (!r.ok) throw new Error(`self test failed ${JSON.stringify(r)}`);

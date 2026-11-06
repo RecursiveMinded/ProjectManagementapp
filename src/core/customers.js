@@ -55,10 +55,10 @@ class Customers {
       const data = parseJson(r.data, {});
       if (!byBoard[r.board_id].some((cid) => Array.isArray(data[cid]) && data[cid].includes(id))) continue;
       const cols2 = colCache[r.board_id] || (colCache[r.board_id] = this.store.columns(r.board_id));
-      const st = cols2.find((c) => c.type === 'status' && c.scope === (r.parent_id ? 'subitem' : 'item'));
+      const st = cols2.find((c) => c.type === 'status' && c.scope === (r.parent_id ? 'sub' : 'item'));
       const label = st ? C.labelOf(st, data[st.id]) : null;
-      const pc = cols2.find((c) => c.type === 'people' && c.scope === (r.parent_id ? 'subitem' : 'item'));
-      const dc = cols2.find((c) => c.type === 'date' && c.scope === (r.parent_id ? 'subitem' : 'item')) || cols2.find((c) => c.type === 'timeline');
+      const pc = cols2.find((c) => c.type === 'people' && c.scope === (r.parent_id ? 'sub' : 'item'));
+      const dc = cols2.find((c) => c.type === 'date' && c.scope === (r.parent_id ? 'sub' : 'item')) || cols2.find((c) => c.type === 'timeline');
       const due = dc ? (dc.type === 'timeline' ? (data[dc.id] || {}).end : data[dc.id]) : null;
       const done = !!(label && label.done);
       if (!includeDone && done) continue;

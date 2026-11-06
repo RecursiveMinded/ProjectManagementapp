@@ -19,6 +19,7 @@ import { CaptureModal, openCapture } from './capture.js';
 import { PortfolioPage, TimesheetPage } from './reports.js';
 import { HelpPage } from './help.js';
 import { CustomersPage, CustomerDrawer } from './customers.js';
+import { AskPage } from './ask.js';
 
 window.__bdSelfTest = selfTest;
 
@@ -81,7 +82,9 @@ function App() {
     window.addEventListener('bd-capture', oc);
     const ocu = (e) => setCustOpen(e.detail);
     window.addEventListener('bd-open-customer', ocu);
-    return () => { window.removeEventListener('bd-open-customer', ocu); window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); window.removeEventListener('bd-capture', oc); };
+    const oi = (e) => openItem(e.detail);
+    window.addEventListener('bd-open-item', oi);
+    return () => { window.removeEventListener('bd-open-item', oi); window.removeEventListener('bd-open-customer', ocu); window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); window.removeEventListener('bd-capture', oc); };
   }, []);
 
   // Unread count and data changed by automations in the background.
@@ -105,7 +108,7 @@ function App() {
       if (!typing && !ctrl && !e.altKey) {
         if (Date.now() - gPrefix.current < 1200) {
           gPrefix.current = 0;
-          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets', l: 'meetings', u: 'customers' }[e.key.toLowerCase()];
+          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets', l: 'meetings', u: 'customers', k: 'ask' }[e.key.toLowerCase()];
           if (to) { e.preventDefault(); nav(to); return; }
         }
         if (e.key === 'g') { gPrefix.current = Date.now(); return; }
@@ -144,6 +147,7 @@ function App() {
   else if (r.name === 'portfolio') page = html`<${PortfolioPage} boot=${boot} nav=${nav} version=${version} />`;
   else if (r.name === 'timesheets') page = html`<${TimesheetPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'meetings') page = html`<${MeetingsPage} boot=${boot} openItem=${openItem} version=${version} />`;
+  else if (r.name === 'ask') page = html`<${AskPage} boot=${boot} />`;
   else if (r.name === 'customers') page = html`<${CustomersPage} boot=${boot} version=${version} />`;
   else if (r.name === 'help') page = html`<${HelpPage} id=${r.id} nav=${nav} />`;
   else if (r.name === 'calendar') page = html`<${CalendarPage} boot=${boot} openItem=${openItem} version=${version} />`;
@@ -167,6 +171,7 @@ function App() {
       <nav class="nav">
         ${navLink('home', 'Home', 'home')}
         ${navLink('mywork', 'My work', 'check')}
+        ${navLink('ask', 'Ask anything', 'msg')}
         ${navLink('calendar', 'Calendar', 'calendar')}
         ${navLink('customers', 'Customers', 'building')}
         ${navLink('meetings', 'Calls and meetings', 'phone')}
@@ -222,7 +227,7 @@ const SHORTCUTS = [
   ['Ctrl+K', 'Search and commands'], ['Ctrl+Z', 'Undo the last change'], ['Ctrl+P', 'Print or save the board or doc as PDF'],
   ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'],
   ['g h', 'Go to Home'], ['g m', 'Go to My work'], ['g c', 'Go to Calendar'], ['g d', 'Go to Dependencies'], ['g i', 'Go to Inbox'],
-  ['g p', 'Go to Portfolio'], ['Ctrl J', 'Quick capture: turn notes into records'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g u', 'Go to Customers'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['F1', 'Help and user guide'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
+  ['g p', 'Go to Portfolio'], ['Ctrl J', 'Quick capture: turn notes into records'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g u', 'Go to Customers'], ['g k', 'Ask anything (search your PC and business data)'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['F1', 'Help and user guide'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
 ];
 
 /** Always-visible update control: check, watch the download, restart to install. */

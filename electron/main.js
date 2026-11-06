@@ -256,7 +256,8 @@ function registerIpc() {
           return true;
         }
         case 'appInfo': return { version: app.getVersion(), dataDir: dataDir(), platform: process.platform };
-        case 'openPath': { await shell.openPath(a.path); return true; }
+        case 'openPath': { const err = await shell.openPath(a.path); if (err) throw new Error(err); return true; }
+        case 'showPath': { shell.showItemInFolder(a.path); return true; }
         case 'openExternal': { openExternal(a.url); return true; }
         case 'testNotification': { sendDigest(true); return true; }
         case 'chooseFolder': {

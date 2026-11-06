@@ -12,6 +12,7 @@ const { Reports } = require('./reports');
 const { Recurring } = require('./recurring');
 const { Customers } = require('./customers');
 const intake = require('./customer-intake');
+const { Knowledge } = require('./knowledge');
 const { Meetings } = require('./meetings');
 const { Capture } = require('./capture');
 const T = require('./templates');
@@ -51,6 +52,7 @@ class AppApi {
     this.store.customerByName = (name, create) => this.customers.byName(name, create);
     this.capture = new Capture(this.store, this.meetings);
     this.capture.customers = this.customers;
+    this.knowledge = new Knowledge({ db: this.db, dataDir: this.dataDir, store: this.store, capture: this.capture, customers: this.customers, meetings: this.meetings });
     try {
       if (!this.db.get("SELECT value FROM settings WHERE key='customers_adopted'")) {
         this.customers.adoptCallCustomers();
@@ -410,8 +412,18 @@ class AppApi {
   runSchedule(at) {
     const when = at ? new Date(at) : new Date();
     const made = this.recurring.tick(when) + this.meetings.tick(when);
+    try { this.knowledge.maybeRefresh(); } catch (_) { /* never block the schedule */ }
     return this.automations.tick(when) + made;
   }
+
+  // ------------------------------------------------------------------- ask
+  askStatus() { return this.knowledge.status(); }
+  askAddFolder(p) { return this.knowledge.addFolder(p); }
+  askRemoveFolder(p) { return this.knowledge.removeFolder(p); }
+  askOptions(o) { return this.knowledge.setOptions(o); }
+  askIndex(o) { return this.knowledge.startIndex(o); }
+  askSearch(q) { return this.knowledge.searchFiles(q, 12); }
+  ask(args) { return this.knowledge.ask(args, { myWork: () => this.myWork() }); }
 
   // ------------------------------------------------------- quick capture
   aiStatus() { return this.capture.aiStatus(); }
@@ -541,7 +553,7 @@ class AppApi {
     const it = this.db.get('SELECT board_id, parent_id FROM items WHERE id=?', [itemId]);
     if (!it) throw new Error('That item no longer exists');
     this.customers.row(customerId);
-    const scope = it.parent_id ? 'subitem' : 'item';
+    const scope = it.parent_id ? 'sub' : 'item';
     let col = this.db.get("SELECT id, settings FROM columns WHERE board_id=? AND type='customer' AND scope=? ORDER BY position LIMIT 1", [it.board_id, scope]);
     if (!col) {
       const owner = this.db.get("SELECT id FROM columns WHERE board_id=? AND type='people' AND scope=? ORDER BY position LIMIT 1", [it.board_id, scope]);

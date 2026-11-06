@@ -5,6 +5,7 @@ import { C } from './model.js';
 import { call, native, isDesktop } from './api.js';
 import { useUpdate, checkForUpdates, installUpdate } from './update.js';
 import { AiSettings } from './capture.js';
+import { AskSources } from './ask.js';
 import { HelpPage } from './help.js';
 
 const TABS = [['profile', 'People & teams'], ['notify', 'Notifications'], ['look', 'Appearance'], ['ai', 'AI'], ['data', 'Data & backups'], ['about', 'Updates & about'], ['help', 'Help & user guide']];
@@ -21,7 +22,7 @@ export function Settings({ boot, reloadShell }) {
       ${tab === 'profile' ? html`<${Team} boot=${boot} reloadShell=${reloadShell} />` : null}
       ${tab === 'notify' ? html`<${Notify} s=${s} save=${save} />` : null}
       ${tab === 'look' ? html`<${Look} s=${s} save=${save} />` : null}
-      ${tab === 'ai' ? html`<${AiSettings} />` : null}
+      ${tab === 'ai' ? html`<${AiSettings} /><h3 class="ask-set-h">Ask anything: folders to search</h3><${AskSources} />` : null}
       ${tab === 'data' ? html`<${Data} boot=${boot} s=${s} save=${save} reloadShell=${reloadShell} />` : null}
       ${tab === 'about' ? html`<${About} s=${s} save=${save} />` : null}
       ${tab === 'help' ? html`<${HelpPage} embedded />` : null}

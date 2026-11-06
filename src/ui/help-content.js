@@ -11,7 +11,7 @@ export const TOPICS = [
   ['dash', 'Dashboards and reports'],
   ['customers', 'Customers'],
   ['calls', 'Calls and meetings'],
-  ['capture', 'Quick capture and AI'],
+  ['capture', 'Quick capture, Ask and AI'],
   ['data', 'Import, export and backups'],
   ['personal', 'My work, calendar and inbox'],
   ['settings', 'Settings and shortcuts'],
@@ -308,6 +308,27 @@ Press \`Ctrl+J\` or click **Quick capture** in the sidebar.
 2. Click **Read notes**. Boardenda proposes records: calls and meetings, action items with owners and due dates, new items on the right board and group with columns filled in, and updates on existing items.
 3. Check each card. Anything it isn't sure about is highlighted with a question. Change the board, group or fields, or click **Looks right**.
 4. Click **Create**. Nothing is created until every highlighted card is confirmed.` },
+  { id: 'ask', topic: 'capture', title: 'Ask anything: search your PC and business data', keys: 'ask chat question search pc files folders documents llama ollama answer knowledge g k', body: `
+Click **Ask anything** in the sidebar, or press \`g\` then \`k\`. Type a question in plain words and press \`Enter\`.
+
+## What it can answer from
+- Your boards and items, including their column values.
+- Customers, contacts and devices.
+- Calls and meetings, with their notes and action items.
+- Documents in folders you choose on this PC: Word, PDF, Excel, CSV, text, Markdown, HTML and saved emails.
+
+## Choose folders to search
+1. On the Ask page click **Folders to search**, or go to **Settings › AI**.
+2. Click **Add folder** and pick a folder, such as Documents or a shared drive.
+3. Boardenda reads the documents and builds an index on this PC. Big folders take a few minutes the first time; after that only changed files are read again. The index also refreshes by itself every few hours, or click **Update index**.
+
+## How answers are written
+- Answers come from the AI chosen in **Settings › AI** (by default the Llama model in Ollama on this PC). See [[ai-settings]].
+- Each answer lists its sources with numbers. Click a number or a source to open the file, item, customer or call. **Show** opens the file's folder.
+- With no model running, Ask still shows the passages and records that match.
+- Passages from your files are only sent to Claude if you tick **Allow passages from these files to be sent to Claude**. With Ollama nothing leaves the PC.
+
+> For better search by meaning, run \`ollama pull nomic-embed-text\` once, then click **Update index**.` },
   { id: 'ai-settings', topic: 'capture', title: 'Choose the AI that reads your notes', keys: 'ai ollama llama local model claude anthropic api key lm studio settings', body: `
 Go to **Settings › AI**.
 
