@@ -10,6 +10,7 @@ const { Automations, TRIGGERS, ACTIONS } = require('./automations');
 const { Dashboards, WIDGETS } = require('./dashboards');
 const { Reports } = require('./reports');
 const { Briefs } = require('./briefs');
+const { Assistant } = require('./assistant');
 const { Recurring } = require('./recurring');
 const { Customers } = require('./customers');
 const intake = require('./customer-intake');
@@ -55,6 +56,7 @@ class AppApi {
     this.capture.customers = this.customers;
     this.knowledge = new Knowledge({ db: this.db, dataDir: this.dataDir, store: this.store, capture: this.capture, customers: this.customers, meetings: this.meetings });
     this.briefs = new Briefs({ db: this.db, store: this.store, reports: this.reports, meetings: this.meetings, capture: this.capture });
+    this.assistant = new Assistant({ db: this.db, store: this.store, capture: this.capture, knowledge: this.knowledge, customers: this.customers, meetings: this.meetings, dataDir: this.dataDir, readFile: (n, b) => this.notesText(n, b) });
     try {
       if (!this.db.get("SELECT value FROM settings WHERE key='customers_adopted'")) {
         this.customers.adoptCallCustomers();
@@ -416,8 +418,31 @@ class AppApi {
     const made = this.recurring.tick(when) + this.meetings.tick(when);
     try { this.knowledge.maybeRefresh(); } catch (_) { /* never block the schedule */ }
     try { this.briefs.maybeAutoWeekly(when); } catch (_) { /* never block the schedule */ }
+    this.assistant.scanWatch().catch(() => {});
     return this.automations.tick(when) + made;
   }
+
+  // ------------------------------------------------------------- assistant
+  assistantCases(o) { return this.assistant.list(o); }
+  assistantCase(id) { return this.assistant.get(id); }
+  assistantIntake(o) { return this.assistant.intake(o); }
+  assistantSettle(id) { return this.assistant.settle(id); }
+  assistantAnalyze(id) { return this.assistant.analyze(id); }
+  assistantUpdate(id, patch) { return this.assistant.update(id, patch); }
+  assistantAnswer(id, o) { return this.assistant.answer(id, o); }
+  assistantAddTo(id, o) { return this.assistant.addTo(id, o); }
+  assistantChat(id, message) { return this.assistant.chat(id, message); }
+  assistantCreateBoard(id, o) { return this.assistant.createBoard(id, o); }
+  assistantToTasks(id, o) { return this.assistant.toTasks(id, o); }
+  assistantDelete(id) { return this.assistant.remove(id); }
+  assistantFilePath(id, name) { return this.assistant.storedFile(id, name); }
+  assistantToday() { return this.assistant.today(); }
+  assistantConfig() { return { ...this.assistant.config(), watchSeen: undefined, notesDir: this.assistant.notesDir(), structure: this.assistant.structure() }; }
+  setAssistantConfig(patch) { const p = { ...(patch || {}) }; delete p.watchSeen; if (p.watchFolder !== undefined) p.watchStarted = false; return this.assistant.setConfig(p); }
+  assistantTeach(o) { return this.assistant.teach(o); }
+  assistantTeachFolders(paths) { return this.assistant.teachFolders(paths); }
+  assistantNotes() { return this.assistant.notes(); }
+  assistantForget(name) { return this.assistant.forget(name); }
 
   // --------------------------------------------------------------- reports
   reportOptions() { return this.briefs.options(); }

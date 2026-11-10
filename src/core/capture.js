@@ -197,6 +197,34 @@ class Capture {
     return { engine, cfg, localCfg: engine === 'local' ? { ...cfg, provider: cfg.provider === 'openai' ? 'openai' : 'ollama' } : null };
   }
 
+  /** A plain text answer from the chosen model for a conversation, or null when none is set up. */
+  async askText({ system, messages, temperature = 0.3, maxTokens = 3000 }) {
+    const { engine, cfg, localCfg } = await this.pickEngine();
+    if (engine === 'claude') {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const Client = Anthropic.default || Anthropic;
+      const client = new Client({ apiKey: cfg.key, maxRetries: 2, timeout: 180000, ...(process.env.BOARDENDA_ANTHROPIC_BASE_URL ? { baseURL: process.env.BOARDENDA_ANTHROPIC_BASE_URL } : {}) });
+      const res = await client.beta.messages.create({ model: cfg.model, max_tokens: maxTokens, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'low' },
+        system: [{ type: 'text', text: system }], messages });
+      if (res.stop_reason === 'refusal') throw new Error('Claude declined to answer this.');
+      return { mode: 'claude', model: cfg.model, text: res.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim() };
+    }
+    if (engine === 'local') {
+      const { model } = await this.localModels(localCfg);
+      if (!model) return null;
+      let text;
+      if (localCfg.provider === 'openai') {
+        const r = await this.localFetch(localCfg, '/v1/chat/completions', { model, temperature, messages: [{ role: 'system', content: system }, ...messages] }, 300000);
+        text = r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content;
+      } else {
+        const r = await this.localFetch(localCfg, '/api/chat', { model, stream: false, options: { temperature, num_ctx: 16384 }, messages: [{ role: 'system', content: system }, ...messages] }, 300000);
+        text = r.message && r.message.content;
+      }
+      return { mode: 'local', model, text: String(text || '').trim() };
+    }
+    return null;
+  }
+
   /** One structured answer from the chosen model, or null when none is set up. */
   async askJson({ system, text, schema }) {
     const { engine, cfg, localCfg } = await this.pickEngine();
@@ -222,7 +250,7 @@ class Capture {
           response_format: { type: 'json_schema', json_schema: { name: 'answer', strict: true, schema } } }, 180000);
         out = r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content;
       } else {
-        const r = await this.localFetch(localCfg, '/api/chat', { model, stream: false, format: schema, options: { temperature: 0, num_ctx: 8192 },
+        const r = await this.localFetch(localCfg, '/api/chat', { model, stream: false, format: schema, options: { temperature: 0, num_ctx: 16384 },
           messages: [{ role: 'system', content: system }, { role: 'user', content: text }] }, 180000);
         out = r.message && r.message.content;
       }

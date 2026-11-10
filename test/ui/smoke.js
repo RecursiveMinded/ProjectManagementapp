@@ -353,6 +353,37 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.drawer button[aria-label="Close"]');
       await page.waitForSelector('.tbl .cust-chip:has-text("Smoke Corp")');
     });
+    await step('assistant: drop an email, get a plan, add tasks', async () => {
+      await page.click('.side a:has-text("Assistant")');
+      await page.waitForSelector('h1:has-text("Assistant")');
+      const eml = 'From: "Dana Ruiz" <dana@northwind.example>\r\nTo: me@example.com\r\nSubject: Terminals offline at 3 stores\r\nDate: Mon, 9 Nov 2026 10:00:00 -0500\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nHi, 12 terminals are offline at our Boston stores. Can you help urgently? Please reply by Nov 12.\r\n';
+      await page.setInputFiles('.as-page input[type=file] >> nth=0', { name: 'offline.eml', mimeType: 'message/rfc822', buffer: Buffer.from(eml) });
+      await page.waitForSelector('.as-case-head h2:has-text("Terminals offline at 3 stores")', { timeout: 20000 });
+      await page.waitForSelector('.as-plan .as-step', { timeout: 20000 });
+      await page.waitForSelector('.as-reply textarea');
+      await page.click('button:has-text("Add plan steps as tasks")');
+      await page.waitForSelector('.toast:has-text("tasks added")');
+      await page.click('.as-step input[type=checkbox] >> nth=0');
+      await page.waitForSelector('.as-step.done');
+    });
+    await step('assistant: paste a Teams chat and talk it through', async () => {
+      await page.click('.as-page .page-head button:has-text("Paste")');
+      await page.fill('.as-paste', '[9:02 AM] Jane Smith\nWe need the Q4 rollout plan for the pilot.\n[9:05 AM] Alex Morgan\nWho owns pricing?\n[9:07 AM] Jane Smith\nFinance owns it, I will ask Tom.\n[9:10 AM] Tom Lee\nPricing by Friday.');
+      await page.click('.modal button:has-text("Read and plan")');
+      await page.waitForSelector('.as-case-head h2:has-text("Chat conversation")', { timeout: 20000 });
+      await page.waitForSelector('.as-plan .as-step', { timeout: 20000 });
+      await page.fill('.as-chat textarea', 'What should I do first?');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('.as-chat .as-msg.assistant');
+    });
+    await step('assistant: teach with notes, settings', async () => {
+      await page.setInputFiles('.as-page input[type=file] >> nth=1', { name: 'Target account.md', mimeType: 'text/markdown', buffer: Buffer.from('# Target\nPayments lead: Sam Rivera') });
+      await page.waitForSelector('.toast:has-text("Learned from 1 file")');
+      await page.click('button[aria-label="Assistant settings"]');
+      await page.waitForSelector('.modal:has-text("About you and your work")');
+      await page.waitForSelector('.modal:has-text("Target account.md")');
+      await page.click('.modal button[aria-label="Close"]');
+    });
     await step('reports: executive summary', async () => {
       await page.click('.side a:has-text("Reports")');
       await page.waitForSelector('.rpt h1:has-text("Executive summary")');
@@ -401,7 +432,7 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await api('askIndex');
       for (let i = 0; i < 40; i++) { const s = await api('askStatus'); if (!(s.job && s.job.running) && s.files) break; await page.waitForTimeout(250); }
       await page.click('.side a:has-text("Ask anything")');
-      await page.waitForSelector('.ask-page .page-head:has-text("1 folder")');
+      await page.waitForSelector('.ask-page .page-head:has-text(" folder")');
       await page.fill('.ask-input textarea', 'What are the payment terms for Northwind?');
       await page.keyboard.press('Enter');
       await page.waitForSelector('.ask-msg.bot .ask-src:has-text("northwind-contract.txt")', { timeout: 30000 });

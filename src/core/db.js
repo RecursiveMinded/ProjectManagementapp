@@ -319,6 +319,24 @@ CREATE TABLE IF NOT EXISTS notifications (
   read INTEGER DEFAULT 0,
   shown INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS assistant_cases (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  kind TEXT DEFAULT 'email',
+  status TEXT DEFAULT 'open',
+  state TEXT DEFAULT 'ready',
+  error TEXT DEFAULT '',
+  priority TEXT DEFAULT 'normal',
+  due TEXT,
+  sender TEXT DEFAULT '',
+  customer_id TEXT,
+  source TEXT DEFAULT '{}',
+  text TEXT DEFAULT '',
+  analysis TEXT,
+  chat TEXT DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS report_snapshots (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,

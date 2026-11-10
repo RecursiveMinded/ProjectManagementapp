@@ -21,6 +21,10 @@ The feature set was mapped from the public help documentation of a leading hoste
 - A model reads the notes and places each record using your boards, columns, people and customers. By default it uses a model in Ollama on this PC (the same Llama or Gemma models LOA Command Center uses; nothing leaves the PC), or another local OpenAI-compatible server such as LM Studio. With an Anthropic API key (Settings > AI) Claude can read them instead, including photos. With no model, a built-in reader works offline.
 - Anything it isn't sure about is highlighted with a question, and nothing is created until each one is mapped or confirmed.
 
+**Assistant (g e)**
+- Drop Outlook emails (.msg/.eml, with attachments), PDF, Word, Excel, pictures or text, paste an email or a Teams chat, or watch a folder. Each becomes a case with a summary, English translation, priority and due date, customer match, an action plan (me / internal / third party), draft replies, questions when information is missing, and the board and group the tasks belong in (or a proposed board with swim lanes).
+- Answer its questions to rebuild the plan, chat about a case, turn steps into tasks, open replies in the email app. Teach it with OneNote .md exports, documents and folders, and describe your role in its settings. Uses the AI in Settings > AI (local Llama by default) with a built-in reader as fallback.
+
 **Ask anything (g k)**
 - A chat that answers questions about the business from your boards, items, customers, contacts, devices, calls and the documents in folders you choose on this PC (Word, PDF, Excel, CSV, text, Markdown, HTML and saved emails).
 - Folders are indexed on the PC (incrementally, refreshed every few hours) in a separate knowledge file. With an embedding model in Ollama (`ollama pull nomic-embed-text`) search also matches by meaning.
@@ -158,7 +162,7 @@ npm run icons        # redraw build/icon.png and build/icon.ico (needs Python + 
 
 | Path | What it holds |
 | --- | --- |
-| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `meetings.js` (calls, series and action items), `customers.js` (customer directory), `customer-intake.js` (paste reader and customer import), `capture.js` (Quick capture), `knowledge.js` (Ask: folder index and answers), `briefs.js` (Reports and snapshots), `api.js` (the API the UI calls) |
+| `src/core/` | Engine, shared by the desktop app and the dev server: `db.js` (sql.js SQLite, atomic saves), `store.js` (boards, items, values, dependencies, notifications), `columns.js` (column type registry), `formula.js` (parser and evaluator), `automations.js`, `dashboards.js`, `templates.js`, `io.js` (import and export), `extract.js` (Word, PDF and OCR readers), `meetings.js` (calls, series and action items), `customers.js` (customer directory), `customer-intake.js` (paste reader and customer import), `capture.js` (Quick capture), `knowledge.js` (Ask: folder index and answers), `briefs.js` (Reports and snapshots), `assistant.js` and `mail.js` (Assistant cases and email reading), `api.js` (the API the UI calls) |
 | `src/ui/` | Preact + htm interface, bundled by esbuild into `dist/ui` |
 | `electron/` | Window, tray, scheduler, Windows notifications, native file dialogs, auto-update |
 | `dev/server.js` | The same API over HTTP, for browser testing |

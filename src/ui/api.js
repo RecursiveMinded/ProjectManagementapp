@@ -88,3 +88,6 @@ export function saveAs(name, data, filters) {
   const payload = typeof data === 'string' ? { text: data } : { bytes: data };
   return native('saveFile', { name, filters, ...payload });
 }
+
+/** The file's path on this PC, for files dropped into the desktop app ('' in a browser). */
+export function pathFor(file) { try { return bridge && bridge.pathFor ? bridge.pathFor(file) : ''; } catch (_) { return ''; } }

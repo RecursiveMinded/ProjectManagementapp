@@ -357,6 +357,32 @@ Click **Ask anything** in the sidebar, or press \`g\` then \`k\`. Type a questio
 - Passages from your files are only sent to Claude if you tick **Allow passages from these files to be sent to Claude**. With Ollama nothing leaves the PC.
 
 > For better search by meaning, run \`ollama pull nomic-embed-text\` once, then click **Update index**.` },
+  { id: 'assistant', topic: 'capture', title: 'Assistant: plans and replies from emails, documents and Teams chats', keys: 'assistant email outlook msg eml pdf word excel teams chat paste reply draft action plan translate onenote teach folder documents g e', body: `
+Click **Assistant** in the sidebar, or press \`g\` then \`e\`.
+
+## Give it something to work on
+- **Drop an email**: drag a message from Outlook onto the page, or save it as a .msg or .eml file and drop that. Attachments are read too.
+- **Drop documents**: PDF, Word, Excel, CSV, text, Markdown or a picture (read with OCR).
+- **Paste**: click **Paste** and paste a whole email, a long Teams conversation or meeting notes.
+- **Watch a folder**: in the assistant settings (gear button), choose a folder; new files saved there become cases within a minute.
+
+## What you get for each case
+- A summary, and an English translation when it is in another language.
+- Priority, due date, the customer it is about, and risks.
+- An **action plan**: steps for you, for colleagues and for third parties, with due dates. Tick steps off as you go.
+- **Replies to send**: drafts to the sender and to anyone internal or external who needs to act. Edit them, then **Copy** or **Open in email**.
+- **Questions** when it needs more data, a contact or a decision. Answer them and click **Update the plan**.
+- **Where this work goes**: the workspace, board and group for the tasks, or a new board. Click **Add plan steps as tasks** to put them on the board. It may also suggest a better way to organize this kind of work, such as a board with swim lanes; click **Create this board** to make it.
+- **Talk it through**: chat about the case to plan a meeting, rewrite a reply or decide what to do first.
+
+## Teach it
+- Drop OneNote pages exported as .md, documents or whole folders on **Teach the assistant**. They are kept on this PC and used in every answer.
+- In the assistant settings, describe your role and work under **About you and your work**, set your signature and tone, and click **Add my Documents folder** so it can search your documents too.
+
+## Privacy
+Everything is read on this PC. With Ollama (the default in [[ai-settings]]) nothing leaves the PC. If you choose Claude, the case text is sent to Claude to write the plan.
+
+> Drag and drop from Outlook works with classic Outlook for Windows. If a message won't drop, save it first (File › Save As) or copy and paste it.` },
   { id: 'ai-settings', topic: 'capture', title: 'Choose the AI that reads your notes', keys: 'ai ollama llama local model claude anthropic api key lm studio settings', body: `
 Go to **Settings › AI**.
 

@@ -21,6 +21,7 @@ import { HelpPage } from './help.js';
 import { CustomersPage, CustomerDrawer } from './customers.js';
 import { AskPage } from './ask.js';
 import { ReportsPage } from './briefs.js';
+import { AssistantPage } from './assistant.js';
 
 window.__bdSelfTest = selfTest;
 
@@ -111,7 +112,7 @@ function App() {
       if (!typing && !ctrl && !e.altKey) {
         if (Date.now() - gPrefix.current < 1200) {
           gPrefix.current = 0;
-          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets', l: 'meetings', u: 'customers', k: 'ask', r: 'reports' }[e.key.toLowerCase()];
+          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets', l: 'meetings', u: 'customers', k: 'ask', r: 'reports', e: 'assistant' }[e.key.toLowerCase()];
           if (to) { e.preventDefault(); nav(to); return; }
         }
         if (e.key === 'g') { gPrefix.current = Date.now(); return; }
@@ -150,6 +151,7 @@ function App() {
   else if (r.name === 'portfolio') page = html`<${PortfolioPage} boot=${boot} nav=${nav} version=${version} />`;
   else if (r.name === 'timesheets') page = html`<${TimesheetPage} boot=${boot} openItem=${openItem} version=${version} />`;
   else if (r.name === 'meetings') page = html`<${MeetingsPage} boot=${boot} openItem=${openItem} version=${version} />`;
+  else if (r.name === 'assistant') page = html`<${AssistantPage} nav=${nav} version=${version} />`;
   else if (r.name === 'reports') page = html`<${ReportsPage} nav=${nav} version=${version} />`;
   else if (r.name === 'ask') page = html`<${AskPage} boot=${boot} />`;
   else if (r.name === 'customers') page = html`<${CustomersPage} boot=${boot} version=${version} />`;
@@ -166,7 +168,7 @@ function App() {
     return t ? { ...f, name: t.name } : null;
   }).filter(Boolean);
   const allShut = boot.workspaces.length > 0 && boot.workspaces.every((w) => closedWs[w.id]);
-  const NAV = [['home', 'Home', 'home'], ['mywork', 'My work', 'check'], ['ask', 'Ask anything', 'msg'], ['calendar', 'Calendar', 'calendar'], ['customers', 'Customers', 'building'],
+  const NAV = [['home', 'Home', 'home'], ['mywork', 'My work', 'check'], ['assistant', 'Assistant', 'spark'], ['ask', 'Ask anything', 'msg'], ['calendar', 'Calendar', 'calendar'], ['customers', 'Customers', 'building'],
     ['meetings', 'Calls and meetings', 'phone'], ['dependencies', 'Dependencies', 'dependency'], ['reports', 'Reports', 'report'], ['portfolio', 'Portfolio', 'grid'],
     ['timesheets', 'Timesheets', 'timer'], ['inbox', 'Inbox', 'inbox', boot.unread || null], ['help', 'Help and guide', 'help']];
   const navLink = (name, label, icon, badge) => html`<a key=${name} class=${r.name === name ? 'on' : ''} onClick=${() => nav(name)}><${Icon} name=${icon} />${label}${badge ? html`<span class="badge">${badge}</span>` : null}</a>`;
@@ -228,7 +230,7 @@ const SHORTCUTS = [
   ['Ctrl+K', 'Search and commands'], ['Ctrl+Z', 'Undo the last change'], ['Ctrl+P', 'Print or save the board or doc as PDF'],
   ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'],
   ['g h', 'Go to Home'], ['g m', 'Go to My work'], ['g c', 'Go to Calendar'], ['g d', 'Go to Dependencies'], ['g i', 'Go to Inbox'],
-  ['g p', 'Go to Portfolio'], ['Ctrl J', 'Quick capture: turn notes into records'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g u', 'Go to Customers'], ['g k', 'Ask anything (search your PC and business data)'], ['g r', 'Go to Reports'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['F1', 'Help and user guide'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
+  ['g p', 'Go to Portfolio'], ['Ctrl J', 'Quick capture: turn notes into records'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g u', 'Go to Customers'], ['g k', 'Ask anything (search your PC and business data)'], ['g r', 'Go to Reports'], ['g e', 'Go to Assistant (emails, documents, Teams chats)'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['F1', 'Help and user guide'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
 ];
 
 /** Always-visible update control: check, watch the download, restart to install. */

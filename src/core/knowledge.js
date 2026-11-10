@@ -222,8 +222,17 @@ class Knowledge {
    * Bring the index up to date with the chosen folders: read new and changed
    * files, drop deleted ones. Runs in the background; status() shows progress.
    */
-  async index({ force = false } = {}) {
-    if (this.job && this.job.running) return this.status();
+  /** Index the folders. A call while indexing waits for it, then runs once more to catch new files or folders. */
+  async index(opts = {}) {
+    if (this.jobP) { this.again = true; await this.jobP.catch(() => {}); if (this.jobP) { await this.jobP.catch(() => {}); return this.status(); } }
+    this.again = false;
+    this.jobP = this.runIndex(opts);
+    try { return await this.jobP; } finally {
+      this.jobP = null;
+      if (this.again) { this.again = false; await this.index(opts); }
+    }
+  }
+  async runIndex({ force = false } = {}) {
     await this.open();
     const cfg = this.config();
     this.job = { running: true, phase: 'Looking for files', done: 0, total: 0, current: '', added: 0, updated: 0, removed: 0, failed: 0, startedAt: new Date().toISOString() };

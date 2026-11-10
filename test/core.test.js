@@ -900,3 +900,140 @@ test('reports: executive, weekly, overview, customer and detail reports, snapsho
   assert.equal(sum.mode, 'basic');
   assert.match(sum.text, /completed/);
 });
+
+test('mail: .eml headers, encodings and attachments; pasted emails and chats', () => {
+  const mail = require('../src/core/mail');
+  const { isChat } = require('../src/core/assistant');
+  const eml = ['From: =?utf-8?Q?Ren=C3=A9e_Martin?= <renee@acme.example>', 'To: me@example.com', 'Subject: =?utf-8?B?' + Buffer.from('Problème de paiement').toString('base64') + '?=',
+    'Date: Mon, 9 Nov 2026 10:00:00 -0500', 'Content-Type: multipart/mixed; boundary="b1"', '', '--b1', 'Content-Type: multipart/alternative; boundary="b2"', '', '--b2',
+    'Content-Type: text/html; charset=utf-8', 'Content-Transfer-Encoding: quoted-printable', '', '<p>Bonjour,</p><p>Le paiement a =C3=A9chou=C3=A9.</p>', '--b2--',
+    '--b1', 'Content-Type: text/csv', "Content-Disposition: attachment; filename*=utf-8''r%C3%A9sum%C3%A9.csv", 'Content-Transfer-Encoding: base64', '', Buffer.from('a,b\n1,2').toString('base64'), '--b1--', ''].join('\r\n');
+  const e = mail.parseEml(Buffer.from(eml));
+  assert.equal(e.subject, 'Problème de paiement');
+  assert.match(e.from, /Renée Martin <renee@acme.example>/);
+  assert.match(e.text, /Le paiement a échoué/);
+  assert.equal(e.attachments[0].name, 'résumé.csv');
+  assert.equal(e.attachments[0].bytes.toString(), 'a,b\n1,2');
+  assert.deepEqual(mail.address('"Jane Doe" <Jane@X.com>, b@y.com'), { name: 'Jane Doe', email: 'jane@x.com' });
+  const p = mail.parsePasted('From: Sam Lee <sam@partner.example>\nSent: Monday, November 9, 2026 10:15 AM\nTo: Me\nSubject: PO 4471\n\nPlease confirm the ship date.');
+  assert.equal(p.subject, 'PO 4471');
+  assert.equal(mail.parsePasted('just some notes'), null);
+  assert.ok(isChat('[9:02 AM] Jane\nhi\n[9:03 AM] Tom\nyo\n[9:04 AM] Jane\nok'));
+  assert.ok(isChat('Jane Smith 9:02 AM\nhi\nTom Lee 9:03 AM\nyo\nJane Smith 9:05 AM\nok'));
+  assert.ok(!isChat('Meeting notes\n- item one\n- item two'));
+});
+
+test('assistant: emails and documents become cases with a plan, replies, questions, placement and tasks', async () => {
+  const http = require('http');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bd-as-'));
+  const calls = [];
+  const plan = (answered) => ({
+    title: 'Terminals offline at Northwind stores', summary: 'Northwind reports 12 terminals offline and asks for urgent help.', language: 'French', translation: 'Hello, our 12 terminals are down. Can you help urgently?',
+    category: 'customer issue', priority: 'urgent', due: '2026-11-12', sender_type: 'customer', customer: 'Northwind Traders',
+    key_points: ['12 terminals offline', 'Wants a reply by Nov 12'],
+    plan: [{ step: 'Open a P1 ticket with support', owner: 'internal', who: 'Support', due: '2026-11-10' }, { step: 'Call Marie to confirm store list', owner: 'me', who: '', due: '2026-11-10' }],
+    replies: [{ to: 'marie@northwind.example', audience: 'external', purpose: 'Acknowledge', subject: 'RE: Terminaux', body: 'Bonjour Marie, ...' }, { to: 'support@ingenico.example', audience: 'internal', purpose: 'Escalate', subject: 'P1: Northwind terminals', body: 'Team, ...' }],
+    questions: answered ? [] : [{ question: 'Which store IDs are affected?', why: 'Support needs them for the ticket.' }],
+    risks: ['Revenue loss at checkout'],
+    placement: { workspace: 'Sample workspace', board: 'Team tasks', group: 'This week', new_board: false, reason: 'Customer escalations are tracked here.' },
+    organize: { advice: 'Track escalations on their own board with swim lanes by stage.', board_name: 'NA Retail escalations', workspace: 'Sample workspace', groups: ['New', 'With support', 'Waiting on customer', 'Resolved'], columns: ['Customer', 'Store count'] },
+    sources_used: [1],
+  });
+  const srv = http.createServer((req, res) => {
+    let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      if (req.url === '/api/tags') return res.end(JSON.stringify({ models: [{ name: 'llama3.1:8b' }] }));
+      const body = JSON.parse(b || '{}');
+      calls.push(body);
+      const last = body.messages[body.messages.length - 1].content;
+      if (body.format) return res.end(JSON.stringify({ message: { role: 'assistant', content: JSON.stringify(plan(/Store 12, Store 40/.test(last))) } }));
+      return res.end(JSON.stringify({ message: { role: 'assistant', content: 'Call Marie first, then escalate.' } }));
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const api = await AppApi.create({ dataDir });
+    api.loadSample();
+    const nw = api.listCustomers({}).find((x) => x.name === 'Northwind Traders');
+    api.saveCustomer({ ...nw, email: 'info@northwind.example' });
+    api.setAi({ provider: 'ollama', localUrl: `http://127.0.0.1:${srv.address().port}` });
+    assert.match(api.assistantConfig().profile, /North America retail for Ingenico/);
+    const eml = 'From: Marie Dubois <marie@northwind.example>\r\nSubject: Terminaux en panne\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nBonjour, nos 12 terminaux sont en panne. Pouvez-vous nous aider?\r\n';
+    const id = await api.assistantIntake({ files: [{ name: 'panne.eml', bytes: Buffer.from(eml) }] });
+    let c = await api.assistantSettle(id);
+    assert.equal(c.state, 'ready', c.error);
+    assert.equal(c.title, 'Terminals offline at Northwind stores');
+    assert.equal(c.priority, 'urgent');
+    assert.equal(c.analysis.mode, 'local');
+    assert.match(c.analysis.translation, /terminals are down/);
+    assert.equal(c.customer.name, 'Northwind Traders');
+    assert.equal(c.analysis.placement.board, 'Team tasks');
+    assert.ok(c.analysis.placement.boardId);
+    assert.equal(c.analysis.replies.length, 2);
+    const sent = calls.find((x) => x.format).messages;
+    assert.match(sent[0].content, /North America retail for Ingenico/);
+    assert.match(sent[1].content, /Team tasks/);
+    assert.match(sent[1].content, /nos 12 terminaux/);
+    // Answer the question: the answer goes back to the model and the plan is rebuilt.
+    c = await api.assistantAnswer(id, { answers: { 0: 'Store 12, Store 40' } });
+    assert.equal(c.analysis.questions.length, 0);
+    assert.match(calls.filter((x) => x.format).pop().messages[1].content, /Store 12, Store 40/);
+    // Mark a step done, edit a reply; both survive a re-read.
+    api.assistantUpdate(id, { step: { index: 1, done: true }, reply: { index: 0, sent: true } });
+    c = await api.assistantAnalyze(id);
+    assert.equal(c.analysis.plan[1].done, true);
+    assert.equal(c.analysis.replies[0].sent, true);
+    // Steps become tasks on the suggested board; the proposed board is created with its swim lanes.
+    const t = api.assistantToTasks(id, {});
+    assert.equal(t.created, 2);
+    const B = api.store.getBoard(t.boardId);
+    assert.ok(B.items.some((i) => i.name === 'Open a P1 ticket with support (Support)'));
+    assert.equal(api.assistantToTasks(id, {}).created, 0, 'steps already added are skipped');
+    const nb = api.assistantCreateBoard(id, { name: c.analysis.organize.boardName, groups: c.analysis.organize.groups, columns: c.analysis.organize.columns });
+    const NB = api.store.getBoard(nb);
+    assert.deepEqual(NB.groups.map((g) => g.name), ['New', 'With support', 'Waiting on customer', 'Resolved']);
+    assert.ok(NB.columns.some((x) => x.title === 'Customer' && x.type === 'customer'));
+    // Follow-up chat and the day view.
+    const chat = await api.assistantChat(id, 'What first?');
+    assert.equal(chat[chat.length - 1].content, 'Call Marie first, then escalate.');
+    const today = api.assistantToday();
+    assert.equal(today.open, 1);
+    assert.ok(today.waiting.some((s) => /P1 ticket/.test(s.step)));
+    // A pasted Teams chat is a chat case.
+    const id2 = await api.assistantIntake({ text: '[9:02 AM] Jane\nWe need the Q4 plan.\n[9:05 AM] Tom\nWho owns pricing?\n[9:07 AM] Jane\nFinance.' });
+    assert.equal((await api.assistantSettle(id2)).kind, 'chat');
+    assert.match(calls.filter((x) => x.format).pop().messages[1].content, /CHAT CONVERSATION/);
+    // Teaching: notes are saved and indexed for every answer.
+    const taught = await api.assistantTeach({ files: [{ name: 'OneNote/Accounts/Target.md', bytes: Buffer.from('# Target\nPayments lead: Sam Rivera') }, { name: '../evil.md', bytes: Buffer.from('x') }] });
+    assert.equal(taught.notes.length, 2);
+    assert.ok(taught.notes.every((n) => !n.name.includes('..')));
+    await api.knowledge.index();
+    assert.match((await api.askSearch('Sam Rivera'))[0].name, /Target\.md/);
+    api.assistantForget(path.join('OneNote', 'Accounts', 'Target.md'));
+    assert.equal(api.assistantNotes().length, 1);
+    // A watched folder turns new files into cases.
+    const watch = fs.mkdtempSync(path.join(os.tmpdir(), 'bd-watch-'));
+    fs.writeFileSync(path.join(watch, 'old.txt'), 'already here');
+    api.setAssistantConfig({ watchFolder: watch });
+    assert.equal(await api.assistant.scanWatch(), 0, 'files there before watching are skipped');
+    fs.writeFileSync(path.join(watch, 'new.txt'), 'Please send the Q4 forecast by Friday.');
+    const past = new Date(Date.now() - 10000);
+    fs.utimesSync(path.join(watch, 'new.txt'), past, past);
+    assert.equal(await api.assistant.scanWatch(), 1);
+    assert.equal(await api.assistant.scanWatch(), 0);
+    // Without a model, the built-in reader still outlines the case.
+    api.setAi({ provider: 'off' });
+    const id3 = await api.assistantIntake({ text: 'From: Sam <sam@partner.example>\nSubject: PO 4471\n\nCan you confirm the ship date? We need it by Nov 20.' });
+    const c3 = await api.assistantSettle(id3);
+    assert.equal(c3.analysis.mode, 'basic');
+    assert.equal(c3.title, 'PO 4471');
+    assert.ok(c3.analysis.plan.length >= 2);
+    assert.equal(c3.analysis.replies[0].subject, 'RE: PO 4471');
+    api.assistantDelete(id);
+    assert.ok(!fs.existsSync(path.join(dataDir, 'assistant', id)));
+    fs.rmSync(watch, { recursive: true, force: true });
+  } finally {
+    srv.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});

@@ -127,7 +127,7 @@ function runSmokeTest() {
 }
 
 function openExternal(url) {
-  if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+  if (/^(https?:\/\/|mailto:)/i.test(url)) shell.openExternal(url);
 }
 
 function showWindow(route) {
@@ -258,6 +258,9 @@ function registerIpc() {
         case 'appInfo': return { version: app.getVersion(), dataDir: dataDir(), platform: process.platform };
         case 'openPath': { const err = await shell.openPath(a.path); if (err) throw new Error(err); return true; }
         case 'showPath': { shell.showItemInFolder(a.path); return true; }
+        case 'documentsPath': return app.getPath('documents');
+        case 'isFolder': { try { return fs.statSync(a.path).isDirectory(); } catch (_) { return false; } }
+        case 'openAssistantFile': { const p = api.assistantFilePath(a.id, a.name); const err = await shell.openPath(p); if (err) throw new Error(err); return true; }
         case 'openExternal': { openExternal(a.url); return true; }
         case 'testNotification': { sendDigest(true); return true; }
         case 'chooseFolder': {
