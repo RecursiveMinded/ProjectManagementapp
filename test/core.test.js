@@ -158,7 +158,7 @@ test('updates, mentions, notifications and the digest', async () => {
   const n = api.db.all('SELECT * FROM notifications WHERE person_id=?', [jordan.id]);
   assert.ok(n.some((x) => x.kind === 'mention'), 'mentioned person is notified');
   const dg = api.digest();
-  assert.match(dg.headline, /due|Nothing/);
+  assert.match(dg.headline, /due|Nothing|clear|meeting|follow-up/);
   assert.ok(Array.isArray(api.myWork({ includeDone: true })));
   assert.ok(api.search('design').length > 0);
 });
@@ -1036,4 +1036,72 @@ test('assistant: emails and documents become cases with a plan, replies, questio
     srv.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
+});
+
+test('chat, one task list, priority and the morning briefing', async () => {
+  const api = await fresh();
+  api.loadSample();
+  api.setAi({ provider: 'off' });
+  const t = today();
+  // A file dropped in the chat becomes a case with its own reply.
+  const eml = 'From: Sam <sam@partner.example>\r\nSubject: PO 4471\r\nContent-Type: text/plain\r\n\r\nCan you confirm the ship date? We need it by Nov 20.\r\n';
+  const [u, r] = await api.chatSend({ files: [{ name: 'po.eml', bytes: Buffer.from(eml) }, { name: 'notes.md', bytes: Buffer.from('# Kroger call\nSend pricing to Kroger by Friday.') }] });
+  assert.equal(u.role, 'user');
+  assert.deepEqual(u.files, ['po.eml', 'notes.md']);
+  assert.equal(r.kind, 'cases');
+  assert.equal(r.caseIds.length, 2);
+  for (const id of r.caseIds) await api.assistantSettle(id);
+  const again = api.chatMessage(r.id);
+  assert.ok(again.cases.every((c) => c.state === 'ready'));
+  assert.equal(again.cases[0].title, 'PO 4471');
+  // A note typed in the chat becomes a case too; a question is answered.
+  const [, note] = await api.chatSend({ text: 'Remind Jordan to send the Q4 forecast' });
+  assert.equal(note.kind, 'cases');
+  await api.assistantSettle(note.caseIds[0]);
+  const [, ans] = await api.chatSend({ text: 'What happened with PO 4471?' });
+  assert.equal(ans.kind, 'answer');
+  assert.ok(ans.sources.some((s) => s.kind === 'case'), 'cases are searched for answers');
+  // One list from plan steps, board items and meeting actions.
+  const L = api.tasksList();
+  const all = [...L.mine, ...L.waiting];
+  assert.ok(all.some((x) => x.source === 'case'));
+  assert.ok(all.some((x) => x.source === 'item'));
+  assert.ok(all.some((x) => x.source === 'meeting'));
+  assert.ok(all.every((x) => typeof x.score === 'number'));
+  for (let i = 1; i < L.mine.length; i++) assert.ok(L.mine[i - 1].score >= L.mine[i].score, 'sorted by score');
+  // Own tasks, overdue first, done / snooze / dismiss / restore.
+  const late = api.taskAdd({ title: 'Renew the Kroger contract', due: addDays(t, -2), priority: 'high' });
+  let top = api.tasksList().mine[0];
+  assert.equal(top.key, late);
+  assert.match(top.reason, /Overdue by 2 days/);
+  const step = api.tasksList().mine.find((x) => x.source === 'case');
+  api.taskDone(step.key);
+  const c = api.assistantCase(step.sourceId);
+  assert.ok(c.analysis.plan.some((s) => s.step === step.title && s.done), 'done is written back to the plan');
+  api.taskSnooze(late, addDays(t, 3));
+  assert.ok(!api.tasksList().mine.some((x) => x.key === late));
+  assert.ok(api.tasksList().snoozed.some((x) => x.key === late));
+  api.taskRestore(late);
+  assert.equal(api.tasksList().mine[0].key, late);
+  const meet = api.tasksList().mine.find((x) => x.source === 'meeting') || api.tasksList().waiting.find((x) => x.source === 'meeting');
+  api.taskDismiss(meet.key);
+  assert.ok(![...api.tasksList().mine, ...api.tasksList().waiting].some((x) => x.key === meet.key));
+  const item = api.tasksList().mine.find((x) => x.source === 'item' && x.canDone);
+  if (item) { api.taskDone(item.key); assert.ok(!api.myWork().some((w) => w.id === item.sourceId), 'board item status set to done'); }
+  assert.ok(api.db.all('SELECT * FROM task_events').length >= 4, 'actions are logged for learning');
+  // The briefing, once a day in the chat.
+  const b = api.briefing();
+  assert.equal(b.top[0].key, late);
+  assert.ok(b.meetings.length >= 1, 'the sample weekly review is today');
+  const id = api.chat.briefing({ at: t });
+  assert.ok(id);
+  assert.equal(api.chat.briefing({ at: t }), null, 'only once a day');
+  const m = api.chatMessage(id);
+  assert.equal(m.kind, 'briefing');
+  assert.match(m.content, /Do first:/);
+  const [, br] = await api.chatSend({ text: 'what should I do today' });
+  assert.equal(br.kind, 'briefing');
+  assert.ok(api.chatHistory().length >= 9);
+  api.chatClear();
+  assert.equal(api.chatHistory().length, 0);
 });

@@ -1,7 +1,7 @@
 // App shell: sidebar, routing, search palette, item panel and global hosts.
 import { render, Fragment } from 'preact';
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
-import { html, Icon, Toasts, toast, toastError, Spinner, Avatar, Menu, useAnchor, ConfirmHost, ask, Modal, usePersist } from './lib.js';
+import { html, Icon, Toasts, toast, toastError, Spinner, Avatar, Menu, useAnchor, ConfirmHost, ask, Modal, Drawer, usePersist } from './lib.js';
 import { call, onEvent } from './api.js';
 import { BoardPage } from './board.js';
 import { ItemPanel } from './item.js';
@@ -21,7 +21,9 @@ import { HelpPage } from './help.js';
 import { CustomersPage, CustomerDrawer } from './customers.js';
 import { AskPage } from './ask.js';
 import { ReportsPage } from './briefs.js';
-import { AssistantPage } from './assistant.js';
+import { AssistantPage, CaseView } from './assistant.js';
+import { ChatPage } from './chat.js';
+import { TodayPage, TasksPage } from './tasks.js';
 
 window.__bdSelfTest = selfTest;
 
@@ -36,7 +38,10 @@ try { applyLook(JSON.parse(localStorage.getItem('bd.look') || '{}')); } catch (_
 function App() {
   const [boot, setBoot] = useState(null);
   const [error, setError] = useState(null);
-  const [route, setRoute] = usePersist('route', { name: 'home', id: null });
+  const [route, setRoute] = usePersist('route', { name: 'chat', id: null });
+  const [caseOpen, setCaseOpen] = useState(null);
+  // From 0.2.0 the app opens on Chat, once, for people who used an earlier version.
+  useEffect(() => { try { if (!localStorage.getItem('bd.v020')) { localStorage.setItem('bd.v020', '1'); setRoute({ name: 'chat', id: null }); } } catch (_) { /* ignore */ } }, []);
   const [version, setVersion] = useState(0);
   const [item, setItem] = useState(null); // { id, tab }
   const [palette, setPalette] = useState(false);
@@ -47,7 +52,7 @@ function App() {
   const [capture, setCapture] = useState(false);
   const [newBoard, setNewBoard] = useState(null); // { workspaceId }
   const [closedWs, setClosedWs] = usePersist('closedWs', {});
-  const [side, setSide] = usePersist('sideOpen', { menu: true, favs: true, ws: true, dash: true });
+  const [side, setSide] = usePersist('sideOpen', { menu: true, favs: true, ws: true, dash: true, adv: false });
   const flip = (k) => setSide({ ...side, [k]: !side[k] });
   const itemReload = useRef(null);
   const update = useUpdate();
@@ -88,7 +93,9 @@ function App() {
     window.addEventListener('bd-open-customer', ocu);
     const oi = (e) => openItem(e.detail);
     window.addEventListener('bd-open-item', oi);
-    return () => { window.removeEventListener('bd-open-item', oi); window.removeEventListener('bd-open-customer', ocu); window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); window.removeEventListener('bd-capture', oc); };
+    const ocs = (e) => setCaseOpen(e.detail);
+    window.addEventListener('bd-open-case', ocs);
+    return () => { window.removeEventListener('bd-open-case', ocs); window.removeEventListener('bd-open-item', oi); window.removeEventListener('bd-open-customer', ocu); window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); window.removeEventListener('bd-capture', oc); };
   }, []);
 
   // Unread count and data changed by automations in the background.
@@ -112,7 +119,7 @@ function App() {
       if (!typing && !ctrl && !e.altKey) {
         if (Date.now() - gPrefix.current < 1200) {
           gPrefix.current = 0;
-          const to = { h: 'home', m: 'mywork', c: 'calendar', d: 'dependencies', i: 'inbox', s: 'settings', a: 'archive', p: 'portfolio', t: 'timesheets', l: 'meetings', u: 'customers', k: 'ask', r: 'reports', e: 'assistant' }[e.key.toLowerCase()];
+          const to = { h: 'chat', t: 'today', o: 'tasks', b: 'home', m: 'mywork', c: 'calendar', i: 'inbox', s: 'settings', a: 'archive', l: 'meetings', u: 'customers', k: 'ask', r: 'reports', e: 'assistant' }[e.key.toLowerCase()];
           if (to) { e.preventDefault(); nav(to); return; }
         }
         if (e.key === 'g') { gPrefix.current = Date.now(); return; }
@@ -133,8 +140,8 @@ function App() {
 
   const boards = boot.workspaces.flatMap((w) => w.boards);
   let r = route;
-  if (r.name === 'board' && !boards.some((b) => b.id === r.id)) r = { name: 'home' };
-  if (r.name === 'dashboard' && !boot.dashboards.some((d) => d.id === r.id)) r = { name: 'home' };
+  if (r.name === 'board' && !boards.some((b) => b.id === r.id)) r = { name: 'chat' };
+  if (r.name === 'dashboard' && !boot.dashboards.some((d) => d.id === r.id)) r = { name: 'chat' };
 
   const createWorkspace = async () => {
     try { await call('saveWorkspace', { name: 'New workspace' }); await reloadShell(); toast('Workspace added. Right-click it to rename.'); } catch (e) { toastError(e); }
@@ -144,7 +151,10 @@ function App() {
   };
 
   let page;
-  if (r.name === 'board') page = html`<${BoardPage} key=${r.id} boardId=${r.id} openItem=${openItem} refreshShell=${reloadShell} nav=${nav} version=${version} />`;
+  if (r.name === 'chat') page = html`<${ChatPage} nav=${nav} version=${version} />`;
+  else if (r.name === 'today') page = html`<${TodayPage} nav=${nav} version=${version} />`;
+  else if (r.name === 'tasks') page = html`<${TasksPage} version=${version} />`;
+  else if (r.name === 'board') page = html`<${BoardPage} key=${r.id} boardId=${r.id} openItem=${openItem} refreshShell=${reloadShell} nav=${nav} version=${version} />`;
   else if (r.name === 'dashboard') page = html`<${DashboardPage} key=${r.id} id=${r.id} boot=${boot} nav=${nav} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
   else if (r.name === 'dependencies') page = html`<${DependenciesPage} openItem=${openItem} nav=${nav} version=${version} />`;
   else if (r.name === 'doc') page = html`<${DocPage} key=${r.id} id=${r.id} nav=${nav} openItem=${openItem} refreshShell=${reloadShell} />`;
@@ -161,27 +171,31 @@ function App() {
   else if (r.name === 'inbox') page = html`<${Inbox} openItem=${openItem} refreshShell=${reloadShell} version=${version} nav=${nav} />`;
   else if (r.name === 'archive') page = html`<${Archive} refreshShell=${reloadShell} />`;
   else if (r.name === 'settings') page = html`<${Settings} boot=${boot} reloadShell=${reloadShell} />`;
-  else page = html`<${Home} key=${version} boot=${boot} nav=${nav} openItem=${openItem} newBoard=${() => setNewBoard({})} reloadShell=${async () => { await reloadShell(); bump(); }} />`;
+  else if (r.name === 'home') page = html`<${Home} key=${version} boot=${boot} nav=${nav} openItem=${openItem} newBoard=${() => setNewBoard({})} reloadShell=${async () => { await reloadShell(); bump(); }} />`;
+  else page = html`<${ChatPage} nav=${nav} version=${version} />`;
 
   const favs = (boot.favorites || []).map((f) => {
     const t = f.kind === 'board' ? boot.workspaces.flatMap((w) => w.boards).find((b) => b.id === f.id) : boot.dashboards.find((d) => d.id === f.id);
     return t ? { ...f, name: t.name } : null;
   }).filter(Boolean);
   const allShut = boot.workspaces.length > 0 && boot.workspaces.every((w) => closedWs[w.id]);
-  const NAV = [['home', 'Home', 'home'], ['mywork', 'My work', 'check'], ['assistant', 'Assistant', 'spark'], ['ask', 'Ask anything', 'msg'], ['calendar', 'Calendar', 'calendar'], ['customers', 'Customers', 'building'],
-    ['meetings', 'Calls and meetings', 'phone'], ['dependencies', 'Dependencies', 'dependency'], ['reports', 'Reports', 'report'], ['portfolio', 'Portfolio', 'grid'],
-    ['timesheets', 'Timesheets', 'timer'], ['inbox', 'Inbox', 'inbox', boot.unread || null], ['help', 'Help and guide', 'help']];
+  const NAV = [['chat', 'Chat', 'msg'], ['today', 'Today', 'today'], ['tasks', 'Tasks', 'check'], ['customers', 'Customers', 'building'], ['meetings', 'Calls and meetings', 'phone'],
+    ['inbox', 'Inbox', 'inbox', boot.unread || null], ['help', 'Help and guide', 'help']];
+  const ADV = [['home', 'Boards', 'table'], ['mywork', 'My work (boards)', 'person'], ['calendar', 'Calendar', 'calendar'], ['assistant', 'All dropped files', 'spark'], ['ask', 'Search folders', 'search'], ['reports', 'Reports', 'report']];
   const navLink = (name, label, icon, badge) => html`<a key=${name} class=${r.name === name ? 'on' : ''} onClick=${() => nav(name)}><${Icon} name=${icon} />${label}${badge ? html`<span class="badge">${badge}</span>` : null}</a>`;
 
   return html`<${Fragment}><div class="app">
     <aside class="side" aria-label="Navigation">
       <div class="brand"><span class="brand-mark"><span></span></span>Boardenda</div>
       <div class="searchbox" role="button" tabindex="0" onClick=${() => setPalette(true)}><${Icon} name="search" />Search<kbd>Ctrl K</kbd></div>
-      <button class="capture-btn" onClick=${() => setCapture(true)} title="Turn rough notes into items, calls and action items"><${Icon} name="spark" />Quick capture<kbd>Ctrl J</kbd></button>
       <div class="sect click" role="button" aria-expanded=${side.menu ? 'true' : 'false'} onClick=${() => flip('menu')}><span class="row" style="gap:4px"><${Icon} name="chev" size=${12} cls=${`chev ${side.menu ? 'open' : ''}`} />Menu</span></div>
       ${side.menu ? html`<nav class="nav">${NAV.map(([n, l, i, b]) => navLink(n, l, i, b))}</nav>`
         : html`<nav class="nav compact">${NAV.map(([n, l, i, b]) => html`<a key=${n} class=${r.name === n ? 'on' : ''} title=${l} aria-label=${l} onClick=${() => nav(n)}><${Icon} name=${i} />${b ? html`<span class="dot"></span>` : null}</a>`)}</nav>`}
       <div class="scroll">
+        <div class="sect click" role="button" aria-expanded=${side.adv ? 'true' : 'false'} onClick=${() => flip('adv')} title="Boards, calendar, reports and the older pages"><span class="row" style="gap:4px"><${Icon} name="chev" size=${12} cls=${`chev ${side.adv ? 'open' : ''}`} />Advanced</span></div>
+        ${side.adv ? html`<nav class="nav">${ADV.map(([n, l, i]) => navLink(n, l, i))}</nav>`
+          : ADV.filter(([n]) => n === r.name).map(([n, l, i]) => navLink(n, l, i))}
+        ${side.adv ? html`<${Fragment}>
         ${favs.length ? html`<div class="sect click" role="button" onClick=${() => flip('favs')}><span class="row" style="gap:4px"><${Icon} name="chev" size=${12} cls=${`chev ${side.favs ? 'open' : ''}`} />Favorites</span><span class="n">${side.favs ? '' : favs.length}</span></div>
           ${(side.favs ? favs : favs.filter((f) => r.name === f.kind && r.id === f.id)).map((f) => html`<a key=${f.kind + f.id} class=${`ws-board ${r.name === f.kind && r.id === f.id ? 'on' : ''}`} style="padding-left:10px" onClick=${() => nav(f.kind, f.id)}>
             <${Icon} name=${f.kind === 'board' ? 'table' : 'dashboard'} size=${15} /><span class="clip">${f.name}</span><span class="n fav-star"><${Icon} name="star" size=${12} /></span></a>`)}` : null}
@@ -193,8 +207,7 @@ function App() {
         ${(side.ws ? boot.workspaces : []).map((w) => html`<${Workspace} key=${w.id} w=${w} route=${r} nav=${nav} closed=${!!closedWs[w.id]} toggle=${() => setClosedWs({ ...closedWs, [w.id]: !closedWs[w.id] })}
           reloadShell=${reloadShell} newBoard=${() => setNewBoard({ workspaceId: w.id })} docs=${(boot.docs || []).filter((d) => d.workspace_id === w.id)} />`)}
         ${side.ws && !boot.workspaces.length ? html`<div class="small" style="padding:6px 10px;color:#8584a3">No boards yet.</div>` : null}
-        <div class="sect click" role="button" onClick=${() => flip('dash')}><span class="row" style="gap:4px"><${Icon} name="chev" size=${12} cls=${`chev ${side.dash ? 'open' : ''}`} />Dashboards</span><span class="row" style="gap:6px">${side.dash || !boot.dashboards.length ? null : html`<span class="n">${boot.dashboards.length}</span>`}<button title="New dashboard" aria-label="New dashboard" onClick=${(e) => { e.stopPropagation(); createDashboard(); }}><${Icon} name="plus" size=${14} /></button></span></div>
-        ${(side.dash ? boot.dashboards : boot.dashboards.filter((d) => r.name === 'dashboard' && r.id === d.id)).map((d) => html`<a key=${d.id} class=${`ws-board ${r.name === 'dashboard' && r.id === d.id ? 'on' : ''}`} style="padding-left:10px" onClick=${() => nav('dashboard', d.id)}><${Icon} name="dashboard" size=${15} /><span class="clip">${d.name}</span></a>`)}
+        </${Fragment}>` : null}
       </div>
       <${UpdateButton} update=${update} />
       <div class="foot">
@@ -213,6 +226,7 @@ function App() {
     ${meetOpen ? html`<${MeetingDrawer} key=${meetOpen} id=${meetOpen} boot=${boot} openItem=${(id) => { setMeetOpen(null); openItem(id); }} onClose=${() => setMeetOpen(null)}
       onChanged=${() => { window.dispatchEvent(new CustomEvent('bd-meetings-changed')); if (itemReload.current) itemReload.current(); }} />` : null}
     ${custOpen ? html`<${CustomerDrawer} key=${custOpen} id=${custOpen} boot=${boot} openItem=${(id) => { setCustOpen(null); openItem(id); }} onClose=${() => { setCustOpen(null); bump(); if (itemReload.current) itemReload.current(); }} />` : null}
+    ${caseOpen ? html`<${Drawer} wide title="From the assistant" onClose=${() => { setCaseOpen(null); bump(); }}><${CaseView} key=${caseOpen} id=${caseOpen} nav=${(n, id) => { setCaseOpen(null); nav(n, id); }} onChanged=${() => {}} onDeleted=${() => { setCaseOpen(null); bump(); }} /></${Drawer}>` : null}
     ${capture ? html`<${CaptureModal} boot=${boot} onClose=${() => setCapture(false)} onDone=${(made) => { setCapture(false); bump(); window.dispatchEvent(new CustomEvent('bd-meetings-changed')); if (made.first && made.first.kind === 'meeting') openMeeting(made.first.id); else if (made.first && made.first.kind === 'item') openItem(made.first.id); }} />` : null}
     ${newMeet ? html`<${NewMeeting} boot=${boot} preset=${newMeet} onClose=${() => setNewMeet(null)} onCreated=${(id) => { setNewMeet(null); bump(); setItem(null); openMeeting(id); }} />` : null}
     ${docOpen ? html`<${DocDrawer} key=${docOpen} id=${docOpen} nav=${nav} onClose=${() => { setDocOpen(null); bump(); }} />` : null}
@@ -228,9 +242,10 @@ function App() {
 
 const SHORTCUTS = [
   ['Ctrl+K', 'Search and commands'], ['Ctrl+Z', 'Undo the last change'], ['Ctrl+P', 'Print or save the board or doc as PDF'],
-  ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'],
-  ['g h', 'Go to Home'], ['g m', 'Go to My work'], ['g c', 'Go to Calendar'], ['g d', 'Go to Dependencies'], ['g i', 'Go to Inbox'],
-  ['g p', 'Go to Portfolio'], ['Ctrl J', 'Quick capture: turn notes into records'], ['g t', 'Go to Timesheets'], ['g l', 'Go to Calls and meetings'], ['g u', 'Go to Customers'], ['g k', 'Ask anything (search your PC and business data)'], ['g r', 'Go to Reports'], ['g e', 'Go to Assistant (emails, documents, Teams chats)'], ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['F1', 'Help and user guide'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
+  ['g h', 'Go to Chat (home)'], ['g t', 'Go to Today'], ['g o', 'Go to Tasks'], ['g u', 'Go to Customers'], ['g l', 'Go to Calls and meetings'], ['g i', 'Go to Inbox'],
+  ['g b', 'Go to Boards'], ['g m', 'Go to My work (boards)'], ['g c', 'Go to Calendar'], ['g e', 'Go to All dropped files'], ['g k', 'Search folders on this PC'], ['g r', 'Go to Reports'],
+  ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'], ['Ctrl J', 'Quick capture: turn notes into records'],
+  ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['F1', 'Help and user guide'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],
 ];
 
 /** Always-visible update control: check, watch the download, restart to install. */

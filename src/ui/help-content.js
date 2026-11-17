@@ -4,6 +4,7 @@
 
 export const TOPICS = [
   ['start', 'Getting started'],
+  ['daily', 'Chat, Today and Tasks'],
   ['boards', 'Boards, groups and items'],
   ['columns', 'Columns and formulas'],
   ['views', 'Views'],
@@ -18,6 +19,48 @@ export const TOPICS = [
 ];
 
 export const ARTICLES = [
+  // Chat, Today and Tasks
+  { id: 'chat', topic: 'daily', title: 'Chat: drop any file, ask anything', keys: 'chat home drop file email msg eml pdf word excel picture ocr markdown onenote teams paste note question assistant', body: `
+Chat is where Boardenda starts. Drop anything into it and it is read on this PC.
+
+## What you can drop or type
+- **Files:** Outlook emails (.msg, .eml), PDF, Word, Excel and CSV, Markdown and OneNote exports, text, and pictures or scans (read with OCR). Drop several at once: each one gets its own card.
+- **A pasted email or Teams chat:** paste it into the box and press Enter.
+- **A note:** for example "Remind Jordan to send the Q4 forecast by Friday". It is turned into tasks.
+- **A question:** for example "What did Lee ask for?" or "Who am I waiting on?". Answers come from the files you dropped, your customers, calls, boards and the folders you let it search, with numbered sources.
+- **"What should I do today?"** (or the **Briefing** button) posts your briefing. See [[today]].
+
+## What you get back
+Each file shows who it is from, a short summary, how many tasks it found for you, how many are waiting on others, drafted replies and questions the assistant has. Click the card to see the full plan, draft replies and sources, and to answer its questions.
+
+> Drop a folder to add it to what the assistant knows, instead of reading every file in it as a new item.
+
+The gear button opens the assistant settings: a few lines about you and your work, the tone and signature for replies, and a folder to watch (files saved there are read automatically).` },
+  { id: 'today', topic: 'daily', title: 'Today and the morning briefing', keys: 'today briefing morning summary digest priorities do first meetings waiting follow up', body: `
+**Today** shows what to do first and why, your meetings today, who you are waiting on, and what came in since yesterday.
+
+- **Do first** lists your five highest-priority tasks, each with the reason: overdue, due today, urgent or high priority, or new.
+- **Waiting on others** shows tasks owned by someone else, the late ones first, so you know who to chase.
+- **New since yesterday** lists the files and notes you dropped. A line at the bottom points to any questions the assistant has for you.
+
+## The morning briefing
+At the time set in **Settings › Notifications** (8:30 by default), the briefing is posted in [[chat]] and shown as a Windows notification. Ask "What should I do today?" in Chat, or use **Post briefing in chat**, to get it at any time.` },
+  { id: 'tasks', topic: 'daily', title: 'One task list', keys: 'tasks todo list priority snooze dismiss done waiting mine reminder', body: `
+**Tasks** is one list of everything on you and everything you are waiting on, wherever it came from:
+- steps in the plans made from files and notes you dropped in [[chat]],
+- items assigned to you on boards,
+- action items from [[calls]],
+- tasks you type at the top of the list.
+
+The list is sorted by priority: overdue first, then due today, then by urgency and due date. The reason is shown under each task.
+
+## Work the list
+- Tick the box to mark it done. Done is written back where it came from: the plan step, the board item's status, or the meeting action.
+- **Snooze** hides it until tomorrow, next Monday or for a week.
+- **x** dismisses a task that is not needed. Find it again under **Dismissed** and press **Restore**.
+- A blue dot marks tasks you have not seen yet.
+
+> Every done, snooze and dismiss is remembered, so Boardenda can learn what matters to you.` },
   // Getting started
   { id: 'welcome', topic: 'start', title: 'What Boardenda is', keys: 'overview intro about local offline', body: `
 Boardenda is a work management app that runs entirely on this PC. There is no account and no server: everything is saved in one data file on your computer, backed up every day.
@@ -42,7 +85,9 @@ You can also start from a file: choose **Import a file…** to build a board fro
 - Add a column with the **+** at the right end of the column headers. See [[column-types]].
 - Save the finished layout as your own template from the board's **⋯** menu, **Save as template…**. See [[templates]].` },
   { id: 'navigate', topic: 'start', title: 'Find your way around', keys: 'sidebar navigation search palette favorites folders', body: `
-- The **sidebar** lists Home, My work, Calendar, Customers, Calls and meetings, Dependencies, Portfolio, Timesheets, Inbox and Help, then your workspaces, boards, docs and dashboards.
+- The **sidebar** starts with [[chat]], [[today]] and [[tasks]], then Customers, Calls and meetings, Inbox and Help.
+- **Advanced** opens Boards, My work, Calendar, All dropped files, Search folders and Reports, plus your favorites, workspaces, boards and docs.
+- Dashboards, Portfolio, Timesheets and Team dependencies are no longer in the sidebar. Your data is kept: open them from **Search** (\`Ctrl+K\`), for example "Go to Portfolio".
 - **Search** (\`Ctrl+K\`) finds items, updates, boards and docs, and runs commands such as "Go to Calendar". It also finds help articles.
 - Star a board or dashboard to pin it under **Favorites**.
 - Right-click a workspace to rename it, add a folder or a doc. Collapse workspaces you are not using.
@@ -461,7 +506,8 @@ In **Settings › Appearance**, choose a light, dark or system theme, and comfor
 - \`Ctrl+P\` print or save as PDF
 - \`Ctrl+Shift+B\` new board
 - \`n\` new item, \`/\` search this board
-- \`g h\` Home, \`g m\` My work, \`g c\` Calendar, \`g u\` Customers, \`g l\` Calls and meetings, \`g d\` Dependencies, \`g p\` Portfolio, \`g t\` Timesheets, \`g i\` Inbox, \`g a\` Archive, \`g s\` Settings
+- \`g h\` Chat, \`g t\` Today, \`g o\` Tasks, \`g u\` Customers, \`g l\` Calls and meetings, \`g i\` Inbox
+- \`g b\` Boards, \`g m\` My work, \`g c\` Calendar, \`g e\` All dropped files, \`g k\` Search folders, \`g r\` Reports, \`g a\` Archive, \`g s\` Settings
 - \`F1\` Help, \`?\` this list in the app
 - \`Esc\` closes a panel or dialog` },
   { id: 'smartscreen', topic: 'settings', title: 'Windows blocks the installer', keys: 'smartscreen install blocked unsigned windows protected unblock', body: `

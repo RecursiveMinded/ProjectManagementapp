@@ -34,7 +34,21 @@ const SHOTS = process.env.SHOTS_DIR || '';
   let code = 0;
   try {
     await page.goto(`http://127.0.0.1:${PORT}/`);
-    await step('welcome screen', async () => { await page.waitForSelector('.home-hero'); });
+    const go = async (label) => {
+      await page.keyboard.press('Control+k');
+      await page.fill('.palette input', label);
+      await page.click(`.palette .mi:has-text("${label}")`);
+      await page.waitForSelector('.palette', { state: 'detached' });
+    };
+    await step('chat is the home screen', async () => {
+      await page.waitForSelector('.ch-page h1:has-text("Chat")');
+      await page.waitForSelector('.ch-page .ask-empty:has-text("Drop anything here")');
+    });
+    await step('welcome screen under Advanced, Boards', async () => {
+      await page.click('.side .sect:has-text("Advanced")');
+      await page.click('.side .nav a:has-text("Boards")');
+      await page.waitForSelector('.home-hero');
+    });
     await step('load the sample workspace', async () => {
       await page.click('text=Try the sample workspace');
       await page.waitForSelector('.ws-board:has-text("Website relaunch")');
@@ -114,7 +128,7 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.waitForSelector('.form-view');
     });
     await step('dashboard', async () => {
-      await page.click('.side a:has-text("Company overview")');
+      await go('Open dashboard: Company overview');
       await page.waitForSelector('.widget');
       if ((await page.$$('.widget')).length < 6) throw new Error('widgets missing');
       await page.waitForSelector('.wtable');
@@ -129,7 +143,7 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.seg button:has-text("Month")');
     });
     await step('team dependencies', async () => {
-      await page.click('.side .nav a:has-text("Dependencies")');
+      await go('Go to Team dependencies');
       await page.waitForSelector('.dep-row');
       await page.click('.dep-n >> nth=0');
     });
@@ -142,7 +156,7 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.keyboard.type('Added by the smoke test');
       await page.waitForSelector('.doc-state.saved');
       await page.waitForTimeout(800);
-      await page.click('.side .nav a:has-text("Home")');
+      await page.click('.side .nav a:has-text("Boards")');
       await page.click('.side .ws-board:has-text("Relaunch kickoff notes")');
       await page.waitForSelector('.doc-body >> text=Added by the smoke test');
     });
@@ -179,13 +193,13 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.waitForFunction(() => document.querySelectorAll('.tbl tbody tr .nm').length && [...document.querySelectorAll('.tbl .nm')].filter((x) => x.textContent.includes('Plan team offsite')).length >= 2);
     });
     await step('portfolio', async () => {
-      await page.click('.side .nav a:has-text("Portfolio")');
+      await go('Go to Portfolio');
       await page.waitForSelector('table.pf tbody tr');
       await page.selectOption('table.pf tbody tr:has-text("Website relaunch") .pf-health', 'off_track');
       await page.waitForSelector('.stat.click:has-text("Off track") b:text("1")');
     });
     await step('timesheets', async () => {
-      await page.click('.side .nav a:has-text("Timesheets")');
+      await go('Go to Timesheets');
       await page.selectOption('.page select.input', '');
       await page.waitForSelector('table.ts tbody tr td a');
       await page.click('button:has-text("Log time")');
@@ -227,7 +241,7 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.waitForSelector('.meet-row:has-text("Proposal walkthrough")');
     });
     await step('quick capture: notes to records with mapping', async () => {
-      await page.click('.side .capture-btn');
+      await page.keyboard.press('Control+j');
       await page.fill('.modal .cap-text', 'Call with Northwind Traders tomorrow 2pm\nThey want quarterly billing.\n- Jordan to send revised quote by Friday');
       await page.click('.modal button:has-text("Read notes")');
       await page.waitForSelector('.cap-card >> nth=1');
@@ -288,7 +302,7 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.waitForSelector('text=Call Acme Ltd');
     });
     await step('keyboard shortcuts', async () => {
-      await page.click('.side .nav a:has-text("Home")');
+      await page.click('.side .nav a:has-text("Boards")');
       await page.keyboard.press('?');
       await page.waitForSelector('.modal .keys');
       await page.click('.modal button[aria-label="Close"]');
@@ -354,7 +368,7 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.waitForSelector('.tbl .cust-chip:has-text("Smoke Corp")');
     });
     await step('assistant: drop an email, get a plan, add tasks', async () => {
-      await page.click('.side a:has-text("Assistant")');
+      await page.click('.side a:has-text("All dropped files")');
       await page.waitForSelector('h1:has-text("Assistant")');
       const eml = 'From: "Dana Ruiz" <dana@northwind.example>\r\nTo: me@example.com\r\nSubject: Terminals offline at 3 stores\r\nDate: Mon, 9 Nov 2026 10:00:00 -0500\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nHi, 12 terminals are offline at our Boston stores. Can you help urgently? Please reply by Nov 12.\r\n';
       await page.setInputFiles('.as-page input[type=file] >> nth=0', { name: 'offline.eml', mimeType: 'message/rfc822', buffer: Buffer.from(eml) });
@@ -431,7 +445,7 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await api('askAddFolder', docs);
       await api('askIndex');
       for (let i = 0; i < 40; i++) { const s = await api('askStatus'); if (!(s.job && s.job.running) && s.files) break; await page.waitForTimeout(250); }
-      await page.click('.side a:has-text("Ask anything")');
+      await page.click('.side a:has-text("Search folders")');
       await page.waitForSelector('.ask-page .page-head:has-text(" folder")');
       await page.fill('.ask-input textarea', 'What are the payment terms for Northwind?');
       await page.keyboard.press('Enter');
@@ -439,9 +453,9 @@ const SHOTS = process.env.SHOTS_DIR || '';
     });
     await step('sidebar: collapse menu, workspaces and folders', async () => {
       await page.click('.side .sect:has-text("Menu")');
-      await page.waitForSelector('.side .nav.compact a[aria-label="Reports"]');
-      await page.click('.side .nav.compact a[aria-label="Reports"]');
-      await page.waitForSelector('h1:has-text("Reports")');
+      await page.waitForSelector('.side .nav.compact a[aria-label="Tasks"]');
+      await page.click('.side .nav.compact a[aria-label="Tasks"]');
+      await page.waitForSelector('h1:has-text("Tasks")');
       await page.click('.side .ws-board:has-text("Team tasks")');
       await page.click('.side .ws-head:has-text("Sample workspace")');
       if (await page.locator('.side .ws-board:has-text("Website relaunch")').count()) throw new Error('workspace did not collapse');
@@ -455,6 +469,50 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.side .sect:has-text("Workspaces")');
       await page.click('.side .sect:has-text("Menu")');
       await page.waitForSelector('.side .nav a:has-text("Help and guide")');
+    });
+    await step('chat: drop an email and a note, ask a question', async () => {
+      await page.click('.side .nav a:has-text("Chat")');
+      await page.waitForSelector('.ch-page h1:has-text("Chat")');
+      const eml = 'From: "Lee Park" <lee@kroger.example>\r\nSubject: Kroger pilot pricing\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nHi, please send the pilot pricing for 40 lanes by Friday. Thanks, Lee\r\n';
+      await page.setInputFiles('.ch-page input[type=file]', [
+        { name: 'pricing.eml', mimeType: 'message/rfc822', buffer: Buffer.from(eml) },
+        { name: 'standup.md', mimeType: 'text/markdown', buffer: Buffer.from('# Standup\n- Jordan to confirm the Q4 forecast by Wednesday') },
+      ]);
+      await page.waitForSelector('.ch-case:has-text("Kroger pilot pricing")', { timeout: 20000 });
+      await page.waitForSelector('.ch-case:has-text("Kroger pilot pricing") .ch-chips', { timeout: 20000 });
+      if ((await page.$$('.ch-case')).length < 2) throw new Error('each file should get its own card');
+      await page.click('.ch-case:has-text("Kroger pilot pricing")');
+      await page.waitForSelector('.drawer .as-case-head h2:has-text("Kroger pilot pricing")');
+      await page.click('.drawer button[aria-label="Close"]');
+      await page.waitForSelector('.scrim', { state: 'detached' });
+      await page.fill('.ch-input textarea', 'What did Lee ask for?');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('.ask-msg.bot .ask-src:has-text("Kroger pilot pricing")', { timeout: 30000 });
+    });
+    await step('today: briefing, do first, meetings', async () => {
+      await page.click('.side .nav a:has-text("Today")');
+      await page.waitForSelector('.td-page .td-headline');
+      await page.waitForSelector('.td-first .tk-row');
+      await page.waitForSelector('.td-sec:has-text("Meetings today") .td-line');
+      await page.click('button:has-text("Post briefing in chat")');
+      await page.waitForSelector('.ch-brief:has-text("Do first")');
+    });
+    await step('tasks: add, snooze, restore, done', async () => {
+      await page.click('.side .nav a:has-text("Tasks")');
+      await page.waitForSelector('.tk-page .tk-row');
+      await page.fill('.tk-add input[aria-label="New task"]', 'Smoke follow-up with Lee');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('.tk-row:has-text("Smoke follow-up with Lee")');
+      await page.click('.tk-row:has-text("Smoke follow-up with Lee") button[aria-label="Snooze"]');
+      await page.click('.menu .mi:has-text("Until tomorrow")');
+      await page.waitForSelector('.tk-row:has-text("Smoke follow-up with Lee")', { state: 'detached' });
+      await page.click('.seg button:has-text("Snoozed")');
+      await page.click('.tk-row:has-text("Smoke follow-up with Lee") button:has-text("Restore")');
+      await page.click('.seg button:has-text("Mine")');
+      await page.check('.tk-row:has-text("Smoke follow-up with Lee") .tk-check');
+      await page.waitForSelector('.tk-row:has-text("Smoke follow-up with Lee")', { state: 'detached' });
+      await page.click('.seg button:has-text("Waiting on others")');
+      await page.waitForSelector('.tk-row .tk-who');
     });
     await step('settings', async () => { await page.click('.side .foot button[title=Settings]'); await page.waitForSelector('h1:has-text("Settings")'); });
     await step('settings: AI and Ask folders', async () => { await page.click('.page button:text-is("AI")'); await page.waitForSelector('.ask-setup:has-text("boardenda-docs")'); });

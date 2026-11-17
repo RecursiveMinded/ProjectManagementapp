@@ -145,7 +145,8 @@ function createTray() {
   tray.setToolTip(APP_NAME);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Boardenda', click: () => showWindow() },
-    { label: 'My work', click: () => showWindow('mywork') },
+    { label: 'Today', click: () => showWindow('today') },
+    { label: 'Chat', click: () => showWindow('chat') },
     { label: 'Send digest now', click: () => sendDigest(true) },
     { label: 'Check for updates', click: () => checkUpdatesNow() },
     { type: 'separator' },
@@ -167,7 +168,7 @@ function sendDigest(force = false) {
     const dg = force ? api.digest() : api.checkNotification(new Date());
     if (!dg) return null;
     const body = [dg.headline, ...dg.lines.slice(0, 3)].join('\n');
-    notify(dg.title, body, 'mywork');
+    notify(dg.title, body, 'today');
     if (win) win.webContents.send('digest', dg);
     return dg;
   } catch (e) {
@@ -191,6 +192,7 @@ function tick() {
     if (fired && win) win.webContents.send('changed', { automations: fired });
   } catch (e) { logError(e); }
   sendDigest(false);
+  try { if (api.chatBriefingIfDue(new Date()) && win) win.webContents.send('changed', { briefing: true }); } catch (e) { logError(e); }
   try { showNotifications(); } catch (e) { logError(e); }
 }
 
