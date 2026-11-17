@@ -4,12 +4,12 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { html, Icon, Spinner, toastError, toast, relTime, ask as confirm } from './lib.js';
 import { call, native, isDesktop } from './api.js';
 
-const KIND = { file: ['file', 'File'], item: ['table', 'Item'], customer: ['building', 'Customer'], meeting: ['phone', 'Call'], note: ['list', 'Overview'] };
+export const KIND = { file: ['file', 'File'], item: ['table', 'Item'], customer: ['building', 'Customer'], meeting: ['phone', 'Call'], case: ['spark', 'Dropped in chat'], note: ['list', 'Overview'] };
 const SUGGEST = ['What is overdue this week?', 'Who is the main contact at Northwind Traders and what devices do they have?', 'Summarise my last calls with customers', 'Find the contract that mentions payment terms'];
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
 /** Light Markdown for answers: paragraphs, lists, bold, code and [n] citations. */
-function answerHtml(text) {
+export function answerHtml(text) {
   const lines = String(text || '').split('\n');
   const out = [];
   let list = null;
@@ -33,11 +33,12 @@ function answerHtml(text) {
   return out.join('');
 }
 
-function openSource(s) {
+export function openSource(s) {
   if (s.kind === 'file') native('openPath', { path: s.path }).catch(toastError);
   else if (s.kind === 'item') window.dispatchEvent(new CustomEvent('bd-open-item', { detail: s.id }));
   else if (s.kind === 'customer') window.dispatchEvent(new CustomEvent('bd-open-customer', { detail: s.id }));
   else if (s.kind === 'meeting') window.dispatchEvent(new CustomEvent('bd-open-meeting', { detail: s.id }));
+  else if (s.kind === 'case') window.dispatchEvent(new CustomEvent('bd-open-case', { detail: s.id }));
 }
 
 function loadChat() { try { return JSON.parse(localStorage.getItem('bd.askChat') || '[]'); } catch (_) { return []; } }

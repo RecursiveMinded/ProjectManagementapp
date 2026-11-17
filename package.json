@@ -1,8 +1,8 @@
 {
   "name": "boardenda",
   "productName": "Boardenda",
-  "version": "0.1.22",
-  "description": "Local-first work management for Windows: boards, groups and items with typed columns, table, kanban, timeline, calendar, chart, workload and form views, automations, dashboards and reminders.",
+  "version": "0.2.0",
+  "description": "A personal work assistant for Windows: drop any file into one chat, get one prioritized task list, a morning briefing and reminders. Boards and views are still there under Advanced.",
   "author": "Boardenda",
   "license": "UNLICENSED",
   "private": true,

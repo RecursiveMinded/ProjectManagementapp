@@ -337,6 +337,41 @@ CREATE TABLE IF NOT EXISTS assistant_cases (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  role TEXT NOT NULL,
+  kind TEXT DEFAULT 'text',
+  content TEXT DEFAULT '',
+  data TEXT DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS task_state (
+  key TEXT PRIMARY KEY,
+  state TEXT DEFAULT '',
+  snooze_until TEXT,
+  seen INTEGER DEFAULT 0,
+  updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS task_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  key TEXT NOT NULL,
+  action TEXT NOT NULL,
+  source TEXT DEFAULT '',
+  who TEXT DEFAULT '',
+  subject TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS own_tasks (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  due TEXT,
+  who TEXT DEFAULT '',
+  priority TEXT DEFAULT 'normal',
+  note TEXT DEFAULT '',
+  done INTEGER DEFAULT 0,
+  done_at TEXT,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS report_snapshots (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,

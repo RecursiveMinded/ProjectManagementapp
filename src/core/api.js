@@ -17,6 +17,8 @@ const intake = require('./customer-intake');
 const { Knowledge } = require('./knowledge');
 const { Meetings } = require('./meetings');
 const { Capture } = require('./capture');
+const { Tasks } = require('./tasks');
+const { Chat } = require('./chat');
 const T = require('./templates');
 const io = require('./io');
 const C = require('./columns');
@@ -57,6 +59,8 @@ class AppApi {
     this.knowledge = new Knowledge({ db: this.db, dataDir: this.dataDir, store: this.store, capture: this.capture, customers: this.customers, meetings: this.meetings });
     this.briefs = new Briefs({ db: this.db, store: this.store, reports: this.reports, meetings: this.meetings, capture: this.capture });
     this.assistant = new Assistant({ db: this.db, store: this.store, capture: this.capture, knowledge: this.knowledge, customers: this.customers, meetings: this.meetings, dataDir: this.dataDir, readFile: (n, b) => this.notesText(n, b) });
+    this.tasks = new Tasks({ db: this.db, store: this.store, assistant: this.assistant, meetings: this.meetings, myWork: () => this.myWork(), setItemDone: (id) => this.setItemDone(id) });
+    this.chat = new Chat({ db: this.db, assistant: this.assistant, knowledge: this.knowledge, tasks: this.tasks, myWork: () => this.myWork() });
     try {
       if (!this.db.get("SELECT value FROM settings WHERE key='customers_adopted'")) {
         this.customers.adoptCallCustomers();
@@ -638,6 +642,43 @@ class AppApi {
   saveWidget(dashboardId, w) { return this.dashboards.saveWidget(dashboardId, w); }
   deleteWidget(id) { return this.dashboards.removeWidget(id); }
 
+  // ------------------------------------------------------- chat and tasks
+  chatHistory(o) { return this.chat.history(o); }
+  chatMessage(id) { return this.chat.get(id); }
+  chatSend(o) { return this.chat.send(o); }
+  chatClear() { return this.chat.clear(); }
+  /** Post today's briefing in the chat if it is due (the digest time has passed) and not posted yet. */
+  chatBriefingIfDue(at = new Date()) {
+    const s = this.getSettings().digest;
+    const hhmm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+    if (!s.enabled || hhmm < s.time) return null;
+    const dow = ((at.getDay() + 6) % 7) + 1;
+    if (s.frequency === 'weekly' && dow !== Number(s.weekday || 1)) return null;
+    if (s.frequency === 'weekdays' && dow > 5) return null;
+    return this.chat.briefing({ at: today(at) });
+  }
+  chatBriefing() { return this.chat.briefing({ force: true }); }
+  tasksList() { return this.tasks.list(); }
+  taskDone(key) { return this.tasks.done(key); }
+  taskSnooze(key, until) { return this.tasks.snooze(key, until); }
+  taskDismiss(key) { return this.tasks.dismiss(key); }
+  taskRestore(key) { return this.tasks.restore(key); }
+  taskSeen(keys) { return this.tasks.seen(keys); }
+  taskAdd(t) { return this.tasks.add(t); }
+  briefing() { return this.tasks.briefing(); }
+  /** Set an item's status to its first "done" label. */
+  setItemDone(itemId) {
+    const it = this.db.get('SELECT board_id FROM items WHERE id=?', [itemId]);
+    if (!it) return false;
+    const B = this.store.getBoard(it.board_id);
+    const isSub = !!(this.db.get('SELECT parent_id FROM items WHERE id=?', [itemId]) || {}).parent_id;
+    const col = B.columns.find((c) => c.scope === (isSub ? 'sub' : 'item') && c.type === 'status');
+    const lab = col && (col.settings.labels || []).find((l) => l.done);
+    if (!lab) return false;
+    this.setValue(itemId, col.id, lab.id);
+    return true;
+  }
+
   // --------------------------------------------------------------- my work
   /** Items assigned to me across all boards, bucketed by due date. */
   myWork({ includeDone = false, personId } = {}) {
@@ -820,20 +861,14 @@ class AppApi {
   markRead(ids, read) { return this.store.markRead(ids, read); }
   takeUnshown() { return this.getSettings().desktopNotifications ? this.store.takeUnshown() : []; }
 
-  /** The reminder digest of my work. */
+  /** The reminder digest: the morning briefing in short, for a desktop notification. */
   digest() {
-    const w = this.myWork();
-    const overdue = w.filter((x) => x.bucket === 'overdue');
-    const todayL = w.filter((x) => x.bucket === 'today');
-    const week = w.filter((x) => x.bucket === 'week');
+    const b = this.tasks.briefing();
     const lines = [
-      ...overdue.slice(0, 3).map((x) => `Overdue: ${x.name} (${x.boardName})`),
-      ...todayL.slice(0, 3).map((x) => `Today: ${x.name} (${x.boardName})`),
+      ...b.top.slice(0, 3).map((t) => `${t.title}${t.reason ? ` (${t.reason})` : ''}`),
+      ...(b.meetings.length ? [`${b.meetings.length} ${b.meetings.length === 1 ? 'meeting' : 'meetings'} today`] : []),
     ];
-    const headline = overdue.length || todayL.length
-      ? `${overdue.length} overdue, ${todayL.length} due today, ${week.length} more this week`
-      : week.length ? `${week.length} due later this week. Nothing overdue.` : 'Nothing due. Enjoy the clear day.';
-    return { title: 'Your Boardenda agenda', headline, lines, overdue: overdue.length, today: todayL.length, week: week.length };
+    return { title: 'Your Boardenda briefing', headline: b.headline, lines, overdue: b.counts.overdue, today: b.counts.today, week: 0 };
   }
   /** Called every minute: returns a digest when the configured slot has arrived. */
   checkNotification(at = new Date()) {

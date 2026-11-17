@@ -446,11 +446,11 @@ class Knowledge {
   }
 
   // ------------------------------------------------------------------ ask
-  async ask({ question, history = [] } = {}, { myWork } = {}) {
+  async ask({ question, history = [] } = {}, { myWork, extra } = {}) {
     const q = String(question || '').trim();
     if (!q) throw new Error('Type a question first.');
     const cfg = this.config();
-    const [files, biz] = [await this.searchFiles(q, 8), cfg.useBusiness ? this.searchBusiness(q) : []];
+    const [files, biz] = [await this.searchFiles(q, 8), cfg.useBusiness ? [...(extra ? extra(q) : []), ...this.searchBusiness(q)] : []];
     const { engine, cfg: aiCfg, localCfg } = await this.capture.pickEngine();
     const cloud = engine === 'claude';
     const fileSources = cloud && !cfg.allowCloud ? [] : files;
@@ -467,7 +467,7 @@ class Knowledge {
       `<overview>\n${this.overview(myWork)}\n</overview>`,
       ...sources.map((s) => `<source n="${s.n}" kind="${s.kind}"${s.path ? ` file="${s.path}"` : ''}${s.name ? ` name="${String(s.name).replace(/"/g, "'")}"` : ''}>\n${String(s.text).slice(0, 2400)}\n</source>`),
     ].join('\n\n');
-    const system = `You are the assistant inside Boardenda, a work management app that runs on the user's PC. Answer questions about their business using only the overview and the numbered sources: items on their boards, customers with contacts and devices, calls and meetings, and passages from documents in folders on their PC.
+    const system = `You are the assistant inside Boardenda, a work management app that runs on the user's PC. Answer questions about their business using only the overview and the numbered sources: items on their boards, customers with contacts and devices, calls and meetings, emails, files and notes they dropped into the assistant (cases), and passages from documents in folders on their PC.
 - Be direct and brief. Lead with the answer. Use short lists when there are several things.
 - Cite sources inline as [1], [2] using their numbers. Mention file names when the answer comes from a document.
 - If the sources don't contain the answer, say so plainly and suggest what to search for or which folder to add. Never invent names, numbers, dates or contact details.

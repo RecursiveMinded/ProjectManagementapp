@@ -107,7 +107,7 @@ function Notify({ s, save }) {
   const d = s.digest;
   return html`<div class="card pad">
     <${Toggle} label="Desktop notifications" hint="Show a Windows notification when you are assigned, mentioned, or an automation notifies you." on=${s.desktopNotifications} onChange=${(v) => save({ desktopNotifications: v })} />
-    <${Toggle} label="Daily digest" hint="A summary of what is overdue and due today." on=${d.enabled} onChange=${(v) => save({ digest: { enabled: v } })} />
+    <${Toggle} label="Morning briefing" hint="What to do first, today's meetings and who you are waiting on. Posted in Chat and shown as a notification." on=${d.enabled} onChange=${(v) => save({ digest: { enabled: v } })} />
     ${d.enabled ? html`<div class="grid c3 mt">
       <label class="field">How often<select class="input" value=${d.frequency} onChange=${(e) => save({ digest: { frequency: e.target.value } })}>
         <option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Weekly</option></select></label>

@@ -13,7 +13,7 @@ const MAX_FILES = 400;
 const TEXTY = /\.(md|markdown|txt|msg|eml|pdf|docx|xlsx|xlsm|csv|tsv|html?|rtf|json|png|jpe?g|webp|bmp|gif|tiff?)$/i;
 
 /** Files (and folders) from a drop or a file picker. Folders are walked; on the desktop their paths come back too. */
-async function collect(dt) {
+export async function collect(dt) {
   const files = [];
   const folders = [];
   const items = dt && dt.items ? [...dt.items] : [];
@@ -83,7 +83,7 @@ function PasteBox({ onClose, onDone, caseId }) {
 }
 
 // ------------------------------------------------------------------- settings
-function AssistantSettings({ onClose }) {
+export function AssistantSettings({ onClose }) {
   const [cfg, setCfg] = useState(null);
   const [notes, setNotes] = useState([]);
   const load = () => { call('assistantConfig').then(setCfg, toastError); call('assistantNotes').then(setNotes, () => {}); };
@@ -116,7 +116,7 @@ function AssistantSettings({ onClose }) {
 }
 
 // ------------------------------------------------------------------- case
-function CaseView({ id, nav, onChanged, onDeleted }) {
+export function CaseView({ id, nav, onChanged, onDeleted }) {
   const [c, setC] = useState(null);
   const [answers, setAnswers] = useState({});
   const [extra, setExtra] = useState('');
