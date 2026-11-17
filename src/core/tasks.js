@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const { uid, now, today, addDays, parseJson } = require('./util');
 
 const PRI_POINTS = { urgent: 40, high: 25, normal: 10, low: 0 };
+const STOP = new Set(['the', 'and', 'for', 'with', 'completed', 'complete', 'done', 'finished', 'finish', 'closed', 'sent', 'submitted', 'delivered', 'that', 'this', 'have', 'has', 'was', 'just', 'today', 'task', 'all']);
 
 function hash(s) { return crypto.createHash('sha1').update(String(s || '')).digest('hex').slice(0, 10); }
 function daysFrom(a, b) { return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 864e5); }
@@ -92,14 +93,23 @@ class Tasks {
       out.push({ key: `own:${t.id}`, source: 'own', sourceId: t.id, title: t.title, mine: !t.who, who: t.who || '', due: t.due || null, priority: t.priority || 'normal', context: t.note || '', createdAt: t.created_at, link: null, canDone: true });
     }
 
+    const edits = Object.fromEntries(this.db.all('SELECT * FROM task_edits').map((r) => [r.key, r]));
     const list = [];
     for (const t of out) {
       const s = st[t.key];
+      const e = edits[t.key];
+      if (e) {
+        if (e.title) t.title = e.title;
+        if (e.due) t.due = e.due === 'none' ? null : e.due;
+        if (e.priority) { t.priority = e.priority; t.pinned = true; }
+      }
       t.state = 'open';
       if (s && s.state === 'done') continue;
       if (s && s.state === 'dismissed') { if (!includeHidden) continue; t.state = 'dismissed'; }
       if (s && s.snooze_until && s.snooze_until > at) { if (!includeHidden) continue; t.state = 'snoozed'; t.snoozeUntil = s.snooze_until; }
       t.isNew = !s || !s.seen;
+      t.needsDate = t.mine && !t.due;
+      t.stalled = !t.mine && ((t.due && t.due <= at) || (t.createdAt && Date.now() - Date.parse(t.createdAt) > 3 * 864e5));
       Object.assign(t, score(t, at));
       list.push(t);
     }
@@ -151,6 +161,76 @@ class Tasks {
     return true;
   }
 
+  /** Change a task where it shows: its words, target date (YYYY-MM-DD, or '' to clear) or priority ('auto' to let Boardenda decide). */
+  edit(key, patch = {}) {
+    const t = this.find(key);
+    const cur = this.db.get('SELECT * FROM task_edits WHERE key=?', [key]) || {};
+    const n = { title: cur.title || null, due: cur.due || null, priority: cur.priority || null };
+    if (patch.title !== undefined) { const v = String(patch.title || '').trim().slice(0, 500); if (v) n.title = v; }
+    if (patch.due !== undefined) n.due = /^\d{4}-\d{2}-\d{2}$/.test(String(patch.due || '')) ? patch.due : 'none';
+    if (patch.priority !== undefined) n.priority = PRI_POINTS[patch.priority] != null ? patch.priority : null;
+    // Write dates and words back where they live, so the plan, meeting or own task stays right too.
+    if (t.source === 'own') {
+      if (patch.title !== undefined && n.title) this.db.run('UPDATE own_tasks SET title=? WHERE id=?', [n.title, t.sourceId]);
+      if (patch.due !== undefined) this.db.run('UPDATE own_tasks SET due=? WHERE id=?', [n.due === 'none' ? null : n.due, t.sourceId]);
+      if (patch.priority !== undefined) this.db.run('UPDATE own_tasks SET priority=? WHERE id=?', [n.priority || 'normal', t.sourceId]);
+    } else if (t.source === 'meeting') {
+      if (patch.due !== undefined) this.meetings.updateAction(t.sourceId, { due: n.due === 'none' ? '' : n.due });
+      if (patch.title !== undefined && n.title) this.meetings.updateAction(t.sourceId, { text: n.title });
+    } else if (t.source === 'case' && patch.due !== undefined) {
+      const c = this.assistant.get(t.sourceId);
+      const i = c.analysis.plan.findIndex((s) => !s.done && hash(s.step) === key.split(':')[2]);
+      if (i >= 0) this.assistant.update(t.sourceId, { step: { index: i, due: n.due === 'none' ? '' : n.due } });
+    }
+    this.db.run('INSERT INTO task_edits(key,title,due,priority,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET title=excluded.title, due=excluded.due, priority=excluded.priority, updated_at=excluded.updated_at',
+      [key, n.title, n.due, n.priority, now()]);
+    this.setState(key, { seen: 1 });
+    this.log(t, 'edit');
+    return this.find(key);
+  }
+
+  /** The open task that best matches some words (for "completed the Omni battle card" in the chat). */
+  match(text) {
+    const words = (s) => new Set((String(s).toLowerCase().match(/[a-z0-9]{3,}/g) || []).filter((w) => !STOP.has(w)));
+    const want = words(text);
+    if (!want.size) return [];
+    return this.all().map((t) => {
+      const have = words(`${t.title} ${t.context || ''}`);
+      let hit = 0;
+      for (const w of want) if (have.has(w) || [...have].some((h) => h.length > 4 && w.length > 4 && (h.startsWith(w) || w.startsWith(h)))) hit += 1;
+      return { t, m: hit / want.size };
+    }).filter((x) => x.m > 0).sort((a, b) => b.m - a.m || b.t.score - a.t.score);
+  }
+
+  /**
+   * What to work on which day: the next five working days, about five tasks a day. Overdue and due-today work
+   * goes first, dated work lands on or before its date, and undated work fills the free slots by priority.
+   */
+  week({ at = today(), days = 5, perDay = 5 } = {}) {
+    const dates = [];
+    for (let d = at; dates.length < days; d = addDays(d, 1)) { const wd = new Date(`${d}T12:00:00Z`).getUTCDay(); if (wd !== 0 && wd !== 6) dates.push(d); }
+    if (!dates.includes(at)) dates.unshift(at);
+    const slots = Object.fromEntries(dates.map((d) => [d, []]));
+    const mine = this.all({ at }).filter((t) => t.mine);
+    const dated = mine.filter((t) => t.due).sort((a, b) => a.due.localeCompare(b.due) || b.score - a.score);
+    const undated = mine.filter((t) => !t.due);
+    const later = [];
+    for (const t of dated) {
+      if (t.due <= dates[0]) { slots[dates[0]].push(t); continue; }
+      let day = [...dates].reverse().find((d) => d <= t.due);
+      if (!day) { later.push(t); continue; }
+      // A full day moves work earlier, never later than its date.
+      while (slots[day].length >= perDay && dates.indexOf(day) > 0) day = dates[dates.indexOf(day) - 1];
+      if (t.due > dates[dates.length - 1]) { later.push(t); continue; }
+      slots[day].push(t);
+    }
+    for (const t of undated) {
+      const day = dates.find((d) => slots[d].length < perDay);
+      if (day) slots[day].push(t); else later.push(t);
+    }
+    return { days: dates.map((d) => ({ date: d, tasks: slots[d].sort((a, b) => b.score - a.score), load: slots[d].length, over: slots[d].length > perDay })), later, perDay };
+  }
+
   snooze(key, until) {
     const t = this.find(key);
     const d = /^\d{4}-\d{2}-\d{2}$/.test(String(until || '')) ? until : addDays(today(), 1);
@@ -164,6 +244,18 @@ class Tasks {
     this.setState(key, { state: 'dismissed', snooze_until: null, seen: 1 });
     this.log(t, 'dismiss');
     return true;
+  }
+
+  /** Put a task that was ticked off by mistake back on the list. */
+  reopen(key) {
+    const [src, id, h] = key.split(':');
+    if (src === 'case') {
+      const c = this.assistant.get(id);
+      const i = ((c.analysis && c.analysis.plan) || []).findIndex((s) => s.done && hash(s.step) === h);
+      if (i >= 0) this.assistant.update(id, { step: { index: i, done: false } });
+    } else if (src === 'meeting' || src === 'ma') this.meetings.updateAction(id, { done: false });
+    else if (src === 'own') this.db.run('UPDATE own_tasks SET done=0, done_at=NULL WHERE id=?', [id]);
+    return this.restore(key);
   }
 
   /** Bring a snoozed or dismissed task back. */

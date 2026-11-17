@@ -1105,3 +1105,127 @@ test('chat, one task list, priority and the morning briefing', async () => {
   api.chatClear();
   assert.equal(api.chatHistory().length, 0);
 });
+
+test('managing tasks: target dates, priority, words, "completed …" in chat, reopen and the week plan', async () => {
+  const api = await fresh();
+  api.setAi({ provider: 'off' });
+  const t = today();
+  const a = api.taskAdd({ title: 'Finish the market review deck' });
+  const b = api.taskAdd({ title: 'Send Omni battle card to the field', due: addDays(t, 2) });
+  const w = api.taskAdd({ title: 'Price file from distribution', who: 'Dana Lee', due: addDays(t, -1) });
+  let L = api.tasksList();
+  const ta = L.mine.find((x) => x.key === a);
+  assert.ok(ta.needsDate, 'an undated task of mine asks for a date');
+  assert.ok(L.waiting.find((x) => x.key === w).stalled, 'an overdue follow-up is stalled');
+  // Target date, priority and words, kept where the task lives.
+  let e = api.taskEdit(a, { due: addDays(t, 1), priority: 'urgent', title: 'Finish the market review deck v2' });
+  assert.equal(e.due, addDays(t, 1));
+  assert.equal(e.priority, 'urgent');
+  assert.ok(e.pinned);
+  assert.equal(e.title, 'Finish the market review deck v2');
+  assert.ok(!e.needsDate);
+  assert.equal(api.tasksList().mine[0].key, a, 'urgent goes first');
+  assert.equal(api.db.get('SELECT due FROM own_tasks WHERE id=?', [a.split(':')[1]]).due, addDays(t, 1));
+  e = api.taskEdit(a, { priority: 'auto', due: '' });
+  assert.ok(!e.pinned);
+  assert.equal(e.due, null);
+  // Dates on a dropped file's plan step go back to the plan.
+  const [, r] = await api.chatSend({ text: 'Remind Jordan to send the Q4 forecast. I need to update the Kroger planogram.' });
+  await api.assistantSettle(r.caseIds[0]);
+  const msg = api.chatMessage(r.id);
+  assert.ok(msg.cases[0].steps.length, 'the file card lists its steps as tasks');
+  const step = [...api.tasksList().mine, ...api.tasksList().waiting].find((x) => x.source === 'case');
+  api.taskEdit(step.key, { due: addDays(t, 3) });
+  const c = api.assistantCase(step.sourceId);
+  assert.ok(c.analysis.plan.some((s) => s.step === step.title && s.due === addDays(t, 3)), 'date written back to the plan');
+  // "completed the omni battle card" in the chat ticks it off.
+  const [, done] = await api.chatSend({ text: 'completed the Omni battle card' });
+  assert.equal(done.kind, 'tasks');
+  assert.match(done.content, /Ticked off: Send Omni battle card/);
+  assert.equal(done.tasks[0].state, 'done');
+  assert.ok(!api.tasksList().mine.some((x) => x.key === b));
+  api.taskReopen(b);
+  assert.ok(api.tasksList().mine.some((x) => x.key === b), 'reopened');
+  // A vague one shows the likely tasks to tick instead.
+  api.taskAdd({ title: 'Send market pricing to Kroger' });
+  const [, vague] = await api.chatSend({ text: 'sent the market stuff' });
+  assert.equal(vague.kind, 'tasks');
+  assert.match(vague.content, /Which one|Is this the one/);
+  assert.ok(vague.tasks.length >= 1);
+  // Briefing rows are the live tasks.
+  const bid = api.chat.briefing({ force: true });
+  assert.ok(api.chatMessage(bid).briefing.top.every((x) => typeof x.score === 'number'));
+  // The week: five working days, dated work on or before its date.
+  for (let i = 0; i < 12; i++) api.taskAdd({ title: `Filler task ${i}` });
+  const wk = api.tasksWeek();
+  assert.equal(wk.days.length >= 5, true);
+  assert.ok(wk.days.every((d) => new Date(`${d.date}T12:00:00Z`).getUTCDay() % 6 !== 0 || d.date === t));
+  const placed = wk.days.flatMap((d) => d.tasks.map((x) => ({ ...x, day: d.date })));
+  assert.ok(placed.filter((x) => x.due).every((x) => x.day <= x.due || x.due < wk.days[0].date), 'never planned after its date');
+  assert.ok(wk.days.every((d) => d.tasks.every((x) => x.mine)), 'only my tasks are planned');
+});
+
+test('archives: OneNote sections and notebooks, web pages, and Outlook emails as .eml', () => {
+  const zlib = require('zlib');
+  const A = require('../src/core/archives');
+  const mail = require('../src/core/mail');
+  // A .one section: UTF-16 text runs among binary records and style names.
+  const u16 = (s) => Buffer.from(s, 'utf16le');
+  const junk = Buffer.from([0, 0, 1, 2, 0xff, 0xfe, 0x10, 0x00, 0x00, 0xd8]);
+  const one = Buffer.concat([junk, u16('Calibri'), junk, u16('Kroger reset plan'), junk, u16('Send the planogram to Joe by Friday'), junk, u16('{12345678-1234-1234-1234-123456789abc}'), junk, u16('Kroger reset plan'), junk]);
+  const text = A.oneText(one);
+  assert.match(text, /Kroger reset plan/);
+  assert.match(text, /Send the planogram to Joe by Friday/);
+  assert.doesNotMatch(text, /Calibri|12345678/);
+  assert.equal(text.match(/Kroger reset plan/g).length, 1, 'repeats dropped');
+  // A .onepkg notebook is a cabinet of sections (MSZIP, two blocks sharing a window).
+  const f1 = one;
+  const f2 = Buffer.concat([junk, u16('Omni battle card notes'), junk]);
+  const plain = Buffer.concat([f1, f2]);
+  const p1 = plain.subarray(0, 40);
+  const p2 = plain.subarray(40);
+  const blocks = [Buffer.concat([Buffer.from('CK'), zlib.deflateRawSync(p1)]), Buffer.concat([Buffer.from('CK'), zlib.deflateRawSync(p2, { dictionary: p1 })])];
+  const names = ['Work/Kroger.one', 'Work/Omni.one'];
+  const fileRecs = names.map((n, i) => { const h = Buffer.alloc(16); h.writeUInt32LE(i ? f2.length : f1.length, 0); h.writeUInt32LE(i ? f1.length : 0, 4); return Buffer.concat([h, Buffer.from(`${n}\0`, 'latin1')]); });
+  const head = Buffer.alloc(36);
+  const folder = Buffer.alloc(8);
+  const coffFiles = 36 + 8;
+  const filesLen = fileRecs.reduce((s, x) => s + x.length, 0);
+  const dataStart = coffFiles + filesLen;
+  const dataRecs = blocks.map((d, i) => { const h = Buffer.alloc(8); h.writeUInt16LE(d.length, 4); h.writeUInt16LE(i ? p2.length : p1.length, 6); return Buffer.concat([h, d]); });
+  head.write('MSCF', 0, 'latin1');
+  head.writeUInt32LE(coffFiles, 16);
+  head[24] = 3; head[25] = 1;
+  head.writeUInt16LE(1, 26);
+  head.writeUInt16LE(2, 28);
+  folder.writeUInt32LE(dataStart, 0);
+  folder.writeUInt16LE(2, 4);
+  folder.writeUInt16LE(1, 6);
+  const cab = Buffer.concat([head, folder, ...fileRecs, ...dataRecs]);
+  cab.writeUInt32LE(cab.length, 8);
+  const files = A.cabFiles(cab);
+  assert.deepEqual(files.map((f) => f.name), names);
+  assert.ok(Buffer.compare(files[0].bytes, f1) === 0 && Buffer.compare(files[1].bytes, f2) === 0);
+  const secs = A.onepkgSections(cab);
+  assert.equal(secs.length, 2);
+  assert.match(secs[1].text, /Omni battle card notes/);
+  assert.throws(() => A.cabFiles(Buffer.from('not a cab file at all')), /not a OneNote/);
+  // A OneNote page saved as a single web page.
+  const mht = 'From: <Saved by OneNote>\r\nSubject: Weekly review\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<html><body><p>Follow up with Dana on the price file</p></body></html>\r\n';
+  const m = A.mhtText(Buffer.from(mht));
+  assert.equal(m.title, 'Weekly review');
+  assert.match(m.text, /Follow up with Dana on the price file/);
+  // An email from a .pst is handed on as an .eml that reads back the same.
+  const eml = A.toEml({ subject: 'Réunion PO 4471', from: '"Sam" <sam@partner.example>', to: 'me@example.com', date: '2026-11-10T15:00:00.000Z', body: 'Can you confirm the ship date?', attachments: ['po.pdf'] });
+  const back = mail.parseEml(eml);
+  assert.equal(back.subject, 'Réunion PO 4471');
+  assert.match(back.text, /confirm the ship date/);
+  assert.match(back.text, /po\.pdf/);
+  // A real Outlook data file, when the fixture is around.
+  const pst = process.env.PST_FIXTURE;
+  if (pst && fs.existsSync(pst)) {
+    const r = A.readPst(pst, { limit: 5 });
+    assert.ok(r.total > 0 && r.emails.length <= 5);
+    assert.ok(r.emails.every((x, i) => !i || String(r.emails[i - 1].date) >= String(x.date)), 'newest first');
+  }
+});

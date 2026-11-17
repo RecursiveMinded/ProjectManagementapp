@@ -933,7 +933,7 @@ a.link { color: var(--brand); cursor: pointer; display: inline-flex; align-items
 .td-head { display: flex; gap: 12px; align-items: center; color: var(--brand); margin-bottom: 14px; }
 .td-head > .grow { color: var(--text); }
 .td-headline { font-size: 16px; display: block; }
-.td-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; align-items: start; }
+.td-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 .td-sec { padding: 12px 14px; }
 .td-sec h3 { margin: 0 0 6px; font-size: 14px; }
 .td-first { grid-row: span 2; }
@@ -943,3 +943,36 @@ a.link { color: var(--brand); cursor: pointer; display: inline-flex; align-items
 .td-time { flex: none; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; width: 44px; }
 .td-q { margin-top: 8px; color: #c27c00; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
 @media (max-width: 900px) { .td-grid { grid-template-columns: 1fr; } .td-first { grid-row: auto; } .tk-add { flex-wrap: wrap; } }
+
+/* v0.2.1: every open task can be ticked, dated and prioritised where it shows */
+.ch-case-wrap { display: flex; flex-direction: column; min-width: 0; }
+.ch-steps { display: flex; flex-direction: column; padding: 0 2px; min-width: 0; }
+.ch-case-wrap .ch-steps { margin: 2px 0 0 26px; }
+.ch-steps .tk-row { padding: 5px 4px; }
+.ch-tasks { margin-top: 6px; }
+.ch-bhead { font-weight: 600; font-size: 13px; margin: 10px 0 2px; color: var(--muted); }
+.tk-row.done .tk-title { text-decoration: line-through; color: var(--muted); }
+.tk-title .inline-text { cursor: text; }
+.tk-title .inline-input { width: 100%; font: inherit; }
+button.tk-due { border: 0; font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+button.tk-due:hover:not(:disabled) { outline: 1px solid var(--brand); }
+button.tk-due:disabled { cursor: default; }
+.tk-due.ask { color: #c27c00; background: rgba(214, 140, 0, .12); }
+.tk-due.none { background: none; opacity: .55; }
+.tk-row:hover .tk-due.none { opacity: 1; }
+.tk-pri { flex: none; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 6px; background: var(--hover); color: var(--muted); }
+.tk-pri.urgent { color: var(--bad); }
+.tk-pri.high { color: #d38a00; }
+.tk-nudge { flex: none; }
+.tk-datepick { padding: 4px 8px 6px; }
+.tk-datepick .input { width: 100%; }
+.td-week { margin-top: 14px; }
+.td-days { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 6px; }
+.td-day { border: 1px solid var(--line); border-radius: 10px; padding: 8px; min-width: 0; }
+.td-day.now { border-color: var(--brand); }
+.td-dayhead { display: flex; gap: 6px; align-items: baseline; margin-bottom: 4px; }
+.td-load { margin-left: auto; font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--hover); color: var(--muted); }
+.td-load.over { background: rgba(220, 60, 60, .12); color: var(--bad); }
+.tk-mini { display: flex; gap: 6px; align-items: center; padding: 3px 0; font-size: 13px; min-width: 0; }
+.tk-mini .clip { cursor: pointer; }
+.tk-mini .clip:hover { text-decoration: underline; }

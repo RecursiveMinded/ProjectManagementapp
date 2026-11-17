@@ -20,18 +20,21 @@ export const TOPICS = [
 
 export const ARTICLES = [
   // Chat, Today and Tasks
-  { id: 'chat', topic: 'daily', title: 'Chat: drop any file, ask anything', keys: 'chat home drop file email msg eml pdf word excel picture ocr markdown onenote teams paste note question assistant', body: `
+  { id: 'chat', topic: 'daily', title: 'Chat: drop any file, ask anything', keys: 'chat home drop file email msg eml pst outlook data file pdf word excel picture ocr markdown onenote one onepkg mht notebook teams paste note question assistant completed done', body: `
 Chat is where Boardenda starts. Drop anything into it and it is read on this PC.
 
 ## What you can drop or type
-- **Files:** Outlook emails (.msg, .eml), PDF, Word, Excel and CSV, Markdown and OneNote exports, text, and pictures or scans (read with OCR). Drop several at once: each one gets its own card.
+- **Files:** Outlook emails (.msg, .eml), PDF, Word, Excel and CSV, Markdown, text, and pictures or scans (read with OCR). Drop several at once: each one gets its own card.
+- **Outlook data files (.pst):** the emails from the last 30 days are read, newest 100 first, each as its own card. Emails already read are skipped, so drop the same file again later to pick up the next ones. Export one from Outlook with **File › Open & Export › Import/Export › Export to a file**.
+- **OneNote:** a section (.one), a whole notebook (.onepkg, from **File › Export › Notebook**) or a page saved as a single web page (.mht). Each section is read on its own. OneNote PDF and Word exports work like any other PDF or Word file.
+- **What you finished:** type "completed the Omni battle card" or "sent the pricing to Lee". The matching task is ticked off. If more than one could match, you get the likely ones to tick.
 - **A pasted email or Teams chat:** paste it into the box and press Enter.
 - **A note:** for example "Remind Jordan to send the Q4 forecast by Friday". It is turned into tasks.
 - **A question:** for example "What did Lee ask for?" or "Who am I waiting on?". Answers come from the files you dropped, your customers, calls, boards and the folders you let it search, with numbered sources.
 - **"What should I do today?"** (or the **Briefing** button) posts your briefing. See [[today]].
 
 ## What you get back
-Each file shows who it is from, a short summary, how many tasks it found for you, how many are waiting on others, drafted replies and questions the assistant has. Click the card to see the full plan, draft replies and sources, and to answer its questions.
+Each file shows who it is from, a short summary, how many tasks it found for you, how many are waiting on others, drafted replies and questions the assistant has. Its open tasks are listed under the card, so you can tick them off, give them a date or a priority right there (see [[tasks]]). Click the card to see the full plan, draft replies and sources, and to answer its questions.
 
 > Drop a folder to add it to what the assistant knows, instead of reading every file in it as a new item.
 
@@ -42,10 +45,11 @@ The gear button opens the assistant settings: a few lines about you and your wor
 - **Do first** lists your five highest-priority tasks, each with the reason: overdue, due today, urgent or high priority, or new.
 - **Waiting on others** shows tasks owned by someone else, the late ones first, so you know who to chase.
 - **New since yesterday** lists the files and notes you dropped. A line at the bottom points to any questions the assistant has for you.
+- **Your week** plans what to work on which day over the next five working days, about five tasks a day. Overdue and due-today work goes first, dated work lands on or before its date (moving earlier when a day is full), and undated work fills the free slots by priority. The number on each day is how many tasks are on it; red means too many.
 
 ## The morning briefing
-At the time set in **Settings › Notifications** (8:30 by default), the briefing is posted in [[chat]] and shown as a Windows notification. Ask "What should I do today?" in Chat, or use **Post briefing in chat**, to get it at any time.` },
-  { id: 'tasks', topic: 'daily', title: 'One task list', keys: 'tasks todo list priority snooze dismiss done waiting mine reminder', body: `
+At the time set in **Settings › Notifications** (8:30 by default), the briefing is posted in [[chat]] and shown as a Windows notification. Every task in it has a checkbox, a date and the **⋯** menu, so you can work it straight from the chat. Ask "What should I do today?" in Chat, or use **Post briefing in chat**, to get it at any time.` },
+  { id: 'tasks', topic: 'daily', title: 'One task list', keys: 'tasks todo list priority urgent auto snooze dismiss done undo reopen waiting mine reminder target date due edit rename nudge check in follow up questions clarify', body: `
 **Tasks** is one list of everything on you and everything you are waiting on, wherever it came from:
 - steps in the plans made from files and notes you dropped in [[chat]],
 - items assigned to you on boards,
@@ -59,6 +63,17 @@ The list is sorted by priority: overdue first, then due today, then by urgency a
 - **Snooze** hides it until tomorrow, next Monday or for a week.
 - **x** dismisses a task that is not needed. Find it again under **Dismissed** and press **Restore**.
 - A blue dot marks tasks you have not seen yet.
+
+## Manage each task where it shows
+Every open task works the same way in Chat, Today and Tasks:
+- **Target date:** click the date to change it (Today, Tomorrow, This Friday, Next Monday, In two weeks, or any date). A task of yours with no date shows **Set date**: dated work gets planned into your week. A date set on a step from a dropped file is written back to its plan.
+- **Words:** click the title to change it.
+- **Priority:** in the **⋯** menu. **Auto** (the default) lets Boardenda rank it from dates, who it is from and what you do. Pick Urgent, High, Normal or Low to fix it yourself, and Auto to hand it back.
+- **Ask what is needed:** in the **⋯** menu. Chat opens and lists the open questions for that task, who can answer each, and anything missing.
+- **Undo:** ticked something by mistake? Press **Undo**, or untick it in the chat.
+
+## Follow-ups that are stuck
+A task waiting on someone else that is past its date, or open for more than three days, shows **Nudge**. It copies a short check-in message, ready to paste into Teams or an email.
 
 > Every done, snooze and dismiss is remembered, so Boardenda can learn what matters to you.` },
   // Getting started

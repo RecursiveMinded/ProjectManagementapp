@@ -10,7 +10,7 @@ const PRI = { urgent: ['Urgent', 'var(--bad)'], high: ['High', '#d38a00'], norma
 const OWNER = { me: 'Me', internal: 'Internal', 'third party': 'Third party' };
 const KIND_ICON = { email: 'mail', document: 'file', text: 'text', chat: 'msg' };
 const MAX_FILES = 400;
-const TEXTY = /\.(md|markdown|txt|msg|eml|pdf|docx|xlsx|xlsm|csv|tsv|html?|rtf|json|png|jpe?g|webp|bmp|gif|tiff?)$/i;
+const TEXTY = /\.(md|markdown|txt|msg|eml|pst|one|onepkg|mht|mhtml|pdf|docx|xlsx|xlsm|csv|tsv|html?|rtf|json|png|jpe?g|webp|bmp|gif|tiff?)$/i;
 
 /** Files (and folders) from a drop or a file picker. Folders are walked; on the desktop their paths come back too. */
 export async function collect(dt) {
@@ -18,7 +18,13 @@ export async function collect(dt) {
   const folders = [];
   const items = dt && dt.items ? [...dt.items] : [];
   const entries = items.map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null));
-  const read = async (file, rel) => { if (files.length < MAX_FILES && file.size < 40e6) files.push({ name: rel || file.name, bytes: new Uint8Array(await file.arrayBuffer()) }); };
+  const read = async (file, rel) => {
+    if (files.length >= MAX_FILES) return;
+    // A big Outlook .pst is opened from disk on the desktop, not copied into memory.
+    const p = /\.pst$/i.test(file.name) ? pathFor(file) : '';
+    if (p) files.push({ name: rel || file.name, path: p });
+    else if (file.size < (/\.(pst|onepkg)$/i.test(file.name) ? 400e6 : 40e6)) files.push({ name: rel || file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
+  };
   const walk = async (entry, prefix) => {
     if (files.length >= MAX_FILES) return;
     if (entry.isFile) { if (TEXTY.test(entry.name)) await new Promise((res) => entry.file((f) => read(f, `${prefix}${entry.name}`).then(res, res), res)); return; }
