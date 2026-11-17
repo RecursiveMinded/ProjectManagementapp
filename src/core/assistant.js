@@ -10,11 +10,12 @@ const fs = require('fs');
 const path = require('path');
 const { uid, now, today, addDays, parseJson } = require('./util');
 const mail = require('./mail');
+const archives = require('./archives');
 
 const CATEGORIES = ['customer issue', 'request', 'approval', 'escalation', 'information', 'meeting', 'finance', 'order or logistics', 'technical', 'internal', 'other'];
 const PRIORITIES = ['urgent', 'high', 'normal', 'low'];
 const STATUSES = ['open', 'waiting', 'done'];
-const READABLE = /\.(msg|eml|pdf|docx|xlsx|xlsm|csv|tsv|txt|md|html?|rtf|xml|json|log|png|jpe?g|bmp|gif|webp|tiff?)$/i;
+const READABLE = /\.(msg|eml|pdf|docx|xlsx|xlsm|csv|tsv|txt|md|html?|mht|mhtml|one|rtf|xml|json|log|png|jpe?g|bmp|gif|webp|tiff?)$/i;
 const MAX_TEXT = 60000;
 
 const DEFAULT_PROFILE = 'I run North America retail for Ingenico (payment terminals and services for retailers). I work with retail customers, partners and resellers, and internal teams such as sales, product, support, operations, finance and legal.';
@@ -62,6 +63,15 @@ class Assistant {
     this.dir = dataDir ? path.join(dataDir, 'assistant') : null;
     this.readFile = readFile; // (name, bytes) => text, for documents
     this.running = new Map();
+    this.busy = 0;
+    this.waiting = [];
+  }
+
+  /** Run at most two plans at a time, so dropping a whole mailbox does not swamp the AI. */
+  async slot(fn) {
+    if (this.busy >= 2) await new Promise((res) => this.waiting.push(res));
+    this.busy += 1;
+    try { return await fn(); } finally { this.busy -= 1; const next = this.waiting.shift(); if (next) next(); }
   }
 
   // ------------------------------------------------------------- settings
@@ -91,6 +101,9 @@ class Assistant {
       return { name, kind: 'email', email: { subject: e.subject, from: e.from, to: e.to, cc: e.cc, date: e.date }, text: e.text, attachments: atts, raw: e.attachments };
     }
     if (ext === '.json') return { name, kind: 'document', text: Buffer.from(bytes).toString('utf8'), attachments: [] };
+    if (ext === '.mht' || ext === '.mhtml') { const r = archives.mhtText(bytes); return { name, kind: 'document', title: r.title, text: r.title ? `${r.title}\n\n${r.text}` : r.text, attachments: [] }; }
+    if (ext === '.one') return { name, kind: 'document', text: archives.oneText(bytes), attachments: [] };
+    if (ext === '.pst' || ext === '.onepkg') throw new Error('Drop Outlook .pst files and OneNote notebooks (.onepkg) in Chat: each email or section is read on its own.');
     const text = await this.readFile(name, bytes);
     return { name, kind: 'document', text: String(text || ''), attachments: [] };
   }
@@ -172,7 +185,7 @@ class Assistant {
       this.db.run('UPDATE assistant_cases SET source=?, text=?, sender=?, title=?, state=?, updated_at=? WHERE id=?',
         [JSON.stringify(src), body, email ? email.from : '', email && email.subject ? email.subject : src.chat ? 'Chat conversation' : firstName.replace(/\.[a-z0-9]+$/i, ''), 'thinking', now(), id]);
       if (src.chat) this.db.run("UPDATE assistant_cases SET kind='chat' WHERE id=?", [id]);
-      await this.analyze(id);
+      await this.slot(() => this.analyze(id));
     })().catch((e) => { this.db.run("UPDATE assistant_cases SET state='error', error=?, updated_at=? WHERE id=?", [String(e.message || e).slice(0, 400), now(), id]); })
       .finally(() => this.running.delete(id));
     this.running.set(id, job);

@@ -665,6 +665,9 @@ class AppApi {
   taskRestore(key) { return this.tasks.restore(key); }
   taskSeen(keys) { return this.tasks.seen(keys); }
   taskAdd(t) { return this.tasks.add(t); }
+  taskEdit(key, patch) { return this.tasks.edit(key, patch); }
+  taskReopen(key) { return this.tasks.reopen(key); }
+  tasksWeek() { return this.tasks.week(); }
   briefing() { return this.tasks.briefing(); }
   /** Set an item's status to its first "done" label. */
   setItemDone(itemId) {

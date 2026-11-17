@@ -361,6 +361,13 @@ CREATE TABLE IF NOT EXISTS task_events (
   who TEXT DEFAULT '',
   subject TEXT DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS task_edits (
+  key TEXT PRIMARY KEY,
+  title TEXT,
+  due TEXT,
+  priority TEXT,
+  updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS own_tasks (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,

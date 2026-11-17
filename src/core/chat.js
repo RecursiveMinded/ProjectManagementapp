@@ -6,10 +6,20 @@
 // to the assistant too. The morning briefing is posted here as well.
 // History is kept in the database, so it survives restarts.
 
-const { now, today, parseJson } = require('./util');
+const fs = require('fs');
+const crypto = require('crypto');
+const { now, today, addDays, parseJson } = require('./util');
+const archives = require('./archives');
+const { hash } = require('./tasks');
+
+const PST_DAYS = 30;
+const PST_LIMIT = 100;
 
 const QUESTION = /^(who|what|when|where|why|how|which|whose|is|are|was|were|do|does|did|can|could|should|would|will|has|have|had|any|list|show|find|tell|summari[sz]e|give)\b/i;
 const BRIEF = /^(brief(ing)?|today|good morning|morning|what('?s| is) (on|up|next)( for)?( today)?|what should i (do|work on)( first| next| today)?|what('?s| is) (my )?(priority|priorities)|plan my day)\b/i;
+
+// "completed the Omni battle card", "done with the price file", "sent the quote to Joe"
+const DONE = /^(i\s+)?(just\s+|have\s+|'ve\s+)?(completed?|done|finished|closed( out)?|sent|submitted|delivered|wrapped up|ticked off|mark(ed)? (as )?done)\b/i;
 
 function isQuestion(text) {
   const t = String(text || '').trim();
@@ -31,24 +41,49 @@ class Chat {
     return this.db.get('SELECT last_insert_rowid() AS id').id;
   }
 
-  shape(r) {
+  /** Open tasks by key, so a message shows each task as it is now (its date, priority, words). */
+  live() {
+    const map = {};
+    for (const t of this.tasks.all()) map[t.key] = t;
+    return map;
+  }
+
+  shape(r, live = null) {
     const data = parseJson(r.data, {});
     const m = { id: r.id, at: r.ts, role: r.role, kind: r.kind, content: r.content, ...data };
+    const need = data.caseIds || data.briefing || data.keys;
+    const open = need ? (live || this.live()) : {};
     if (data.caseIds) {
       m.cases = data.caseIds.map((id) => {
         try {
           const c = this.assistant.get(id);
           const plan = (c.analysis && c.analysis.plan) || [];
-          return { id, title: c.title, state: c.state, error: c.error, summary: c.summary, priority: c.priority, due: c.due, sender: c.sender, files: c.files, kind: c.kind,
+          const steps = plan.filter((s) => s.step).map((s) => {
+            const key = `case:${id}:${hash(s.step)}`;
+            return open[key] || { key, title: s.step, mine: s.owner === 'me', who: s.owner === 'me' ? '' : (s.who || (s.owner === 'internal' ? 'Internal' : 'Third party')), due: s.due || null, state: s.done ? 'done' : 'hidden' };
+          });
+          return { id, title: c.title, state: c.state, error: c.error, summary: c.summary, priority: c.priority, due: c.due, sender: c.sender, files: c.files, kind: c.kind, steps,
             mine: plan.filter((s) => !s.done && s.owner === 'me').length, waiting: plan.filter((s) => !s.done && s.owner !== 'me').length, questions: c.questions, replies: ((c.analysis && c.analysis.replies) || []).length };
         } catch (_) { return { id, gone: true }; }
       });
+    }
+    if (data.briefing) {
+      m.briefing = { ...data.briefing, top: (data.briefing.top || []).filter((x) => open[x.key]).map((x) => open[x.key]), waiting: (data.briefing.waiting || []).filter((x) => open[x.key]).map((x) => open[x.key]) };
+    }
+    if (data.keys) {
+      // Tasks a message is about: open ones as they are now; ones ticked off here show as done.
+      m.tasks = data.keys.map((k) => open[k] || ((data.done || []).includes(k) ? { ...((data.snap || {})[k] || { title: 'Task' }), key: k, state: 'done' } : null)).filter(Boolean);
     }
     return m;
   }
 
   history({ limit = 200 } = {}) {
-    return this.db.all('SELECT * FROM (SELECT * FROM chat_messages ORDER BY id DESC LIMIT ?) ORDER BY id', [limit]).map((r) => this.shape(r));
+    let live = null;
+    return this.db.all('SELECT * FROM (SELECT * FROM chat_messages ORDER BY id DESC LIMIT ?) ORDER BY id', [limit]).map((r) => {
+      const d = r.data || '';
+      if (!live && /"(caseIds|briefing|keys)"/.test(d)) live = this.live();
+      return this.shape(r, live);
+    });
   }
 
   get(id) { const r = this.db.get('SELECT * FROM chat_messages WHERE id=?', [id]); return r ? this.shape(r) : null; }
@@ -63,9 +98,19 @@ class Chat {
     let reply;
     if (files.length) {
       const ids = [];
-      for (const f of files.slice(0, 40)) ids.push(await this.assistant.intake({ files: [f], text: files.length === 1 ? t : '', origin: 'chat' }));
-      if (t && files.length > 1) ids.push(await this.assistant.intake({ text: t, origin: 'chat' }));
-      reply = this.post('assistant', 'cases', ids.length === 1 ? 'Reading it now.' : `Reading ${ids.length} items now. Each gets its own summary and tasks.`, { caseIds: ids });
+      const notes = [];
+      const plain = [];
+      for (const f of files.slice(0, 40)) {
+        if (/\.pst$/i.test(f.name)) { const r = await this.fromPst(f); ids.push(...r.ids); notes.push(r.note); }
+        else if (/\.onepkg$/i.test(f.name)) { const r = await this.fromOnepkg(f); ids.push(...r.ids); notes.push(r.note); }
+        else plain.push(f);
+      }
+      for (const f of plain) ids.push(await this.assistant.intake({ files: [f], text: plain.length === 1 && files.length === 1 ? t : '', origin: 'chat' }));
+      if (t && (files.length > 1 || plain.length !== files.length)) ids.push(await this.assistant.intake({ text: t, origin: 'chat' }));
+      const head = ids.length === 1 ? 'Reading it now.' : ids.length ? `Reading ${ids.length} items now. Each gets its own summary and tasks.` : 'Nothing new to read.';
+      reply = this.post('assistant', 'cases', [...notes, head].join(' '), { caseIds: ids });
+    } else if (DONE.test(t) && t.length < 300 && !t.includes('\n') && this.tasks.match(t).some((x) => x.m >= 0.34)) {
+      reply = this.ticked(t);
     } else if (BRIEF.test(t)) {
       reply = this.briefing({ force: true, quiet: true });
     } else if (isQuestion(t)) {
@@ -75,6 +120,64 @@ class Chat {
       reply = this.post('assistant', 'cases', 'Got it. I will turn this into tasks.', { caseIds: [id] });
     }
     return [this.get(first), this.get(reply)];
+  }
+
+  /**
+   * "Completed the market review": tick off the task that clearly matches, or show the likely ones to tick.
+   * A clear match is most of the words and well ahead of the next best.
+   */
+  ticked(text) {
+    const hits = this.tasks.match(text);
+    const [best, next] = hits;
+    const snap = (t) => ({ title: t.title, context: t.context || '', who: t.who || '', mine: t.mine, source: t.source, link: t.link || null });
+    if (best.m >= 0.6 && (!next || next.m <= best.m - 0.2)) {
+      this.tasks.done(best.t.key);
+      const left = this.tasks.list().mine;
+      const tail = left.length ? ` Next up: ${left[0].title}.` : ' Your list is clear.';
+      return this.post('assistant', 'tasks', `Ticked off: ${best.t.title}.${tail}`, { keys: [best.t.key, ...(left[0] ? [left[0].key] : [])], done: [best.t.key], snap: { [best.t.key]: snap(best.t) } });
+    }
+    const pick = hits.filter((x) => x.m >= 0.34).slice(0, 5).map((x) => x.t.key);
+    return this.post('assistant', 'tasks', pick.length === 1 ? 'Is this the one? Tick it to mark it done.' : 'Which one did you finish? Tick it to mark it done.', { keys: pick });
+  }
+
+  bytesOf(f) {
+    if (f.bytes) return Buffer.from(f.bytes);
+    if (f.path) return fs.readFileSync(f.path);
+    throw new Error(`${f.name} could not be opened.`);
+  }
+
+  /** Emails from an Outlook .pst: the last 30 days, newest 100, each read on its own; ones already read are skipped. */
+  async fromPst(f) {
+    const since = addDays(today(), -PST_DAYS);
+    const r = archives.readPst(f.path && !f.bytes ? f.path : this.bytesOf(f), { since, limit: PST_LIMIT * 3 });
+    const seenRow = this.db.get("SELECT value FROM settings WHERE key='pst_seen'");
+    const seen = new Set(parseJson(seenRow && seenRow.value, []));
+    const fresh = [];
+    let dupes = 0;
+    for (const e of r.emails) {
+      const k = crypto.createHash('sha1').update(`${e.from}|${e.subject}|${e.date}`).digest('hex').slice(0, 16);
+      if (seen.has(k)) { dupes += 1; continue; }
+      if (fresh.length >= PST_LIMIT) break;
+      seen.add(k);
+      fresh.push(e);
+    }
+    this.db.run("INSERT INTO settings(key,value) VALUES('pst_seen',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [JSON.stringify([...seen].slice(-20000))]);
+    const ids = [];
+    for (const e of fresh) {
+      const name = `${String(e.subject || 'Email').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)}.eml`;
+      ids.push(await this.assistant.intake({ files: [{ name, bytes: archives.toEml(e) }], origin: 'pst' }));
+    }
+    const more = r.total - dupes - fresh.length;
+    const note = `${f.name}: ${r.total} ${r.total === 1 ? 'email' : 'emails'} from the last ${PST_DAYS} days${dupes ? `, ${dupes} already read` : ''}${more > 0 ? `. Reading the newest ${fresh.length}; drop it again to read the next ${Math.min(more, PST_LIMIT)}` : ''}.`;
+    return { ids, note };
+  }
+
+  /** Each section of a OneNote notebook package is read on its own. */
+  async fromOnepkg(f) {
+    const files = archives.cabFiles(this.bytesOf(f)).filter((x) => /\.one$/i.test(x.name) && !/OneNote_RecycleBin/i.test(x.name));
+    const ids = [];
+    for (const x of files.slice(0, 60)) ids.push(await this.assistant.intake({ files: [{ name: x.name.split('/').pop(), bytes: x.bytes }], origin: 'onenote' }));
+    return { ids, note: `${f.name}: ${files.length} ${files.length === 1 ? 'section' : 'sections'}${files.length > 60 ? ', reading the first 60' : ''}.` };
   }
 
   async answer(question, beforeId) {
@@ -118,4 +221,4 @@ class Chat {
   }
 }
 
-module.exports = { Chat, isQuestion, BRIEF };
+module.exports = { Chat, isQuestion, BRIEF, DONE };

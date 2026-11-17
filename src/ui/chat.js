@@ -6,6 +6,7 @@ import { html, Icon, Spinner, toast, toastError, relTime, shortDate, ask as conf
 import { call, native, isDesktop } from './api.js';
 import { answerHtml, openSource, KIND } from './ask.js';
 import { collect, AssistantSettings } from './assistant.js';
+import { TaskRow, takePendingAsk } from './tasks.js';
 
 const PRI = { urgent: ['Urgent', 'var(--bad)'], high: ['High', '#d38a00'], normal: ['', ''], low: ['', ''] };
 const SUGGEST = ['What should I do today?', 'Who am I waiting on?', 'What happened with my customers this week?', 'Summarise my last calls'];
@@ -24,14 +25,19 @@ function CaseCard({ c }) {
     if (c.due) chips.push(html`<span class="chip">Due ${shortDate(c.due)}</span>`);
     if (PRI[c.priority] && PRI[c.priority][0]) chips.push(html`<span class="chip" style=${`color:${PRI[c.priority][1]}`}>${PRI[c.priority][0]}</span>`);
   }
-  return html`<button class="ch-case" onClick=${() => openCase(c.id)} title="Open the summary, plan and replies">
+  // Open steps are real tasks: tick, date and prioritise them right here.
+  const steps = working || c.state === 'error' ? [] : (c.steps || []).filter((s) => s.state === 'open');
+  return html`<div class="ch-case-wrap"><button class="ch-case" onClick=${() => openCase(c.id)} title="Open the summary, plan and replies">
     <span class="ch-case-ico">${working ? html`<${Spinner} />` : html`<${Icon} name=${c.kind === 'email' ? 'mail' : c.kind === 'chat' ? 'msg' : c.kind === 'text' ? 'text' : 'file'} size="16" />`}</span>
     <span class="grow" style="min-width:0">
       <b class="clip" style="display:block">${c.title}</b>
       <span class="small muted ch-sum">${working ? (c.state === 'reading' ? 'Reading…' : 'Working out the tasks… a local model can take a minute.') : c.state === 'error' ? `Could not be read: ${c.error}` : `${c.sender ? `From ${c.sender}. ` : ''}${c.summary || ''}`}</span>
       ${chips.length ? html`<span class="ch-chips">${chips}</span>` : null}
     </span>
-    <${Icon} name="arrowRight" size="14" /></button>`;
+    <${Icon} name="arrowRight" size="14" /></button>
+    ${steps.length ? html`<div class="ch-steps">${steps.slice(0, 8).map((t) => html`<${TaskRow} key=${t.key} t=${t} compact />`)}
+      ${steps.length > 8 ? html`<a class="link small" onClick=${() => openCase(c.id)}>${steps.length - 8} more</a>` : null}</div>` : null}
+  </div>`;
 }
 
 function Bubble({ m, nav }) {
@@ -47,6 +53,17 @@ function Bubble({ m, nav }) {
   let body;
   if (m.kind === 'cases') {
     body = html`<div>${m.content}</div><div class="ch-cases">${(m.cases || []).map((c) => html`<${CaseCard} key=${c.id} c=${c} />`)}</div>`;
+  } else if (m.kind === 'tasks') {
+    body = html`<div>${m.content}</div><div class="ch-steps ch-tasks">${(m.tasks || []).length ? m.tasks.map((t) => html`<${TaskRow} key=${t.key} t=${t} compact />`) : html`<div class="small muted">These tasks are no longer on your list.</div>`}</div>`;
+  } else if (m.kind === 'briefing' && m.briefing) {
+    const b = m.briefing;
+    const hour = new Date(m.at).getHours();
+    body = html`<div><b>${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}.</b> ${b.headline}${/[.!]$/.test(b.headline) ? '' : '.'}</div>
+      ${b.top.length ? html`<div class="ch-bhead">Do first</div><div class="ch-steps">${b.top.map((t) => html`<${TaskRow} key=${t.key} t=${t} />`)}</div>` : null}
+      ${(b.meetings || []).length ? html`<div class="ch-bhead">Meetings today</div>${b.meetings.map((x) => html`<button key=${x.id} class="td-line" onClick=${() => window.dispatchEvent(new CustomEvent('bd-open-meeting', { detail: x.id }))}><span class="td-time">${x.time || 'Today'}</span><span class="grow clip">${x.title}${x.customer ? html` <span class="muted">· ${x.customer}</span>` : null}</span></button>`)}` : null}
+      ${b.waiting.length ? html`<div class="ch-bhead">Waiting on others</div><div class="ch-steps">${b.waiting.map((t) => html`<${TaskRow} key=${t.key} t=${t} compact />`)}</div>` : null}
+      ${(b.questions || []).length ? html`<div class="td-q small"><${Icon} name="help" size="14" /> Questions for you on ${b.questions.map((q, i) => html`${i ? ', ' : ''}<a key=${q.id} class="link" onClick=${() => openCase(q.id)}>${q.title}</a>`)}. Answering them sharpens the plan.</div>` : null}
+      <div class="row mt1" style="gap:6px"><button class="btn small" onClick=${() => nav('today')}><${Icon} name="today" size="14" /> Open Today</button><button class="btn small" onClick=${() => nav('tasks')}><${Icon} name="check" size="14" /> All tasks</button></div>`;
   } else if (m.kind === 'briefing') {
     body = html`<div class="ask-answer" dangerouslySetInnerHTML=${{ __html: answerHtml(m.content) }}></div>
       <div class="row mt1" style="gap:6px"><button class="btn small" onClick=${() => nav('today')}><${Icon} name="today" size="14" /> Open Today</button><button class="btn small" onClick=${() => nav('tasks')}><${Icon} name="check" size="14" /> All tasks</button></div>`;
@@ -77,6 +94,14 @@ export function ChatPage({ nav, version }) {
   const fileIn = useRef(null);
   const depth = useRef(0);
   const load = () => call('chatHistory').then(setMsgs, toastError);
+  const sendRef = useRef(null);
+  // "Ask what is needed" on a task, from any page: ask it here.
+  useEffect(() => {
+    const h = () => { const q = takePendingAsk(); if (q && sendRef.current) sendRef.current({ words: q }); };
+    const t = setTimeout(h, 300);
+    window.addEventListener('bd-ask-chat', h);
+    return () => { clearTimeout(t); window.removeEventListener('bd-ask-chat', h); };
+  }, []);
   useEffect(() => { call('chatBriefingIfDue').catch(() => {}).finally(load); }, [version]);
   useEffect(() => { if (end.current) end.current.scrollIntoView({ block: 'end' }); }, [msgs && msgs.length, busy]);
   // Refresh messages whose files are still being read.
@@ -103,6 +128,7 @@ export function ChatPage({ nav, version }) {
       setMsgs((m) => [...(m || []).filter((x) => x.id !== pending.id), u, r]);
     } catch (e) { toastError(e); setMsgs((m) => (m || []).filter((x) => x.id !== pending.id)); if (words === text) setText(t); } finally { setBusy(false); setTimeout(() => input.current && input.current.focus(), 30); }
   };
+  sendRef.current = send;
   const onDrop = async (e) => {
     e.preventDefault(); e.stopPropagation(); depth.current = 0; setDrag(false);
     const got = await collect(e.dataTransfer);
@@ -116,13 +142,13 @@ export function ChatPage({ nav, version }) {
 
   return html`<div class="page ask-page ch-page" onDragEnter=${(e) => { if ([...(e.dataTransfer.types || [])].includes('Files')) { depth.current += 1; setDrag(true); } }}
       onDragLeave=${() => { depth.current = Math.max(0, depth.current - 1); if (!depth.current) setDrag(false); }} onDragOver=${(e) => e.preventDefault()} onDrop=${onDrop}>
-    <div class="page-head"><h1>Chat</h1><span class="muted small">Drop files, paste an email or Teams chat, write a note, or ask anything.</span><span class="grow"></span>
+    <div class="page-head"><h1>Chat</h1><span class="muted small">Drop files, paste an email or Teams chat, write a note, ask anything, or say what you finished.</span><span class="grow"></span>
       <button class="btn" onClick=${() => send({ words: 'What should I do today?' })} disabled=${busy}><${Icon} name="today" size="15" /> Briefing</button>
       ${msgs && msgs.length ? html`<button class="btn ghost" title="Clear chat" aria-label="Clear chat" onClick=${clear}><${Icon} name="trash" size="15" /></button>` : null}
       <button class="btn ghost" title="Assistant settings: about you, reply tone, watched folder, what it knows" aria-label="Assistant settings" onClick=${() => setSettings(true)}><${Icon} name="gear" size="16" /></button></div>
     <div class="ask-thread">
       ${!msgs ? html`<${Spinner} />` : !msgs.length ? html`<div class="ask-empty"><${Icon} name="spark" size="30" /><h3>Drop anything here</h3>
-        <div class="muted small">Outlook emails (.msg, .eml), PDF, Word, Excel, Markdown and OneNote exports, pictures and scans, or a pasted Teams chat. I read each one on this PC, pull out who, what and when, and put the tasks on your list. Ask me anything about it later.</div>
+        <div class="muted small">Outlook emails (.msg, .eml) and Outlook data files (.pst), OneNote sections, notebooks and pages (.one, .onepkg, .mht), PDF, Word, Excel, Markdown, pictures and scans, or a pasted Teams chat. I read each one on this PC, pull out who, what and when, and put the tasks on your list. Ask me anything about it later.</div>
         <div class="ask-suggest">${SUGGEST.map((s) => html`<button key=${s} class="chip" onClick=${() => send({ words: s })}>${s}</button>`)}</div></div>`
         : msgs.map((m) => html`<${Bubble} key=${m.id} m=${m} nav=${nav} />`)}
       ${busy ? html`<div class="ask-msg bot"><div class="bubble"><${Spinner} /> <span class="muted small">Working on it…</span></div></div>` : null}

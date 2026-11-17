@@ -95,7 +95,9 @@ function App() {
     window.addEventListener('bd-open-item', oi);
     const ocs = (e) => setCaseOpen(e.detail);
     window.addEventListener('bd-open-case', ocs);
-    return () => { window.removeEventListener('bd-open-case', ocs); window.removeEventListener('bd-open-item', oi); window.removeEventListener('bd-open-customer', ocu); window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); window.removeEventListener('bd-capture', oc); };
+    const ach = () => { setCaseOpen(null); nav('chat'); };
+    window.addEventListener('bd-ask-chat', ach);
+    return () => { window.removeEventListener('bd-ask-chat', ach); window.removeEventListener('bd-open-case', ocs); window.removeEventListener('bd-open-item', oi); window.removeEventListener('bd-open-customer', ocu); window.removeEventListener('bd-undoable', h); window.removeEventListener('bd-open-doc', od); window.removeEventListener('bd-open-meeting', om); window.removeEventListener('bd-new-meeting', nm); window.removeEventListener('bd-capture', oc); };
   }, []);
 
   // Unread count and data changed by automations in the background.
