@@ -24,6 +24,7 @@ import { ReportsPage } from './briefs.js';
 import { AssistantPage, CaseView } from './assistant.js';
 import { ChatPage } from './chat.js';
 import { TodayPage, TasksPage } from './tasks.js';
+import { ActivityPage, ActivityPill } from './activity.js';
 
 window.__bdSelfTest = selfTest;
 
@@ -103,7 +104,7 @@ function App() {
   // Unread count and data changed by automations in the background.
   useEffect(() => {
     const t = setInterval(() => { reloadShell(); }, 60000);
-    const offs = [onEvent('navigate', (r) => (typeof r === 'string' ? nav(r) : nav(r.name, r.id))), onEvent('changed', () => { bump(); reloadShell(); }),
+    const offs = [onEvent('navigate', (r) => (typeof r === 'string' ? nav(r) : nav(r.name, r.id))), onEvent('changed', () => { bump(); reloadShell(); }), onEvent('activity', () => reloadShell()),
       onEvent('openItem', (id) => openItem(id))];
     return () => { clearInterval(t); offs.forEach((f) => f()); };
   }, []);
@@ -121,7 +122,7 @@ function App() {
       if (!typing && !ctrl && !e.altKey) {
         if (Date.now() - gPrefix.current < 1200) {
           gPrefix.current = 0;
-          const to = { h: 'chat', t: 'today', o: 'tasks', b: 'home', m: 'mywork', c: 'calendar', i: 'inbox', s: 'settings', a: 'archive', l: 'meetings', u: 'customers', k: 'ask', r: 'reports', e: 'assistant' }[e.key.toLowerCase()];
+          const to = { h: 'chat', t: 'today', o: 'tasks', y: 'activity', b: 'home', m: 'mywork', c: 'calendar', i: 'inbox', s: 'settings', a: 'archive', l: 'meetings', u: 'customers', k: 'ask', r: 'reports', e: 'assistant' }[e.key.toLowerCase()];
           if (to) { e.preventDefault(); nav(to); return; }
         }
         if (e.key === 'g') { gPrefix.current = Date.now(); return; }
@@ -156,6 +157,7 @@ function App() {
   if (r.name === 'chat') page = html`<${ChatPage} nav=${nav} version=${version} />`;
   else if (r.name === 'today') page = html`<${TodayPage} nav=${nav} version=${version} />`;
   else if (r.name === 'tasks') page = html`<${TasksPage} version=${version} />`;
+  else if (r.name === 'activity') page = html`<${ActivityPage} version=${version} reloadShell=${reloadShell} />`;
   else if (r.name === 'board') page = html`<${BoardPage} key=${r.id} boardId=${r.id} openItem=${openItem} refreshShell=${reloadShell} nav=${nav} version=${version} />`;
   else if (r.name === 'dashboard') page = html`<${DashboardPage} key=${r.id} id=${r.id} boot=${boot} nav=${nav} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
   else if (r.name === 'dependencies') page = html`<${DependenciesPage} openItem=${openItem} nav=${nav} version=${version} />`;
@@ -181,7 +183,7 @@ function App() {
     return t ? { ...f, name: t.name } : null;
   }).filter(Boolean);
   const allShut = boot.workspaces.length > 0 && boot.workspaces.every((w) => closedWs[w.id]);
-  const NAV = [['chat', 'Chat', 'msg'], ['today', 'Today', 'today'], ['tasks', 'Tasks', 'check'], ['customers', 'Customers', 'building'], ['meetings', 'Calls and meetings', 'phone'],
+  const NAV = [['chat', 'Chat', 'msg'], ['today', 'Today', 'today'], ['tasks', 'Tasks', 'check'], ['activity', 'Activity', 'clock'], ['customers', 'Customers', 'building'], ['meetings', 'Calls and meetings', 'phone'],
     ['inbox', 'Inbox', 'inbox', boot.unread || null], ['help', 'Help and guide', 'help']];
   const ADV = [['home', 'Boards', 'table'], ['mywork', 'My work (boards)', 'person'], ['calendar', 'Calendar', 'calendar'], ['assistant', 'All dropped files', 'spark'], ['ask', 'Search folders', 'search'], ['reports', 'Reports', 'report']];
   const navLink = (name, label, icon, badge) => html`<a key=${name} class=${r.name === name ? 'on' : ''} onClick=${() => nav(name)}><${Icon} name=${icon} />${label}${badge ? html`<span class="badge">${badge}</span>` : null}</a>`;
@@ -211,6 +213,7 @@ function App() {
         ${side.ws && !boot.workspaces.length ? html`<div class="small" style="padding:6px 10px;color:#8584a3">No boards yet.</div>` : null}
         </${Fragment}>` : null}
       </div>
+      <${ActivityPill} a=${boot.activity} onClick=${() => nav('activity')} />
       <${UpdateButton} update=${update} />
       <div class="foot">
         <div class="me" onClick=${() => nav('settings')} title="Profile and settings"><${Avatar} person=${boot.me} size=${26} /><span class="clip">${boot.me.name}</span></div>

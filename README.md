@@ -42,6 +42,12 @@ The feature set was mapped from the public help documentation of a leading hoste
 - A searchable help center (F1, the sidebar, Settings, or Ctrl+K) with how-to articles for every feature.
 - Export the whole user guide as PDF, Word, a web page or Markdown.
 
+**Activity and meeting recaps (g y)**
+- Off until you turn it on. Notes the app and window in front every 30 seconds (not while idle or locked) and, if you also turn on screen text, reads your screens with OCR on this PC every minute (every 20 seconds in a meeting).
+- Shows time per app, what you worked on, a timeline, and the meetings it saw (Teams, Zoom, Webex, Meet, or one you start by hand). Summarize the day there, or ask in Chat "what did I do today?".
+- Recap a meeting: add the Teams transcript (.vtt/.docx) or your notes, and the screen text from the meeting is added. The assistant writes the summary, decisions, tasks and a follow-up email, and the tasks join the task list. A notification offers the recap when a meeting ends; "recap my last meeting" works in Chat.
+- Private by design: kept in the data folder under Activity and deleted after 7 days (adjustable), windows with private words (passwords, banking, private browsing) are never captured, a red dot on the tray icon shows it is on, pause or stop it from the tray. An online AI gets screen text only if you allow it.
+
 **Customer calls and meetings**
 - Log customer calls and plan meetings with date, time, length, where (phone, link or room), the customer, and the deal or item they are about.
 - Our team (people in Boardenda) and their side (outside contacts with company, email and phone).

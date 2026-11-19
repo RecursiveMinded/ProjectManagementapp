@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { AppApi, PUBLIC_METHODS } = require('../src/core/api');
 const updates = require('./updater');
+const activityWatch = require('./activity-watch');
 
 const APP_NAME = 'Boardenda';
 app.setName(APP_NAME);
@@ -32,6 +33,8 @@ function registerUiProtocol() {
 
 let win = null;
 let tray = null;
+let watcher = null;
+let activityState = { watching: false, screens: false, paused: false, meeting: null };
 let api = null;
 let quitting = false;
 const startHidden = process.argv.includes('--hidden');
@@ -139,20 +142,51 @@ function showWindow(route) {
   else if (route) win.webContents.send('navigate', route);
 }
 
-function createTray() {
-  const icon = iconPath() ? nativeImage.createFromPath(iconPath()) : nativeImage.createEmpty();
-  tray = new Tray(icon.isEmpty() ? icon : icon.resize({ width: 16, height: 16 }));
-  tray.setToolTip(APP_NAME);
+function trayIcon(rec) {
+  const p = rec ? path.join(__dirname, '..', 'build', 'tray-rec.png') : iconPath();
+  const icon = p && fs.existsSync(p) ? nativeImage.createFromPath(p) : nativeImage.createEmpty();
+  return icon.isEmpty() ? icon : icon.resize({ width: 16, height: 16 });
+}
+
+/** The tray shows whether activity tracking is on: a red dot on the icon, the tooltip and the menu. */
+function updateTray() {
+  if (!tray) return;
+  const a = activityState;
+  const setAct = (patch) => { try { api.setActivity(patch); } catch (e) { logError(e); } if (watcher) watcher.refresh(); };
+  tray.setImage(trayIcon(a.watching));
+  tray.setToolTip(a.watching ? `${APP_NAME}: tracking activity${a.screens ? ' and reading screen text' : ''}${a.meeting ? ` (in a meeting)` : ''}` : a.paused ? `${APP_NAME}: activity tracking paused` : APP_NAME);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Boardenda', click: () => showWindow() },
     { label: 'Today', click: () => showWindow('today') },
     { label: 'Chat', click: () => showWindow('chat') },
+    { type: 'separator' },
+    { label: a.watching ? (a.screens ? 'Tracking activity and screens' : 'Tracking activity') : a.paused ? 'Activity tracking paused' : 'Activity tracking is off', enabled: false },
+    { label: 'Track my activity', type: 'checkbox', checked: a.watching || a.paused, click: (mi) => setAct({ enabled: mi.checked, pauseMinutes: 0 }) },
+    { label: 'Read screen text', type: 'checkbox', checked: a.screens, enabled: a.watching, click: (mi) => setAct({ screens: mi.checked }) },
+    a.paused ? { label: 'Resume now', click: () => setAct({ pauseMinutes: 0 }) } : { label: 'Pause for 1 hour', enabled: a.watching, click: () => setAct({ pauseMinutes: 60 }) },
+    { label: 'Open Activity', click: () => showWindow('activity') },
+    { type: 'separator' },
     { label: 'Send digest now', click: () => sendDigest(true) },
     { label: 'Check for updates', click: () => checkUpdatesNow() },
     { type: 'separator' },
     { label: 'Quit', click: () => { quitting = true; app.quit(); } },
   ]));
+}
+
+function createTray() {
+  tray = new Tray(trayIcon(false));
+  tray.setToolTip(APP_NAME);
   tray.on('click', () => showWindow());
+  updateTray();
+}
+
+function startActivity() {
+  try {
+    watcher = activityWatch.start({
+      api, log: logError, notify,
+      onChange: (st) => { activityState = st; updateTray(); if (win) win.webContents.send('activity', st); },
+    });
+  } catch (e) { logError(e); }
 }
 
 // ---------------------------------------------------------- notifications
@@ -213,6 +247,7 @@ function registerIpc() {
       const fixed = (args || []).map((a) => fixBinary(a));
       const out = await api[method](...fixed);
       if (method === 'setSettings') applyOsSettings();
+      if (watcher && (method === 'setActivity' || method === 'activityMeetingStart' || method === 'activityMeetingStop' || method === 'activityDeleteAll')) watcher.refresh();
       return plain(out);
     } catch (e) {
       logError(e);
@@ -387,8 +422,9 @@ if (!app.requestSingleInstanceLock()) {
     applyOsSettings();
     startScheduler();
     startUpdates();
+    startActivity();
   });
-  app.on('before-quit', () => { quitting = true; try { api && api.db.close(); } catch (_) { /* closing */ } });
+  app.on('before-quit', () => { quitting = true; try { if (watcher) watcher.stop(); } catch (_) { /* stopping */ } try { api && api.db.close(); } catch (_) { /* closing */ } });
   app.on('window-all-closed', () => { /* stay in tray */ });
   app.on('activate', () => showWindow());
 }

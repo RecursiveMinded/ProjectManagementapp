@@ -155,12 +155,12 @@ class Assistant {
   get(id) { return this.shape(this.row(id), true); }
 
   /** New case from dropped files and/or pasted text. Reading and the plan run in the background. */
-  async intake({ files = [], text = '', origin = 'drop' } = {}) {
+  async intake({ files = [], text = '', origin = 'drop', title = '' } = {}) {
     const pasted = String(text || '').trim();
     if (!files.length && !pasted) throw new Error('Drop an email or a file, or paste some text.');
     const id = uid('ac');
     const ts = now();
-    const firstName = files[0] ? files[0].name : 'Pasted text';
+    const firstName = title || (files[0] ? files[0].name : 'Pasted text');
     this.db.run('INSERT INTO assistant_cases(id,title,kind,status,state,priority,source,text,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
       [id, firstName.replace(/\.[a-z0-9]+$/i, ''), files.some((f) => /\.(msg|eml)$/i.test(f.name)) ? 'email' : pasted && !files.length ? 'text' : 'document', 'open', 'reading', 'normal', JSON.stringify({ origin }), '', ts, ts]);
     const job = (async () => {
@@ -183,7 +183,7 @@ class Assistant {
       const body = this.caseText(src);
       if (!body.trim()) throw new Error(src.files.map((f) => f.error).filter(Boolean)[0] || 'No text could be read from this.');
       this.db.run('UPDATE assistant_cases SET source=?, text=?, sender=?, title=?, state=?, updated_at=? WHERE id=?',
-        [JSON.stringify(src), body, email ? email.from : '', email && email.subject ? email.subject : src.chat ? 'Chat conversation' : firstName.replace(/\.[a-z0-9]+$/i, ''), 'thinking', now(), id]);
+        [JSON.stringify(src), body, email ? email.from : '', title || (email && email.subject ? email.subject : src.chat ? 'Chat conversation' : firstName.replace(/\.[a-z0-9]+$/i, '')), 'thinking', now(), id]);
       if (src.chat) this.db.run("UPDATE assistant_cases SET kind='chat' WHERE id=?", [id]);
       await this.slot(() => this.analyze(id));
     })().catch((e) => { this.db.run("UPDATE assistant_cases SET state='error', error=?, updated_at=? WHERE id=?", [String(e.message || e).slice(0, 400), now(), id]); })

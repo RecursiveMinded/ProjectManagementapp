@@ -19,6 +19,7 @@ const { Meetings } = require('./meetings');
 const { Capture } = require('./capture');
 const { Tasks } = require('./tasks');
 const { Chat } = require('./chat');
+const { Activity } = require('./activity');
 const T = require('./templates');
 const io = require('./io');
 const C = require('./columns');
@@ -61,6 +62,9 @@ class AppApi {
     this.assistant = new Assistant({ db: this.db, store: this.store, capture: this.capture, knowledge: this.knowledge, customers: this.customers, meetings: this.meetings, dataDir: this.dataDir, readFile: (n, b) => this.notesText(n, b) });
     this.tasks = new Tasks({ db: this.db, store: this.store, assistant: this.assistant, meetings: this.meetings, myWork: () => this.myWork(), setItemDone: (id) => this.setItemDone(id) });
     this.chat = new Chat({ db: this.db, assistant: this.assistant, knowledge: this.knowledge, tasks: this.tasks, myWork: () => this.myWork() });
+    this.activity = new Activity({ db: this.db, dataDir: this.dataDir, capture: this.capture, assistant: this.assistant, readFile: (n, b) => this.notesText(n, b), ocr: (b) => require('./extract').ocr(b) });
+    this.activity.chat = this.chat;
+    this.chat.activity = this.activity;
     try {
       if (!this.db.get("SELECT value FROM settings WHERE key='customers_adopted'")) {
         this.customers.adoptCallCustomers();
@@ -93,6 +97,7 @@ class AppApi {
       people: this.store.people(),
       teams: this.store.teams(),
       ai: this.capture.aiStatus(),
+      activity: this.activity.status(),
       favorites: this.favorites(),
       docs: this.docs(),
       userTemplates: this.userTemplates(),
@@ -423,6 +428,7 @@ class AppApi {
     try { this.knowledge.maybeRefresh(); } catch (_) { /* never block the schedule */ }
     try { this.briefs.maybeAutoWeekly(when); } catch (_) { /* never block the schedule */ }
     this.assistant.scanWatch().catch(() => {});
+    try { const k = `activity_pruned:${today(when)}`; if (!this.db.get('SELECT key FROM settings WHERE key=?', [k])) { this.activity.prune(today(when)); this.db.run("DELETE FROM settings WHERE key LIKE 'activity_pruned:%'"); this.db.run('INSERT INTO settings(key,value) VALUES(?,?)', [k, 'true']); } } catch (_) { /* never block the schedule */ }
     return this.automations.tick(when) + made;
   }
 
@@ -641,6 +647,23 @@ class AppApi {
   deleteDashboard(id) { return this.dashboards.remove(id); }
   saveWidget(dashboardId, w) { return this.dashboards.saveWidget(dashboardId, w); }
   deleteWidget(id) { return this.dashboards.removeWidget(id); }
+
+  // ------------------------------------------- activity and meeting recaps
+  activityStatus() { return this.activity.status(); }
+  setActivity(patch) { return this.activity.setSettings(patch); }
+  activityRecord(sample) { return this.activity.record(sample); }
+  activityWantShot(sample) { return this.activity.wantShot(sample); }
+  activityAddShot(shot) { return this.activity.addShot(shot); }
+  activityDays() { return this.activity.days(); }
+  activityDay(date) { return this.activity.day(date || today()); }
+  activitySummarize(date) { return this.activity.summarize(date || today()); }
+  activityRecap(o) { return this.activity.recap(o); }
+  activityMeetingStart(title) { return this.activity.meetingStart(title); }
+  activityMeetingStop() { return this.activity.meetingStop(); }
+  activitySearch(q) { return this.activity.search(q); }
+  activityShot(date, file) { return this.activity.shot(date, file); }
+  activityDeleteDay(date) { return this.activity.deleteDay(date); }
+  activityDeleteAll() { return this.activity.deleteAll(); }
 
   // ------------------------------------------------------- chat and tasks
   chatHistory(o) { return this.chat.history(o); }

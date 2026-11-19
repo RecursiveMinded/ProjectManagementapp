@@ -1,7 +1,7 @@
 {
   "name": "boardenda",
   "productName": "Boardenda",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "A personal work assistant for Windows: drop any file into one chat, get one prioritized task list, a morning briefing and reminders. Boards and views are still there under Advanced.",
   "author": "Boardenda",
   "license": "UNLICENSED",
@@ -47,6 +47,9 @@
       "electron/**",
       "src/core/**",
       "dist/ui/**",
+      "build/icon.png",
+      "build/icon.ico",
+      "build/tray-rec.png",
       "package.json",
       "!**/*.map",
       "!node_modules/pdfjs-dist/web/**",
