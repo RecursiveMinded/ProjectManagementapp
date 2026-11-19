@@ -26,7 +26,7 @@ const edge = ['C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe
   spawn('taskkill', ['/F', '/IM', 'msedge.exe'], { stdio: 'ignore' });
   srv.close();
   const tables = (r.tables || []).map((t) => `${t.headers.join('|')} x${t.rows.length}`);
-  console.log(JSON.stringify({ ok: r.ok, reason: r.reason, message: r.message, title: r.title, url: r.url, chars: (r.text || '').length, text: (r.text || '').slice(0, 300), tables, ms }, null, 2));
+  console.log(JSON.stringify({ ok: r.ok, reason: r.reason, message: r.message, title: r.title, url: r.url, schemeGuessed: r.schemeGuessed, note: r.note, docs: r.docs, tries: r.tries, chars: (r.text || '').length, text: (r.text || '').slice(0, 300), tables, ms }, null, 2));
   if (!r.ok) process.exitCode = 1;
   else if (!/Terminal price list/.test(r.title || '') || !/valid until December 31/.test(r.text || '')) process.exitCode = 1;
 })();

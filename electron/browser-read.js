@@ -64,55 +64,78 @@ $root = $A::FromHandle($target)
 if (-not $root) { Done @{ ok = $false; reason = 'error'; message = 'The browser window could not be read'; title = $title; proc = $proc } }
 
 # Walk the browser's own controls (not into pages) to find the address bar and the page.
+# Chromium builds its page tree for UI Automation only after a client first asks, so the
+# page may be missing on the first walk: walk again a few times until its text shows.
 $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
-$queue = New-Object System.Collections.Queue
-$queue.Enqueue($root)
-$seen = 0; $docs = @(); $url = ''; $guess = ''
 $urlLike = '^(https?://|file:///|[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?(/|\?|$)|localhost(:\d+)?(/|$))'
-while ($queue.Count -gt 0 -and $seen -lt 5000) {
-  $el = $queue.Dequeue(); $seen++
-  $ct = $el.Current.ControlType
-  if ($ct -eq $CT::Document) { $docs += $el; continue }
-  if ($ct -eq $CT::Edit -and -not $url) {
-    $vp = $null
-    if ($el.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$vp)) {
-      $v = ([string]$vp.Current.Value).Trim()
-      $n = [string]$el.Current.Name
-      if ($v -match $urlLike) {
-        if ($n -match 'address|location|url|search bar|search or enter|search with|adresse|direcci|indirizzo|adres') { $url = $v } elseif (-not $guess) { $guess = $v }
+$script:url = ''; $script:guess = ''
+function Walk {
+  $queue = New-Object System.Collections.Queue
+  $queue.Enqueue($root)
+  $seen = 0; $found = @()
+  while ($queue.Count -gt 0 -and $seen -lt 6000) {
+    $el = $queue.Dequeue(); $seen++
+    $ct = $el.Current.ControlType
+    if ($ct -eq $CT::Document) { $found += $el; continue }
+    if ($ct -eq $CT::Edit -and -not $script:url) {
+      $vp = $null
+      if ($el.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$vp)) {
+        $v = ([string]$vp.Current.Value).Trim()
+        $n = [string]$el.Current.Name
+        if ($v -match $urlLike) {
+          if ($n -match 'address|location|url|search bar|search or enter|search with|adresse|direcci|indirizzo|adres') { $script:url = $v } elseif (-not $script:guess) { $script:guess = $v }
+        }
       }
     }
+    $c = $walker.GetFirstChild($el)
+    while ($c -ne $null) { $queue.Enqueue($c); $c = $walker.GetNextSibling($c) }
   }
-  $c = $walker.GetFirstChild($el)
-  while ($c -ne $null) { $queue.Enqueue($c); $c = $walker.GetNextSibling($c) }
+  if ($found.Count -eq 0) { $f = $root.FindFirst($TS::Descendants, (Cond $CT::Document)); if ($f) { $found += $f } }
+  return ,$found
 }
-if (-not $url) { $url = $guess }
-if ($url -and $url -notmatch '^[a-z][a-z0-9+.-]*:') { $url = 'https://' + $url }
+function PickDoc($docs) {
+  foreach ($d in $docs) { $dn = [string]$d.Current.Name; if ($dn -and $title.StartsWith($dn)) { return $d } }
+  $best = $null; $bestArea = 0
+  foreach ($d in $docs) { $r = $d.Current.BoundingRectangle; $a = $r.Width * $r.Height; if ($a -gt $bestArea -and -not ([string]$d.Current.Name -match '^DevTools')) { $bestArea = $a; $best = $d } }
+  return $best
+}
+function ReadText($doc) {
+  $t = ''
+  $tp = $null
+  if ($doc.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$tp)) { $t = [string]$tp.DocumentRange.GetText(300000) }
+  if ($t.Length -lt 80) {
+    $parts = New-Object System.Collections.Generic.List[string]
+    $n = 0
+    foreach ($x in $doc.FindAll($TS::Descendants, (Cond $CT::Text))) { if ($n -ge 20000) { break }; $n++; $s = [string]$x.Current.Name; if ($s.Trim()) { $parts.Add($s.Trim()) } }
+    $j = $parts -join [Environment]::NewLine
+    if ($j.Length -gt $t.Length) { $t = $j }
+  }
+  return $t
+}
+
+$docs = Walk
+$url = $script:url
+if (-not $url) { $url = $script:guess }
+$schemeGuessed = $false
+if ($url -and $url -notmatch '^[a-z][a-z0-9+.-]*:') {
+  # Edge and Chrome hide http:// and https:// in the address bar.
+  $schemeGuessed = $true
+  if ($url -match '^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)') { $url = 'http://' + $url } else { $url = 'https://' + $url }
+}
 if ($url) {
   if ([regex]::IsMatch($url, $rules.always, 'IgnoreCase')) { Done @{ ok = $false; reason = 'blocked'; title = $title; url = $url; proc = $proc } }
   $hay = $url.ToLower()
   foreach ($w in $rules.blocked) { if ($w -and $hay.Contains([string]$w)) { Done @{ ok = $false; reason = 'blocked'; word = $w; title = $title; url = $url; proc = $proc } } }
 }
 
-# The page: the document whose name is in the window title (not DevTools), else the largest one.
-$doc = $null
-foreach ($d in $docs) { $dn = [string]$d.Current.Name; if ($dn -and $title.StartsWith($dn)) { $doc = $d; break } }
-if (-not $doc) {
-  $bestArea = 0
-  foreach ($d in $docs) { $r = $d.Current.BoundingRectangle; $a = $r.Width * $r.Height; if ($a -gt $bestArea -and -not ([string]$d.Current.Name -match '^DevTools')) { $bestArea = $a; $doc = $d } }
+$doc = $null; $text = ''; $tries = 0
+for ($i = 0; $i -lt 5; $i++) {
+  $tries++
+  if ($i -gt 0) { Start-Sleep -Milliseconds 1200; $docs = Walk }
+  $doc = PickDoc $docs
+  if ($doc) { $text = ReadText $doc; if ($text.Length -ge 80) { break } }
 }
-if (-not $doc) { Done @{ ok = $true; title = $title; url = $url; proc = $proc; text = ''; tables = @(); note = 'nodoc' } }
-
-$text = ''
-$tp = $null
-if ($doc.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$tp)) { $text = [string]$tp.DocumentRange.GetText(300000) }
-if ($text.Length -lt 80) {
-  $parts = New-Object System.Collections.Generic.List[string]
-  $all = $doc.FindAll($TS::Descendants, (Cond $CT::Text))
-  $n = 0
-  foreach ($x in $all) { if ($n -ge 20000) { break }; $n++; $s = [string]$x.Current.Name; if ($s.Trim()) { $parts.Add($s.Trim()) } }
-  if (($parts -join ' ').Length -gt $text.Length) { $text = $parts -join [Environment]::NewLine }
-}
+if (-not $doc) { Done @{ ok = $true; title = $title; url = $url; schemeGuessed = $schemeGuessed; proc = $proc; text = ''; tables = @(); note = 'nodoc'; tries = $tries } }
 
 # Tables: rows and cells through the grid interface; header names when the page marks them.
 $tables = @()
@@ -144,7 +167,7 @@ foreach ($tb in $doc.FindAll($TS::Descendants, $tconds)) {
   }
   $tables += @{ caption = ([string]$tb.Current.Name).Trim(); headers = $headers; rows = $rows.ToArray() }
 }
-Done @{ ok = $true; title = $title; url = $url; proc = $proc; text = $text; tables = $tables }
+Done @{ ok = $true; title = $title; url = $url; schemeGuessed = $schemeGuessed; proc = $proc; text = $text; tables = $tables; docs = $docs.Count; tries = $tries }
 `;
 
 /** The PowerShell script with the privacy rules filled in. */

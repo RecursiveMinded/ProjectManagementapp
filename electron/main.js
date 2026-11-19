@@ -223,19 +223,24 @@ async function readBrowserPage() {
   if (!r.ok) return { ok: false, reason: r.reason, message: READ_WHY[r.reason] || r.message || 'The browser could not be read.', title: r.title || '' };
   const page = { url: r.url || '', title: r.title, text: r.text || '', tables: r.tables || [], lists: [], links: [], meta: {} };
   if (/^https?:/i.test(page.url)) {
-    try {
-      const h = await webWindow.readInWindow(page.url, READER_JS, { timeout: 20000 });
-      const a = String(h && h.title || '').toLowerCase().slice(0, 20), b = String(r.title || '').toLowerCase();
-      const same = h && hostOf(h.url) === hostOf(page.url) && !api.webBlocked(h.url, h.title) && a && (b.includes(a) || a.includes(b.slice(0, 20)));
-      if (same) {
+    // The address bar hides http:// or https://; when it had to be guessed, try the other one too.
+    const tries = r.schemeGuessed ? [page.url, page.url.replace(/^(https?):/i, (m, x) => (x.toLowerCase() === 'https' ? 'http:' : 'https:'))] : [page.url];
+    for (const u of tries) {
+      try {
+        const h = await webWindow.readInWindow(u, READER_JS, { timeout: 20000 });
+        const a = String(h && h.title || '').toLowerCase().slice(0, 20), b = String(r.title || '').toLowerCase();
+        const same = h && hostOf(h.url) === hostOf(u) && !/^chrome-error:/i.test(h.url) && !api.webBlocked(h.url, h.title) && a && (b.includes(a) || a.includes(b.slice(0, 20)));
+        if (!same) continue;
+        page.url = h.url || u;
         if (page.text.length < 400 && String(h.text || '').length > page.text.length) page.text = h.text;
         if (!page.tables.length) page.tables = h.tables || [];
         page.lists = h.lists || [];
         page.links = h.links || [];
         page.meta = h.meta || {};
         page.headings = h.headings || [];
-      }
-    } catch (e) { logError(e); }
+        break;
+      } catch (e) { logError(e); }
+    }
   }
   try {
     const p = api.webSave(page, { via: 'browser' });
