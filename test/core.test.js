@@ -672,6 +672,63 @@ test('quick capture: reads notes with a local Ollama model, and only local serve
   } finally { srv.close(); }
 });
 
+test('ChatGPT: connects with an OpenAI key and reads notes, answers questions and writes summaries', async () => {
+  const http = require('http');
+  const seen = [];
+  const srv = http.createServer((req, res) => {
+    let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
+      res.setHeader('content-type', 'application/json');
+      if (req.headers.authorization !== 'Bearer sk-test-1234') { res.writeHead(401); return res.end(JSON.stringify({ error: { message: 'Incorrect API key provided' } })); }
+      if (req.url === '/v1/models') return res.end(JSON.stringify({ data: [{ id: 'gpt-6.2-sol' }, { id: 'gpt-image-2.6-flare' }, { id: 'gpt-6-luna' }] }));
+      const body = JSON.parse(b);
+      seen.push(body);
+      let content = 'OK';
+      if (body.response_format && body.response_format.json_schema && body.response_format.json_schema.schema.properties.records) {
+        content = JSON.stringify({ records: [{ kind: 'item', title: 'Fix export crash', board: 'Bug tracker', group: '', existingItem: '', customer: '', date: '', time: '', owner: 'Sam', due: 'tomorrow', fields: [], notes: '', meetingIndex: -1, confidence: 0.9, question: '' }] });
+      } else if (/Question:/.test(JSON.stringify(body.messages))) content = 'Export is broken [1].';
+      else if (/Write the summary/.test(JSON.stringify(body.messages))) content = 'Bottom line: on track.';
+      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }));
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  process.env.BOARDENDA_OPENAI_BASE_URL = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    const api = await fresh();
+    api.loadSample();
+    api.setAi({ openaiKey: 'sk-bad' });
+    await assert.rejects(() => api.testAi('chatgpt'), /did not accept the API key/);
+    const st = api.setAi({ openaiKey: ' sk-test-1234 ' });
+    assert.equal(st.hasGptKey, true);
+    assert.equal(st.gptKeyHint, '…1234');
+    assert.equal(st.gptModel, 'gpt-6.2-sol');
+    assert.ok(!JSON.stringify(api.aiStatus()).includes('sk-test'), 'the key itself is never sent to the screen');
+    const t = await api.testAi();
+    assert.equal(t.provider, 'chatgpt', 'Automatic uses ChatGPT when only an OpenAI key is saved');
+    assert.deepEqual(t.models, ['gpt-6.2-sol', 'gpt-6-luna']);
+    const r = await api.readNotes({ text: '- export crashes, Sam to fix tomorrow' });
+    assert.equal(r.mode, 'chatgpt');
+    assert.equal(r.model, 'gpt-6.2-sol');
+    assert.equal(api.getBoard(r.records[0].boardId).board.name, 'Bug tracker');
+    const last = seen[seen.length - 1];
+    assert.equal(last.model, 'gpt-6.2-sol');
+    assert.equal(last.response_format.type, 'json_schema');
+    api.setAi({ gptModel: 'gpt-6-luna' });
+    const a = await api.ask({ question: 'What is wrong with export?' });
+    assert.equal(a.mode, 'chatgpt');
+    assert.equal(a.model, 'gpt-6-luna');
+    assert.equal(a.answer, 'Export is broken [1].');
+    const sum = await api.reportSummary({ kind: 'executive' });
+    assert.equal(sum.mode, 'chatgpt');
+    assert.equal(sum.text, 'Bottom line: on track.');
+    api.setAi({ key: 'sk-ant-x' });
+    assert.equal((await api.capture.pickEngine()).engine, 'claude', 'Automatic prefers Claude when both keys are saved');
+    api.setAi({ provider: 'chatgpt' });
+    assert.equal((await api.capture.pickEngine()).engine, 'chatgpt');
+    api.setAi({ openaiKey: '' });
+    assert.equal((await api.capture.pickEngine()).engine, 'basic');
+  } finally { srv.close(); delete process.env.BOARDENDA_OPENAI_BASE_URL; }
+});
+
 test('customer directory: profiles, contacts, devices, Customer column, calls, import and delete', async () => {
   const api = await fresh();
   const ws = api.saveWorkspace({ name: 'Accounts' });

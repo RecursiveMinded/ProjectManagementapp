@@ -18,7 +18,7 @@ The feature set was mapped from the public help documentation of a leading hoste
 
 **Quick capture (Ctrl+J)**
 - Paste or drop rough notes (meeting notes, a to-do list, an email, a Word file, a PDF or a photo of handwriting) and Boardenda proposes the records: calls and meetings, action items with owners and due dates, new items on the right board and group with their columns filled in, and updates on existing items.
-- A model reads the notes and places each record using your boards, columns, people and customers. By default it uses a model in Ollama on this PC (the same Llama or Gemma models LOA Command Center uses; nothing leaves the PC), or another local OpenAI-compatible server such as LM Studio. With an Anthropic API key (Settings > AI) Claude can read them instead, including photos. With no model, a built-in reader works offline.
+- A model reads the notes and places each record using your boards, columns, people and customers. By default it uses a model in Ollama on this PC (the same Llama or Gemma models LOA Command Center uses; nothing leaves the PC), or another local OpenAI-compatible server such as LM Studio. With an Anthropic API key Claude can read them instead, or ChatGPT with an OpenAI API key (Settings > AI > ChatGPT (online) > Connect ChatGPT), both including photos. With no model, a built-in reader works offline.
 - Anything it isn't sure about is highlighted with a question, and nothing is created until each one is mapped or confirmed.
 
 **Assistant (g e)**
@@ -28,7 +28,7 @@ The feature set was mapped from the public help documentation of a leading hoste
 **Ask anything (g k)**
 - A chat that answers questions about the business from your boards, items, customers, contacts, devices, calls and the documents in folders you choose on this PC (Word, PDF, Excel, CSV, text, Markdown, HTML and saved emails).
 - Folders are indexed on the PC (incrementally, refreshed every few hours) in a separate knowledge file. With an embedding model in Ollama (`ollama pull nomic-embed-text`) search also matches by meaning.
-- Answers come from the AI chosen in Settings > AI (by default Llama in Ollama), with numbered sources you can click to open. File passages go to Claude only if you allow it. With no model, Ask shows the matching passages.
+- Answers come from the AI chosen in Settings > AI (by default Llama in Ollama), with numbered sources you can click to open. File passages go to Claude or ChatGPT only if you allow it. With no model, Ask shows the matching passages.
 
 **Customers**
 - A customer directory: one profile per account with account number, industry, main phone and email, website, address, owner, tags and rich notes.

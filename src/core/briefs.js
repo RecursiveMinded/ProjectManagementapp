@@ -476,7 +476,7 @@ class Briefs {
       const lines = h ? h.lines : r.kpis.map((k) => `${k.label}: ${k.value}.`);
       return lines.join(' ');
     };
-    const { engine, cfg, localCfg } = await this.capture.pickEngine();
+    const { engine } = await this.capture.pickEngine();
     if (engine === 'basic') return { mode: 'basic', model: null, text: fallback(), note: 'No AI model is running, so these are the highlights. Start Ollama for a written summary.' };
     const system = `You write ${audience === 'team' ? 'team status updates' : 'executive status summaries'} for a small business from report data. Write in plain, confident business English.
 - Start with a one-sentence bottom line.
@@ -485,30 +485,13 @@ class Briefs {
 - Use only the facts given. Never invent names, numbers or dates. Keep it under 250 words. No headings.`;
     const user = `${facts}\n\nWrite the summary.`;
     try {
-      let text;
-      let model;
-      if (engine === 'local') {
-        ({ model } = await this.capture.localModels(localCfg));
-        if (!model) return { mode: 'basic', model: null, text: fallback(), note: 'No chat model is installed in Ollama. Run: ollama pull llama3.2' };
-        if (localCfg.provider === 'openai') {
-          const res = await this.capture.localFetch(localCfg, '/v1/chat/completions', { model, temperature: 0.3, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }, 300000);
-          text = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;
-        } else {
-          const res = await this.capture.localFetch(localCfg, '/api/chat', { model, stream: false, options: { temperature: 0.3, num_ctx: 16384 }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }, 300000);
-          text = res.message && res.message.content;
-        }
-      } else {
-        const Anthropic = require('@anthropic-ai/sdk');
-        const Client = Anthropic.default || Anthropic;
-        const client = new Client({ apiKey: cfg.key, maxRetries: 2, timeout: 120000, ...(process.env.BOARDENDA_ANTHROPIC_BASE_URL ? { baseURL: process.env.BOARDENDA_ANTHROPIC_BASE_URL } : {}) });
-        model = cfg.model;
-        const res = await client.beta.messages.create({ model, max_tokens: 2000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'low' },
-          system: [{ type: 'text', text: system }], messages: [{ role: 'user', content: user }] });
-        text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-      }
+      const r = await this.capture.askText({ system, messages: [{ role: 'user', content: user }], temperature: 0.3, maxTokens: 2000 });
+      if (!r) return { mode: 'basic', model: null, text: fallback(), note: 'No chat model is installed in Ollama. Run: ollama pull llama3.2' };
+      let { text } = r;
+      const { model } = r;
       text = String(text || '').trim();
       if (!text) return { mode: 'basic', model: null, text: fallback(), note: 'The model returned nothing, so these are the highlights.' };
-      return { mode: engine, model, text };
+      return { mode: r.mode, model, text };
     } catch (e) {
       return { mode: 'basic', model: null, text: fallback(), note: `The model could not write a summary (${e.message || e}), so these are the highlights.` };
     }

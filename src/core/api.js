@@ -473,7 +473,7 @@ class AppApi {
   // ------------------------------------------------------- quick capture
   aiStatus() { return this.capture.aiStatus(); }
   setAi(cfg) { return this.capture.setAi(cfg); }
-  testAi() { return this.capture.aiTest(); }
+  testAi(which) { return this.capture.aiTest(which); }
   localModels() { return this.capture.localModels(); }
   /** Read pasted or dropped notes into proposed records for review. */
   readNotes({ text, files } = {}) { return this.capture.read({ text, files: files || [] }, (name, bytes) => this.notesText(name, bytes)); }

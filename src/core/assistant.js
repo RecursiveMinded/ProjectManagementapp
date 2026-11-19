@@ -236,7 +236,7 @@ class Assistant {
     const rel = await this.related(c, r.text || '');
     const struct = this.structure();
     const { engine } = await this.capture.pickEngine();
-    const cloud = engine === 'claude';
+    const cloud = engine === 'claude' || engine === 'chatgpt';
     const fileSources = cloud && !cfg.allowCloudFiles ? [] : rel.files;
     const sources = [
       ...rel.customers.map((x) => ({ kind: 'customer', id: x.id, name: x.name, text: `Customer ${x.name}${x.account_no ? ` (account ${x.account_no})` : ''}${x.industry ? `, ${x.industry}` : ''}${x.email ? `, ${x.email}` : ''}${x.phone ? `, ${x.phone}` : ''}` })),
@@ -246,7 +246,7 @@ class Assistant {
     let mode = 'basic';
     let model = null;
     const notes = [];
-    if (cloud && !cfg.allowCloudFiles && rel.files.length) notes.push(`${rel.files.length} related passages from your PC files were not sent to Claude. Allow it in the assistant settings, or use a local model.`);
+    if (cloud && !cfg.allowCloudFiles && rel.files.length) notes.push(`${rel.files.length} related passages from your PC files were not sent to ${engine === 'chatgpt' ? 'ChatGPT' : 'Claude'}. Allow it in the assistant settings, or use a local model.`);
     if (engine !== 'basic') {
       const system = this.systemPrompt(cfg);
       const user = [

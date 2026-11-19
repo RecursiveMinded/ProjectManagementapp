@@ -274,7 +274,7 @@ export function PasteCustomer({ onDone, onHide, compact }) {
       <div class="row" style="gap:8px"><button class="btn primary" disabled=${busy || !text.trim()} onClick=${() => read()}>${busy ? html`<${Spinner} /> Reading…` : html`<${Icon} name="spark" /> Read details`}</button>
         <span class="small faint">Pasting into the empty box reads it straight away. Ctrl+Enter reads it too.</span></div>`
     : html`<div class="paste-review">
-      <div class="small muted">${r.mode === 'basic' ? 'Read with the built-in reader.' : `Read with ${r.mode === 'claude' ? 'Claude' : 'the local model'}${r.model ? ` (${r.model})` : ''}.`} Check the details, then save.${(r.notes || []).map((n) => html` ${n}`)}</div>
+      <div class="small muted">${r.mode === 'basic' ? 'Read with the built-in reader.' : `Read with ${r.mode === 'claude' ? 'Claude' : r.mode === 'chatgpt' ? 'ChatGPT' : 'the local model'}${r.model ? ` (${r.model})` : ''}.`} Check the details, then save.${(r.notes || []).map((n) => html` ${n}`)}</div>
       ${r.match ? html`<div class="paste-match"><${Icon} name="building" size="15" /><span class="grow">This looks like <b>${r.match.name}</b>, already in Customers.</span>
         <div class="seg"><button class=${target === r.match.id ? 'on' : ''} onClick=${() => setTarget(r.match.id)}>Add contacts to ${r.match.name}</button><button class=${target === 'new' ? 'on' : ''} onClick=${() => setTarget('new')}>Create a new customer</button></div></div>` : null}
       ${target === 'new' ? html`<div class="grid3">

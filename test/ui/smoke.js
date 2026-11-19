@@ -542,6 +542,16 @@ const SHOTS = process.env.SHOTS_DIR || '';
     });
     await step('settings', async () => { await page.click('.side .foot button[title=Settings]'); await page.waitForSelector('h1:has-text("Settings")'); });
     await step('settings: AI and Ask folders', async () => { await page.click('.page button:text-is("AI")'); await page.waitForSelector('.ask-setup:has-text("boardenda-docs")'); });
+    await step('settings: connect ChatGPT', async () => {
+      await page.click('.seg button:text-is("ChatGPT (online)")');
+      await page.waitForSelector('.bd-gpt a:has-text("Connect ChatGPT")');
+      await page.fill('.bd-gpt input[type=password]', 'sk-smoke-9876');
+      await page.click('.bd-gpt button:text-is("Save key")');
+      await page.waitForSelector('.bd-gpt .chip:has-text("…9876")');
+      await page.click('.bd-gpt button:text-is("Disconnect")');
+      await page.waitForSelector('.bd-gpt a:has-text("Connect ChatGPT")');
+      await page.click('.seg button:text-is("Automatic")');
+    });
     await step('desktop self test', async () => {
       const r = await page.evaluate(() => window.__bdSelfTest());
       if (!r.ok) throw new Error(`self test failed ${JSON.stringify(r)}`);

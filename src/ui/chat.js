@@ -80,7 +80,7 @@ function Bubble({ m, nav }) {
           ${s.kind === 'file' && isDesktop ? html`<span class="btn ghost small" role="button" onClick=${(e) => { e.stopPropagation(); native('showPath', { path: s.path }).catch(toastError); }}>Show</span>` : null}</button>`)}</div>` : null}`;
   }
   return html`<div class="ask-msg bot"><div class=${`bubble ${m.kind === 'briefing' ? 'ch-brief' : ''}`}>${body}
-    <div class="small faint mt1">${m.kind === 'briefing' ? 'Briefing · ' : m.mode === 'local' ? `Answered by ${m.model} on this PC · ` : m.mode === 'claude' ? `Answered by Claude · ` : ''}${relTime(m.at)}</div></div></div>`;
+    <div class="small faint mt1">${m.kind === 'briefing' ? 'Briefing · ' : m.mode === 'local' ? `Answered by ${m.model} on this PC · ` : m.mode === 'claude' ? `Answered by Claude · ` : m.mode === 'chatgpt' ? `Answered by ChatGPT · ` : ''}${relTime(m.at)}</div></div></div>`;
 }
 
 export function ChatPage({ nav, version }) {

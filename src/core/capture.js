@@ -11,6 +11,9 @@ const { today, addDays, parseJson } = require('./util');
 
 const KINDS = ['item', 'meeting', 'action', 'update'];
 const DEFAULT_MODEL = 'claude-opus-5-5';
+const DEFAULT_GPT_MODEL = 'gpt-6.2-sol';
+/** The name of an online engine, for messages. */
+const cloudName = (engine) => (engine === 'chatgpt' ? 'ChatGPT' : 'Claude');
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 function isLocalUrl(u) {
@@ -81,29 +84,35 @@ class Capture {
   /**
    * provider: 'auto' (Claude if a key is saved, else Ollama if it is running),
    * 'ollama', 'openai' (another local server such as LM Studio or llama.cpp),
-   * 'anthropic', or 'off' (built-in reader only).
+   * 'anthropic', 'chatgpt' (OpenAI's API with the user's key), or 'off'
+   * (built-in reader only). Automatic prefers Claude, then ChatGPT, then Ollama.
    */
   aiConfig() {
     const r = this.db.get("SELECT value FROM settings WHERE key='ai'");
     const v = parseJson(r && r.value, {});
     const key = v.key || process.env.BOARDENDA_ANTHROPIC_KEY || '';
-    const provider = ['auto', 'ollama', 'openai', 'anthropic', 'off'].includes(v.provider) ? v.provider : (v.enabled === false ? 'off' : 'auto');
+    const openaiKey = v.openaiKey || process.env.BOARDENDA_OPENAI_KEY || '';
+    const provider = ['auto', 'ollama', 'openai', 'anthropic', 'chatgpt', 'off'].includes(v.provider) ? v.provider : (v.enabled === false ? 'off' : 'auto');
     return {
-      provider, key,
+      provider, key, openaiKey,
       model: v.model || DEFAULT_MODEL,
+      gptModel: v.gptModel || DEFAULT_GPT_MODEL,
       localUrl: v.localUrl || (provider === 'openai' ? 'http://127.0.0.1:1234' : 'http://127.0.0.1:11434'),
       localModel: v.localModel || '',
     };
   }
   aiStatus() {
     const c = this.aiConfig();
-    return { provider: c.provider, hasKey: !!c.key, keyHint: c.key ? `…${c.key.slice(-4)}` : '', model: c.model, localUrl: c.localUrl, localModel: c.localModel, enabled: c.provider !== 'off' };
+    return { provider: c.provider, hasKey: !!c.key, keyHint: c.key ? `…${c.key.slice(-4)}` : '', model: c.model,
+      hasGptKey: !!c.openaiKey, gptKeyHint: c.openaiKey ? `…${c.openaiKey.slice(-4)}` : '', gptModel: c.gptModel, localUrl: c.localUrl, localModel: c.localModel, enabled: c.provider !== 'off' };
   }
   setAi(patch = {}) {
     const cur = parseJson((this.db.get("SELECT value FROM settings WHERE key='ai'") || {}).value, {});
     const next = { ...cur };
     if (patch.key !== undefined) next.key = String(patch.key || '').trim();
     if (patch.model !== undefined) next.model = String(patch.model || DEFAULT_MODEL);
+    if (patch.openaiKey !== undefined) next.openaiKey = String(patch.openaiKey || '').trim();
+    if (patch.gptModel !== undefined) next.gptModel = String(patch.gptModel || '').trim() || DEFAULT_GPT_MODEL;
     if (patch.provider !== undefined) next.provider = patch.provider;
     if (patch.localUrl !== undefined) {
       const u = String(patch.localUrl || '').trim();
@@ -134,6 +143,48 @@ class Capture {
     } finally { clearTimeout(t); }
   }
 
+  // -------------------------------------------------------------- ChatGPT
+  /** A call to OpenAI's API with the user's own key. */
+  async gptFetch(cfg, path, body, timeoutMs = 180000) {
+    if (!cfg.openaiKey) throw new Error('Connect ChatGPT first: paste your OpenAI API key in Settings › AI.');
+    const base = (process.env.BOARDENDA_OPENAI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, '');
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(base + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.openaiKey}` }, body: body ? JSON.stringify(body) : undefined, signal: ctrl.signal });
+      if (!res.ok) {
+        const msg = parseJson(await res.text(), {});
+        const why = (msg.error && msg.error.message) || `error ${res.status}`;
+        if (res.status === 401) throw new Error('OpenAI did not accept the API key. Paste a new key in Settings › AI.');
+        if (res.status === 429) throw new Error(`OpenAI refused the request: ${why} Check the billing and limits on your OpenAI account.`);
+        throw new Error(`ChatGPT answered ${res.status}: ${String(why).slice(0, 200)}`);
+      }
+      return await res.json();
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error('ChatGPT took too long to answer.');
+      if (/fetch failed|ENOTFOUND|ECONNREFUSED/i.test(String(e.message || e) + String(e.cause || ''))) throw new Error('ChatGPT could not be reached. Check the internet connection.');
+      throw e;
+    } finally { clearTimeout(t); }
+  }
+
+  /** One chat completion from ChatGPT. messages use OpenAI's format; schema asks for JSON. */
+  async gptChat(cfg, { system, messages, schema, maxTokens = 8000, timeoutMs = 180000 }) {
+    const r = await this.gptFetch(cfg, '/v1/chat/completions', {
+      model: cfg.gptModel, max_completion_tokens: maxTokens,
+      messages: [{ role: 'system', content: system }, ...messages],
+      ...(schema ? { response_format: { type: 'json_schema', json_schema: { name: 'answer', strict: false, schema } } } : {}),
+    }, timeoutMs);
+    const ch = r.choices && r.choices[0];
+    if (ch && ch.message && ch.message.refusal) throw new Error('ChatGPT declined to answer this.');
+    return String((ch && ch.message && ch.message.content) || '').trim();
+  }
+
+  /** Chat models on the user's OpenAI account. */
+  async gptModels(cfg = this.aiConfig()) {
+    const r = await this.gptFetch(cfg, '/v1/models', null, 15000);
+    return (r.data || []).map((m) => m.id).filter((id) => /^(gpt|o\d|chatgpt)/i.test(id) && !/image|audio|realtime|transcribe|tts|embed|moderation|search|live|cyber/i.test(id)).sort().reverse();
+  }
+
   /** Models installed on the local server, and which one Quick capture will use. */
   async localModels(cfg = this.aiConfig()) {
     const c = { ...cfg, provider: cfg.provider === 'openai' ? 'openai' : 'ollama' };
@@ -145,9 +196,16 @@ class Capture {
     return { models: chat, model: pick };
   }
 
-  async aiTest() {
+  async aiTest(which) {
     const cfg = this.aiConfig();
     if (cfg.provider === 'off') throw new Error('AI is off. The built-in reader is used.');
+    if (which === 'chatgpt' || cfg.provider === 'chatgpt' || (cfg.provider === 'auto' && !cfg.key && cfg.openaiKey)) {
+      if (!cfg.openaiKey) throw new Error('Paste your OpenAI API key first.');
+      let models = [];
+      try { models = await this.gptModels(cfg); } catch (e) { if (/API key/.test(e.message)) throw e; }
+      const text = await this.gptChat(cfg, { system: 'Reply with the single word OK.', messages: [{ role: 'user', content: 'Test' }], maxTokens: 400, timeoutMs: 60000 });
+      return { provider: 'chatgpt', model: cfg.gptModel, models, reply: text };
+    }
     if (cfg.provider === 'anthropic' || (cfg.provider === 'auto' && cfg.key)) {
       if (!cfg.key) throw new Error('Paste an Anthropic API key first.');
       await this.readWithClaude({ text: 'Call with Test Co tomorrow 10am. Send the quote by Friday.' }, this.context());
@@ -185,11 +243,12 @@ class Capture {
     return { records: parsed.records, model };
   }
 
-  /** Which model to use now: 'claude', 'local' (with its config) or 'basic'. */
+  /** Which model to use now: 'claude', 'chatgpt', 'local' (with its config) or 'basic'. */
   async pickEngine() {
     const cfg = this.aiConfig();
     let engine = 'basic';
     if (cfg.provider === 'anthropic' || (cfg.provider === 'auto' && cfg.key)) engine = cfg.key ? 'claude' : 'basic';
+    else if (cfg.provider === 'chatgpt' || (cfg.provider === 'auto' && cfg.openaiKey)) engine = cfg.openaiKey ? 'chatgpt' : 'basic';
     else if (cfg.provider === 'ollama' || cfg.provider === 'openai') engine = 'local';
     else if (cfg.provider === 'auto') {
       try { if ((await this.localModels({ ...cfg, provider: 'ollama' })).model) engine = 'local'; } catch (_) { /* Ollama not running */ }
@@ -208,6 +267,9 @@ class Capture {
         system: [{ type: 'text', text: system }], messages });
       if (res.stop_reason === 'refusal') throw new Error('Claude declined to answer this.');
       return { mode: 'claude', model: cfg.model, text: res.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim() };
+    }
+    if (engine === 'chatgpt') {
+      return { mode: 'chatgpt', model: cfg.gptModel, text: await this.gptChat(cfg, { system, messages, maxTokens: Math.max(maxTokens, 4000) }) };
     }
     if (engine === 'local') {
       const { model } = await this.localModels(localCfg);
@@ -240,6 +302,10 @@ class Capture {
       if (response.stop_reason === 'refusal' || response.stop_reason === 'max_tokens') throw new Error('Claude could not read this text.');
       const block = response.content.find((b) => b.type === 'text');
       return { mode: 'claude', model: cfg.model, data: parseJson(block && block.text, null) };
+    }
+    if (engine === 'chatgpt') {
+      const out = await this.gptChat(cfg, { system, messages: [{ role: 'user', content: text }], schema, maxTokens: 16000 });
+      return { mode: 'chatgpt', model: cfg.gptModel, data: parseJson(out, null) || parseJson((out.match(/\{[\s\S]*\}/) || [])[0], null) };
     }
     if (engine === 'local') {
       const { model } = await this.localModels(localCfg);
@@ -527,6 +593,17 @@ Boards: ${JSON.stringify(boards)}`;
     return parsed.records;
   }
 
+  async readWithChatGPT({ text, images = [] }, ctx, cfg) {
+    const content = [
+      ...images.map((img) => ({ type: 'image_url', image_url: { url: `data:${img.mediaType};base64,${img.data}` } })),
+      { type: 'text', text: `<notes>\n${text || '(see the attached pictures)'}\n</notes>` },
+    ];
+    const out = await this.gptChat(cfg, { system: this.prompt(ctx), messages: [{ role: 'user', content }], schema: this.schema(), maxTokens: 16000 });
+    const parsed = parseJson(out, null) || parseJson((out.match(/\{[\s\S]*\}/) || [])[0], null);
+    if (!parsed || !Array.isArray(parsed.records)) throw new Error('ChatGPT returned something that could not be read.');
+    return parsed.records;
+  }
+
   /**
    * Read notes into proposed records. files: [{ name, bytes }] (Word, PDF,
    * text, pictures). Returns { mode, records, text, notes }.
@@ -535,14 +612,8 @@ Boards: ${JSON.stringify(boards)}`;
     const ctx = this.context();
     const cfg = this.aiConfig();
     const notes = [];
-    // Which reader: Claude, a local model (Ollama or similar), or the built-in one.
-    let engine = 'basic';
-    if (cfg.provider === 'anthropic' || (cfg.provider === 'auto' && cfg.key)) engine = cfg.key ? 'claude' : 'basic';
-    else if (cfg.provider === 'ollama' || cfg.provider === 'openai') engine = 'local';
-    else if (cfg.provider === 'auto') {
-      try { if ((await this.localModels({ ...cfg, provider: 'ollama' })).model) engine = 'local'; } catch (_) { /* Ollama not running */ }
-    }
-    const localCfg = engine === 'local' ? { ...cfg, provider: cfg.provider === 'openai' ? 'openai' : 'ollama' } : null;
+    // Which reader: Claude, ChatGPT, a local model (Ollama or similar), or the built-in one.
+    const { engine, localCfg } = await this.pickEngine();
     let all = String(text || '');
     const images = [];
     for (const f of files) {
@@ -550,7 +621,7 @@ Boards: ${JSON.stringify(boards)}`;
       if (isImg && f.bytes.length < 4.5e6 && engine !== 'basic') {
         const ext = f.name.toLowerCase().match(/\.(\w+)$/)[1];
         images.push({ mediaType: `image/${ext === 'jpg' ? 'jpeg' : ext}`, data: Buffer.from(f.bytes).toString('base64') });
-        if (engine === 'claude') continue; // Claude reads pictures directly; local models also get the OCR text
+        if (engine === 'claude' || engine === 'chatgpt') continue; // online models read pictures directly; local models also get the OCR text
       }
       const t = await extract(f.name, f.bytes);
       if (t) all += `${all ? '\n\n' : ''}${t}`;
@@ -564,6 +635,11 @@ Boards: ${JSON.stringify(boards)}`;
       try { raw = await this.readWithClaude({ text: all, images }, ctx); mode = 'claude'; model = cfg.model; } catch (e) {
         notes.push(`Claude could not be reached (${e.message || e}), so the built-in reader was used.`);
         if (images.length && !all.trim()) throw new Error('Claude is needed to read pictures without OCR, and it could not be reached.');
+      }
+    } else if (engine === 'chatgpt') {
+      try { raw = await this.readWithChatGPT({ text: all, images }, ctx, cfg); mode = 'chatgpt'; model = cfg.gptModel; } catch (e) {
+        notes.push(`ChatGPT could not read these notes (${e.message || e}), so the built-in reader was used.`);
+        if (images.length && !all.trim()) throw new Error('ChatGPT is needed to read pictures without OCR, and it could not read them.');
       }
     } else if (engine === 'local') {
       try { const r = await this.readWithLocal({ text: all, images }, ctx, localCfg); raw = r.records; mode = 'local'; model = r.model; } catch (e) {
@@ -613,4 +689,4 @@ Boards: ${JSON.stringify(boards)}`;
   }
 }
 
-module.exports = { Capture, parseDate, parseTime, DEFAULT_MODEL };
+module.exports = { Capture, parseDate, parseTime, DEFAULT_MODEL, DEFAULT_GPT_MODEL, cloudName };

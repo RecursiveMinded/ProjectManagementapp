@@ -243,7 +243,7 @@ export function CaseView({ id, nav, onChanged, onDeleted }) {
           ${showSrc ? html`<div class="as-related mt1">${a.sources.map((s) => html`<button key=${s.n} class="ask-src" onClick=${() => (s.kind === 'file' ? native('openPath', { path: s.path }).catch(toastError) : s.kind === 'customer' ? window.dispatchEvent(new CustomEvent('bd-open-customer', { detail: s.id })) : s.kind === 'meeting' ? window.dispatchEvent(new CustomEvent('bd-open-meeting', { detail: s.id })) : s.kind === 'item' ? window.dispatchEvent(new CustomEvent('bd-open-item', { detail: s.id })) : null)}>
             <span class="n">${s.n}</span><span class="grow" style="min-width:0"><b class="clip">${s.name || s.kind}${s.used ? ' · used' : ''}</b><span class="small muted clip">${s.path || s.snippet}</span></span></button>`)}</div>` : null}</div>` : null}
       </div>
-      <div class="small faint">${a.mode === 'local' ? `Read by ${a.model} on this PC` : a.mode === 'claude' ? `Read by Claude (${a.model})` : 'Read by the built-in reader'} · ${relTime(a.analyzedAt)}</div>
+      <div class="small faint">${a.mode === 'local' ? `Read by ${a.model} on this PC` : a.mode === 'claude' ? `Read by Claude (${a.model})` : a.mode === 'chatgpt' ? `Read by ChatGPT (${a.model})` : 'Read by the built-in reader'} · ${relTime(a.analyzedAt)}</div>
     ` : null}
     ${paste ? html`<${PasteBox} caseId=${id} onClose=${() => setPaste(false)} onDone=${() => load()} />` : null}
   </div>`;

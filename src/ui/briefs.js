@@ -171,7 +171,7 @@ function SummaryBox({ report, summary, setSummary }) {
     try {
       const r = await call('reportSummary', { report });
       setSummary(r.text);
-      setInfo(r.note || (r.mode === 'local' ? `Written by ${r.model} on this PC. Edit it before you share.` : r.mode === 'claude' ? `Written by Claude (${r.model}). Edit it before you share.` : ''));
+      setInfo(r.note || (r.mode === 'local' ? `Written by ${r.model} on this PC. Edit it before you share.` : r.mode === 'claude' || r.mode === 'chatgpt' ? `Written by ${r.mode === 'chatgpt' ? 'ChatGPT' : 'Claude'} (${r.model}). Edit it before you share.` : ''));
     } catch (e) { toastError(e); } finally { setBusy(false); }
   };
   return html`<div class="card pad rpt-summary-edit">

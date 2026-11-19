@@ -120,7 +120,7 @@ export function CaptureModal({ boot, onClose, onDone }) {
         <button class="btn" onClick=${onClose}>Cancel</button>
         <button class="btn primary" disabled=${busy || (!text.trim() && !files.length)} onClick=${read}>${busy ? html`<${Spinner} /> Reading…` : 'Read notes'}</button></div>
     </div>` : html`<div class="col" style="gap:10px">
-      <div class="row small" style="gap:8px;flex-wrap:wrap"><span class="chip">${res.mode === 'claude' ? 'Read by Claude' : res.mode === 'local' ? `Read by ${res.model} on this PC` : 'Built-in reader'}</span>
+      <div class="row small" style="gap:8px;flex-wrap:wrap"><span class="chip">${res.mode === 'claude' ? 'Read by Claude' : res.mode === 'chatgpt' ? 'Read by ChatGPT' : res.mode === 'local' ? `Read by ${res.model} on this PC` : 'Built-in reader'}</span>
         <span class="muted">${plural(res.records.length, 'record')} found${unsure.length ? `, ${unsure.length} to check` : ''}.</span>
         ${res.notes.map((n, i) => html`<span class="faint" key=${i}>${n}</span>`)}</div>
       <div class="cap-list">${res.records.map((r) => html`<${RecordCard} key=${r.key} r=${r} set=${(p) => setRec(r.key, p)} boards=${ctx || []} people=${boot.people} records=${res.records} boot=${boot} />`)}</div>
@@ -138,27 +138,33 @@ export function AiSettings() {
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState(null);
+  const [gptKey, setGptKey] = useState('');
+  const [gptModels, setGptModels] = useState(null);
   if (!st) { call('aiStatus').then(setSt, toastError); return html`<${Spinner} />`; }
   const save = async (patch) => { try { setSt(await call('setAi', patch)); setLocal(null); } catch (e) { toastError(e); } };
-  const test = async () => {
+  const test = async (which) => {
     setBusy(true);
     try {
-      const r = await call('testAi');
+      const r = await call('testAi', typeof which === 'string' ? which : undefined);
+      if (r.provider === 'chatgpt') { if (r.models && r.models.length) setGptModels(r.models); toast(`ChatGPT is connected and answered with ${r.model}`); return; }
       if (r.models) setLocal(r);
       toast(r.provider === 'anthropic' ? 'Claude is connected and read a test note' : `Connected. Quick capture will use ${r.model}`);
     } catch (e) { toastError(e); } finally { setBusy(false); }
   };
   const p = st.provider;
-  const isLocal = p === 'ollama' || p === 'openai' || (p === 'auto' && !st.hasKey);
-  const opts = [['auto', 'Automatic'], ['ollama', 'Ollama on this PC'], ['openai', 'Other local server'], ['anthropic', 'Claude (online)'], ['off', 'Off']];
+  const isLocal = p === 'ollama' || p === 'openai' || (p === 'auto' && !st.hasKey && !st.hasGptKey);
+  const opts = [['auto', 'Automatic'], ['ollama', 'Ollama on this PC'], ['openai', 'Other local server'], ['anthropic', 'Claude (online)'], ['chatgpt', 'ChatGPT (online)'], ['off', 'Off']];
+  const gptList = [['gpt-6.2-sol', 'GPT-6.2 Sol (everyday, recommended)'], ['gpt-6.2-astra', 'GPT-6.2 Astra (most capable)'], ['gpt-6.1-terra', 'GPT-6.1 Terra (fast, reads pictures well)'], ['gpt-6-luna', 'GPT-6 Luna (cheapest)']];
+  const saveGptKey = async () => { await save({ openaiKey: gptKey.trim(), ...(p === 'auto' && !st.hasKey ? {} : p === 'chatgpt' ? {} : { provider: 'chatgpt' }) }); setGptKey(''); toast('ChatGPT key saved. Click Test to check it'); };
   return html`<div class="card pad">
-    <h3>AI for Quick capture</h3>
-    <p class="small muted">Quick capture (Ctrl+J) turns rough notes into items, calls and action items. A model reads the notes and places each record using the names of your boards, groups, columns, people and recent items. Without one, a simpler built-in reader is used.</p>
+    <h3>AI model</h3>
+    <p class="small muted">Chat, the assistant, Ask, reports and Quick capture use this model to read your emails, files and notes, plan next steps and answer questions. Without one, a simpler built-in reader is used.</p>
     <div class="seg mt">${opts.map(([k, l]) => html`<button key=${k} class=${p === k ? 'on' : ''} onClick=${() => save({ provider: k, ...(k === 'openai' && !/:1234/.test(st.localUrl) ? { localUrl: 'http://127.0.0.1:1234' } : k === 'ollama' && !/:11434/.test(st.localUrl) ? { localUrl: 'http://127.0.0.1:11434' } : {}) })}>${l}</button>`)}</div>
-    <p class="small muted mt">${p === 'auto' ? 'Uses Claude when an API key is saved below; otherwise the Llama or other model in Ollama on this PC (the same one LOA Command Center uses) when Ollama is running; otherwise the built-in reader.'
+    <p class="small muted mt">${p === 'auto' ? 'Uses Claude when an Anthropic key is saved, or ChatGPT when an OpenAI key is saved; otherwise the Llama or other model in Ollama on this PC (the same one LOA Command Center uses) when Ollama is running; otherwise the built-in reader.'
       : p === 'ollama' ? 'Uses a model installed in Ollama on this PC, such as the Llama model LOA Command Center uses. Notes never leave this PC.'
       : p === 'openai' ? 'Uses LM Studio, llama.cpp, Jan or another OpenAI-compatible server on this PC or your local network.'
-      : p === 'anthropic' ? 'Claude reads the notes, including photos of handwriting. The notes are sent to Anthropic and usage is billed to your Anthropic account.' : 'Only the built-in reader is used.'}</p>
+      : p === 'anthropic' ? 'Claude reads the notes, including photos of handwriting. The notes are sent to Anthropic and usage is billed to your Anthropic account.'
+      : p === 'chatgpt' ? 'ChatGPT reads your notes, emails and documents, including photos. The text is sent to OpenAI and usage is billed to your OpenAI account.' : 'Only the built-in reader is used.'}</p>
     ${isLocal ? html`<div class="grid c2 mt" style="gap:8px">
       <label class="field">Server address<input class="input" value=${st.localUrl} onChange=${(e) => save({ localUrl: e.target.value })} /></label>
       <label class="field">Model<input class="input" list="bd-local-models" placeholder="Pick automatically (prefers Llama)" value=${st.localModel} onChange=${(e) => save({ localModel: e.target.value })} />
@@ -173,5 +179,17 @@ export function AiSettings() {
       <label class="field mt" style="max-width:320px">Claude model<select class="input" value=${st.model} onChange=${(e) => save({ model: e.target.value })}>
         <option value="claude-opus-5-5">Claude Opus 5.5 (best placement)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (faster)</option><option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest)</option></select></label>
       <p class="small faint mt">Get a key at console.anthropic.com. The key is kept in this PC's Boardenda database and its backups.</p></div>` : null}
+    ${p === 'chatgpt' || p === 'auto' ? html`<div class="mt bd-gpt"><b class="small">ChatGPT</b>
+      ${st.hasGptKey ? html`<div class="row mt" style="gap:8px;flex-wrap:wrap"><span class="chip">Connected (key ${st.gptKeyHint})</span>
+          <button class="btn" disabled=${busy} onClick=${() => test('chatgpt')}>${busy ? 'Testing…' : 'Test'}</button>
+          <button class="btn ghost" onClick=${() => save({ openaiKey: '' })}>Disconnect</button></div>`
+        : html`<div class="row mt" style="gap:8px;flex-wrap:wrap"><a class="btn primary" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">Connect ChatGPT</a>
+          <span class="small muted">Sign in to OpenAI on the page that opens, click <b>Create new secret key</b>, copy it, and paste it here.</span></div>`}
+      <div class="row mt" style="gap:8px">
+        <input class="input grow" type="password" autocomplete="off" placeholder=${st.hasGptKey ? 'Paste a new key to replace it' : 'Paste your OpenAI key (sk-…)'} value=${gptKey} onInput=${(e) => setGptKey(e.target.value)} />
+        <button class="btn primary" disabled=${!gptKey.trim()} onClick=${saveGptKey}>Save key</button></div>
+      <label class="field mt" style="max-width:360px">GPT model<input class="input" list="bd-gpt-models" value=${st.gptModel} onChange=${(e) => save({ gptModel: e.target.value })} />
+        <datalist id="bd-gpt-models">${[...gptList.map(([v]) => v), ...((gptModels || []).filter((m) => !gptList.some(([v]) => v === m)))].map((m) => html`<option key=${m} value=${m}>${(gptList.find(([v]) => v === m) || [])[1] || m}</option>`)}</datalist></label>
+      <p class="small faint mt">OpenAI doesn't let other apps use your ChatGPT sign-in, so Boardenda connects with an API key. API use is billed by OpenAI separately from a ChatGPT Plus plan. The key is kept in this PC's Boardenda database and its backups.</p></div>` : null}
   </div>`;
 }

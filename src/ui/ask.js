@@ -94,7 +94,7 @@ export function AskPage({ boot }) {
                 <span class="n">${s.n}</span><${Icon} name=${(KIND[s.kind] || KIND.note)[0]} size="14" /><span class="grow" style="min-width:0"><b class="clip">${s.name || (KIND[s.kind] || KIND.note)[1]}</b>
                 <span class="small muted clip">${s.kind === 'file' ? s.path : s.board ? `${s.board} · ${s.snippet}` : s.snippet}</span>${!m.content && s.kind === 'file' ? html`<span class="small ask-snip">${s.snippet}</span>` : null}</span>
                 ${s.kind === 'file' && isDesktop ? html`<span class="btn ghost small" role="button" onClick=${(e) => { e.stopPropagation(); native('showPath', { path: s.path }).catch(toastError); }}>Show</span>` : null}</button>`)}</div>` : null}
-            <div class="small faint mt2">${m.mode === 'local' ? `Answered by ${m.model} on this PC` : m.mode === 'claude' ? `Answered by Claude (${m.model})` : 'Search results only'} · ${relTime(new Date(m.at).toISOString())}</div></div>`}
+            <div class="small faint mt2">${m.mode === 'local' ? `Answered by ${m.model} on this PC` : m.mode === 'claude' ? `Answered by Claude (${m.model})` : m.mode === 'chatgpt' ? `Answered by ChatGPT (${m.model})` : 'Search results only'} · ${relTime(new Date(m.at).toISOString())}</div></div>`}
         </div>`))}
       ${busy ? html`<div class="ask-msg bot"><div class="bubble"><${Spinner} /> <span class="muted small">Searching and thinking… local models can take up to a minute.</span></div></div>` : null}
       <div ref=${end}></div>
@@ -126,7 +126,7 @@ export function AskSources({ onChange }) {
   };
   const job = st.job;
   return html`<div class="card pad ask-setup">
-    <div class="row between"><div><b>Folders Ask can search</b><div class="small muted">Word, PDF, Excel, CSV, text, Markdown, HTML and email files in these folders are read and indexed on this PC. Nothing is uploaded${st.allowCloud ? ' (except passages sent to Claude, which you allowed)' : ''}.</div></div>
+    <div class="row between"><div><b>Folders Ask can search</b><div class="small muted">Word, PDF, Excel, CSV, text, Markdown, HTML and email files in these folders are read and indexed on this PC. Nothing is uploaded${st.allowCloud ? ' (except passages sent to Claude or ChatGPT, which you allowed)' : ''}.</div></div>
       ${isDesktop ? html`<button class="btn primary" onClick=${add}><${Icon} name="plus" /> Add folder</button>` : html`<span class="small muted">Adding folders needs the desktop app.</span>`}</div>
     ${st.folders.length ? html`<table class="plain mt2"><tbody>${st.folders.map((f) => html`<tr key=${f.path}><td><${Icon} name="folder" size="14" /> <span class="mono">${f.path}</span>${f.missing ? html` <span class="chip" style="color:var(--bad)">not found</span>` : null}</td>
       <td class="small muted">${f.files} ${f.files === 1 ? 'file' : 'files'}</td>
@@ -140,7 +140,7 @@ export function AskSources({ onChange }) {
     </div>
     <div class="col mt2" style="gap:4px">
       <label class="check small"><input type="checkbox" checked=${st.useBusiness} onChange=${(e) => call('askOptions', { useBusiness: e.target.checked }).then(load, toastError)} /> Also answer from boards, customers and calls in Boardenda</label>
-      <label class="check small"><input type="checkbox" checked=${st.allowCloud} onChange=${(e) => call('askOptions', { allowCloud: e.target.checked }).then(load, toastError)} /> Allow passages from these files to be sent to Claude when Claude is the AI in Settings › AI</label>
+      <label class="check small"><input type="checkbox" checked=${st.allowCloud} onChange=${(e) => call('askOptions', { allowCloud: e.target.checked }).then(load, toastError)} /> Allow passages from these files to be sent to Claude or ChatGPT when one of them is the AI in Settings › AI</label>
     </div>
     <div class="small faint mt2">Answers come from the AI chosen in Settings › AI (by default the Llama model in Ollama on this PC). For smarter search by meaning, also run <span class="mono">ollama pull nomic-embed-text</span>, then Update index. The index refreshes by itself every few hours.</div>
   </div>`;

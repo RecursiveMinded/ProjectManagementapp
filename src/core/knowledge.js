@@ -1,4 +1,5 @@
 'use strict';
+const { cloudName } = require('./capture');
 // Ask: a chat that answers questions from the business data in Boardenda and
 // from documents in folders on this PC that the user chose. Documents are read
 // and indexed on this PC into a separate knowledge.db (full-text search, plus
@@ -451,12 +452,12 @@ class Knowledge {
     if (!q) throw new Error('Type a question first.');
     const cfg = this.config();
     const [files, biz] = [await this.searchFiles(q, 8), cfg.useBusiness ? [...(extra ? extra(q) : []), ...this.searchBusiness(q)] : []];
-    const { engine, cfg: aiCfg, localCfg } = await this.capture.pickEngine();
-    const cloud = engine === 'claude';
+    const { engine } = await this.capture.pickEngine();
+    const cloud = engine === 'claude' || engine === 'chatgpt';
     const fileSources = cloud && !cfg.allowCloud ? [] : files;
     const sources = [...biz, ...fileSources].map((s, i) => ({ ...s, n: i + 1 }));
     const notes = [];
-    if (cloud && !cfg.allowCloud && files.length) notes.push(`${files.length} matching passages from your files were not sent to Claude. Allow it in Settings › AI, or use a local model.`);
+    if (cloud && !cfg.allowCloud && files.length) notes.push(`${files.length} matching passages from your files were not sent to ${cloudName(engine)}. Allow it in Settings › AI, or use a local model.`);
     const result = { mode: 'basic', model: null, answer: null, notes,
       sources: sources.map((s) => ({ n: s.n, kind: s.kind, id: s.id || null, name: s.name || (s.kind === 'note' ? 'Overview' : ''), path: s.path || null, board: s.board || null, snippet: String(s.text || '').replace(/\s+/g, ' ').slice(0, 260), score: s.score })) };
     if (engine === 'basic') {
@@ -475,29 +476,9 @@ class Knowledge {
     const turns = (Array.isArray(history) ? history : []).slice(-6).map((h) => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').slice(0, 4000) })).filter((h) => h.content);
     const user = `${context}\n\nQuestion: ${q}`;
     try {
-      if (engine === 'local') {
-        const { model } = await this.capture.localModels(localCfg);
-        if (!model) throw new Error('No chat model is installed. Run: ollama pull llama3.2');
-        let answer;
-        if (localCfg.provider === 'openai') {
-          const r = await this.capture.localFetch(localCfg, '/v1/chat/completions', { model, temperature: 0.2, messages: [{ role: 'system', content: system }, ...turns, { role: 'user', content: user }] }, 300000);
-          answer = r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content;
-        } else {
-          const r = await this.capture.localFetch(localCfg, '/api/chat', { model, stream: false, options: { temperature: 0.2, num_ctx: 16384 }, messages: [{ role: 'system', content: system }, ...turns, { role: 'user', content: user }] }, 300000);
-          answer = r.message && r.message.content;
-        }
-        return { ...result, mode: 'local', model, answer: String(answer || '').trim() || 'The model returned an empty answer.' };
-      }
-      const Anthropic = require('@anthropic-ai/sdk');
-      const Client = Anthropic.default || Anthropic;
-      const client = new Client({ apiKey: aiCfg.key, maxRetries: 2, timeout: 120000, ...(process.env.BOARDENDA_ANTHROPIC_BASE_URL ? { baseURL: process.env.BOARDENDA_ANTHROPIC_BASE_URL } : {}) });
-      const response = await client.beta.messages.create({
-        model: aiCfg.model, max_tokens: 4000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'low' },
-        system: [{ type: 'text', text: system }], messages: [...turns, { role: 'user', content: user }],
-      });
-      if (response.stop_reason === 'refusal') throw new Error('Claude declined to answer this.');
-      const answer = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-      return { ...result, mode: 'claude', model: aiCfg.model, answer: answer || 'Claude returned an empty answer.' };
+      const r = await this.capture.askText({ system, messages: [...turns, { role: 'user', content: user }], temperature: 0.2, maxTokens: 4000 });
+      if (!r) throw new Error('No chat model is installed. Run: ollama pull llama3.2');
+      return { ...result, mode: r.mode, model: r.model, answer: r.text || 'The model returned an empty answer.' };
     } catch (e) {
       result.notes.push(`The model could not answer (${e.message || e}), so here is what was found.`);
       return result;

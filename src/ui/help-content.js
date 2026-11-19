@@ -414,7 +414,7 @@ Click **Ask anything** in the sidebar, or press \`g\` then \`k\`. Type a questio
 - Answers come from the AI chosen in **Settings › AI** (by default the Llama model in Ollama on this PC). See [[ai-settings]].
 - Each answer lists its sources with numbers. Click a number or a source to open the file, item, customer or call. **Show** opens the file's folder.
 - With no model running, Ask still shows the passages and records that match.
-- Passages from your files are only sent to Claude if you tick **Allow passages from these files to be sent to Claude**. With Ollama nothing leaves the PC.
+- Passages from your files are only sent online if you tick **Allow passages from these files to be sent to Claude or ChatGPT**. With Ollama nothing leaves the PC.
 
 > For better search by meaning, run \`ollama pull nomic-embed-text\` once, then click **Update index**.` },
   { id: 'assistant', topic: 'capture', title: 'Assistant: plans and replies from emails, documents and Teams chats', keys: 'assistant email outlook msg eml pdf word excel teams chat paste reply draft action plan translate onenote teach folder documents g e', body: `
@@ -440,19 +440,22 @@ Click **Assistant** in the sidebar, or press \`g\` then \`e\`.
 - In the assistant settings, describe your role and work under **About you and your work**, set your signature and tone, and click **Add my Documents folder** so it can search your documents too.
 
 ## Privacy
-Everything is read on this PC. With Ollama (the default in [[ai-settings]]) nothing leaves the PC. If you choose Claude, the case text is sent to Claude to write the plan.
+Everything is read on this PC. With Ollama (the default in [[ai-settings]]) nothing leaves the PC. If you choose Claude or ChatGPT, the case text is sent to it to write the plan.
 
 > Drag and drop from Outlook works with classic Outlook for Windows. If a message won't drop, save it first (File › Save As) or copy and paste it.` },
-  { id: 'ai-settings', topic: 'capture', title: 'Choose the AI that reads your notes', keys: 'ai ollama llama local model claude anthropic api key lm studio settings', body: `
+  { id: 'ai-settings', topic: 'capture', title: 'Choose the AI that reads your notes', keys: 'ai ollama llama local model claude anthropic chatgpt openai gpt api key lm studio settings', body: `
 Go to **Settings › AI**.
 
-- **Automatic** (the default) uses Claude if an API key is saved, otherwise Ollama on this PC if it is running, otherwise the built-in reader.
+- **Automatic** (the default) uses Claude if an Anthropic key is saved, otherwise ChatGPT if an OpenAI key is saved, otherwise Ollama on this PC if it is running, otherwise the built-in reader.
 - **Ollama on this PC** uses the same local models as LOA Command Center, such as Llama or Gemma. Nothing leaves the PC.
 - **Other local server** works with LM Studio or another OpenAI-compatible server on this PC or your network.
 - **Claude (online)** needs an Anthropic API key, and can also read photos.
+- **ChatGPT (online)** uses your OpenAI account. Click **Connect ChatGPT**, sign in on the OpenAI page that opens, create a key, and paste it back. Pick the GPT model you want. It can also read photos.
 - **Off** always uses the built-in reader, which works offline with no model.
 
 Click **Test connection** to check that Boardenda can reach the model.
+
+> OpenAI doesn't let other apps sign in with your ChatGPT login, so the connection uses an API key instead. API use is billed by OpenAI separately from a ChatGPT Plus or Team plan; add a payment method at platform.openai.com if the test says the account has no credit.
 
 > Local models can take up to a minute on a long set of notes.` },
 
