@@ -3,6 +3,7 @@
 // Needs Playwright with Chromium installed:  npm run test:ui
 const { spawn } = require('child_process');
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const { chromium } = require('playwright');
@@ -581,6 +582,30 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.waitForSelector('.side .ac-pill:has-text("Activity paused")');
       await page.click('.ac-status button:has-text("Turn off")');
       await page.waitForSelector('.side .ac-pill', { state: 'detached' });
+    });
+    await step('web pages: read a link, tables, ask, pull out, export', async () => {
+      const fx = http.createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'web-page.html'))); });
+      await new Promise((r) => fx.listen(0, '127.0.0.1', r));
+      try {
+        await page.click('.side .nav a:has-text("Web pages")');
+        await page.waitForSelector('.ac-hero:has-text("Bring web pages into your assistant")');
+        await page.fill('input[aria-label="Web address"]', `http://127.0.0.1:${fx.address().port}/prices`);
+        await page.click('.wb-page button:has-text("Read link")');
+        await page.waitForSelector('.wb-title:has-text("Terminal price list")');
+        await page.waitForSelector('.wb-table td:has-text("Move 5000")');
+        await page.waitForSelector('.wb-item:has-text("Terminal price list")');
+        await page.fill('.wb-ask input', 'price of Desk 3500');
+        await page.click('.wb-ask button');
+        await page.waitForSelector('.wb-answer:has-text("Desk 3500")');
+        await page.fill('.wb-pull input', 'model and price');
+        await page.click('.wb-pull button');
+        await page.waitForSelector('.wb-chip.ai.on');
+        const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.wb-detail button:text-is("Excel")')]);
+        if (!/\.xlsx$/.test(dl.suggestedFilename())) throw new Error(`export named ${dl.suggestedFilename()}`);
+        await page.click('.wb-tabs .tab:has-text("Text")');
+        await page.waitForSelector('.wb-text:has-text("valid until December 31")');
+        await page.click('.wb-tabs .tab:has-text("Tables")');
+      } finally { fx.close(); }
     });
     await step('settings', async () => { await page.click('.side .foot button[title=Settings]'); await page.waitForSelector('h1:has-text("Settings")'); });
     await step('settings: AI and Ask folders', async () => { await page.click('.page button:text-is("AI")'); await page.waitForSelector('.ask-setup:has-text("boardenda-docs")'); });

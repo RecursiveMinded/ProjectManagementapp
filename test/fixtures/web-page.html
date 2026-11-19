@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Terminal price list | Acme Retail Portal</title>
+<meta name="description" content="Q4 terminal prices and store rollout status">
+<meta property="og:site_name" content="Acme Portal"></head>
+<body>
+<header><nav><a href="/">Home</a> <a href="/orders">Orders</a> <a href="/help">Help</a> <a href="/me">Account</a></nav></header>
+<main>
+  <h1>Q4 terminal prices</h1>
+  <p>Prices below are valid until December 31, 2026. Contact Dana Lee (dana.lee@acme.example) for volume quotes over 500 units.</p>
+  <h2>Terminals</h2>
+  <table>
+    <thead><tr><th>Model</th><th>Price</th><th>Stock</th></tr></thead>
+    <tbody>
+      <tr><td>Move 5000</td><td>$399</td><td>120</td></tr>
+      <tr><td>Desk 3500</td><td>$289</td><td>40</td></tr>
+      <tr><td>Lane 7000</td><td>$529</td><td>0</td></tr>
+    </tbody>
+  </table>
+  <h2>Open tickets</h2>
+  <div role="grid" aria-label="Open tickets">
+    <div role="row"><span role="columnheader">Ticket</span><span role="columnheader">Store</span><span role="columnheader">Status</span></div>
+    <div role="row"><span role="gridcell">T-1001</span><span role="gridcell">Store 12</span><span role="gridcell">Waiting on parts</span></div>
+    <div role="row"><span role="gridcell">T-1002</span><span role="gridcell">Store 40</span><span role="gridcell">Scheduled</span></div>
+  </div>
+  <h2>Store rollout</h2>
+  <div class="results">
+    <div class="card"><a href="/stores/1"><b>Store 1, Dallas</b></a><span>Live</span><span>Nov 3</span></div>
+    <div class="card"><a href="/stores/2"><b>Store 2, Austin</b></a><span>Live</span><span>Nov 5</span></div>
+    <div class="card"><a href="/stores/3"><b>Store 3, Houston</b></a><span>Pending</span><span>Dec 1</span></div>
+    <div class="card"><a href="/stores/4"><b>Store 4, El Paso</b></a><span>Pending</span><span>Dec 8</span></div>
+    <div class="card"><a href="/stores/5"><b>Store 5, Waco</b></a><span>Blocked</span><span>-</span></div>
+  </div>
+</main>
+<footer>© 2026 Acme</footer>
+<style>.card span { display: block }</style>
+</body></html>

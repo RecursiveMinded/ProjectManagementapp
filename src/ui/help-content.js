@@ -85,6 +85,29 @@ A task waiting on someone else that is past its date, or open for more than thre
 
 > Every done, snooze and dismiss is remembered, so Boardenda can learn what matters to you.` },
   // Getting started
+  { id: 'web', topic: 'daily', title: 'Web pages: read your browser and scrape data', keys: 'web page browser edge chrome firefox read scrape table list extract excel csv url link watch change ctrl alt b built-in browser sign in g w', body: `
+**Web pages** (left menu, \`g w\`) brings pages from the web into your assistant: their text, tables and lists, kept on this PC.
+
+## Read a page
+- **From your own browser:** on any page in Edge, Chrome or Firefox press **Ctrl+Alt+B**. Boardenda reads the tab you are looking at, signed in as you are, and a notification says what it kept. The same is in the tray menu (**Read the page in my browser**) and on the Web pages page (**Read my browser**), which reads the browser window nearest the front.
+- **A link:** paste it and press **Read link**. Boardenda opens it in a hidden window, lets the page load, and reads it. PDFs and Word or Excel files behind a link are read too.
+- **The built-in browser:** press **Built-in browser**, go to the page, and press **Read this page**. Sign in to a site here once (a portal, a CRM) and Boardenda can read it and watch it later. It is separate from Edge and Chrome.
+
+## Scrape data
+- Every real table, grid and repeated list on the page (products, search results, orders, tickets, stores) becomes rows under **Tables and lists**. Export one to **Excel** or **CSV**, or all of them to one Excel file.
+- **Pull out data:** say what you want, like "every store with its address and status" or "name, price and stock for each product". The AI reads the whole page (long pages in parts) and builds the table. Without an AI set up, the closest table is picked.
+
+## Ask, act and watch
+- **Ask** a question about the page, or leave it empty for a summary. Numbers, names and dates are quoted as the page shows them.
+- **Send to assistant** reads the page like a dropped file and suggests what to act on, in Chat.
+- Chat can use every saved page: ask "what did the price list say about the Move 5000?".
+- **Watch** a page every hour, day or week: Boardenda reads it again and tells you in Chat what changed (new lines and new rows). **Read again** checks it now.
+
+## Privacy
+- Pages stay in your Boardenda data folder (Web, and Web pages for the notes Chat searches). Delete one, or **Delete all pages**.
+- Private windows (InPrivate, Incognito), sign-in and password pages are never read, nor windows with the private words from Activity. Add sites and words to **Never read pages with these words in the address**; banking and payment sites are on it already.
+- When you ask about a page, it goes to the AI you chose in Settings. Chat sends saved pages to an online AI only if you allow files under Search folders.
+` },
   { id: 'activity', topic: 'daily', title: 'Activity and meeting recaps', keys: 'activity track time apps windows screen screenshot ocr meeting recap teams zoom webex meet transcript vtt summary day what did i do pause privacy delete g y', body: `
 Activity keeps a private log of your day so Boardenda can summarize it and recap your meetings. It is **off** until you turn it on in **Activity** (left menu, \`g y\`).
 
@@ -555,7 +578,7 @@ In **Settings › Appearance**, choose a light, dark or system theme, and comfor
 - \`Ctrl+P\` print or save as PDF
 - \`Ctrl+Shift+B\` new board
 - \`n\` new item, \`/\` search this board
-- \`g h\` Chat, \`g t\` Today, \`g o\` Tasks, \`g y\` Activity, \`g u\` Customers, \`g l\` Calls and meetings, \`g i\` Inbox
+- \`g h\` Chat, \`g t\` Today, \`g o\` Tasks, \`g y\` Activity, \`g w\` Web pages, \`g u\` Customers, \`g l\` Calls and meetings, \`g i\` Inbox
 - \`g b\` Boards, \`g m\` My work, \`g c\` Calendar, \`g e\` All dropped files, \`g k\` Search folders, \`g r\` Reports, \`g a\` Archive, \`g s\` Settings
 - \`F1\` Help, \`?\` this list in the app
 - \`Esc\` closes a panel or dialog` },

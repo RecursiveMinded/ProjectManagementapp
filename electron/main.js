@@ -2,12 +2,15 @@
 // Electron main process: window, tray, native dialogs, the automation
 // scheduler, desktop notifications, and the IPC bridge to the core API.
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Tray, Menu, nativeImage, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Tray, Menu, nativeImage, protocol, globalShortcut } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { AppApi, PUBLIC_METHODS } = require('../src/core/api');
 const updates = require('./updater');
 const activityWatch = require('./activity-watch');
+const { readBrowser } = require('./browser-read');
+const webWindow = require('./web-window');
+const { READER_JS } = require('../src/core/page-script');
 
 const APP_NAME = 'Boardenda';
 app.setName(APP_NAME);
@@ -82,8 +85,10 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true,
+      webviewTag: true, // the built-in browser on the Web page (locked down in web-window.js)
     },
   });
+  webWindow.guardWebviews(win.webContents);
   win.setMenuBarVisibility(false);
   win.loadURL('app://ui/index.html');
   win.once('ready-to-show', () => { if (!startHidden && !smokeTest) win.show(); });
@@ -124,7 +129,13 @@ function runSmokeTest() {
       const ocrText = JSON.stringify([ocr.header, ...ocr.rows]);
       if (!/Acme/i.test(ocrText)) return finish(1, `OCR read ${ocrText}`);
       const pdf = await api.previewImport('smoke.pdf', await win.webContents.printToPDF({}));
-      finish(0, `${JSON.stringify(r)} ocr=${ocr.confidence}% pdfRows=${pdf.total}`);
+      // Web pages: the page reader in a hidden window finds a table and a list, and the browser reader runs.
+      const page = `<html><head><title>Smoke prices</title></head><body><main><h1>Prices</h1><table><tr><th>Model</th><th>Price</th></tr><tr><td>Move 5000</td><td>$399</td></tr><tr><td>Desk 3500</td><td>$289</td></tr></table>${[1, 2, 3, 4, 5].map((i) => `<div class="card"><b>Store ${i}</b><span>Open</span></div>`).join('')}</main></body></html>`;
+      const web = await webWindow.readInWindow(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`, READER_JS, { settle: 300 });
+      if (!web || !web.tables.length || web.tables[0].rows.length !== 2 || !web.lists.length) return finish(1, `page reader read ${JSON.stringify(web).slice(0, 400)}`);
+      const br = await readBrowser(api.webPrivacy(), { timeoutMs: 90000 });
+      if (!br.ok && !['nobrowser', 'private', 'blocked'].includes(br.reason)) return finish(1, `browser reader: ${JSON.stringify(br).slice(0, 400)}`);
+      finish(0, `${JSON.stringify(r)} ocr=${ocr.confidence}% pdfRows=${pdf.total} webRows=${web.tables[0].rows.length} webList=${web.lists[0].rows.length} browser=${br.ok ? 'read' : br.reason}`);
     } catch (e) { finish(1, e.message); }
   });
 }
@@ -166,6 +177,8 @@ function updateTray() {
     a.paused ? { label: 'Resume now', click: () => setAct({ pauseMinutes: 0 }) } : { label: 'Pause for 1 hour', enabled: a.watching, click: () => setAct({ pauseMinutes: 60 }) },
     { label: 'Open Activity', click: () => showWindow('activity') },
     { type: 'separator' },
+    { label: `Read the page in my browser${hotkeyOn ? '  (Ctrl+Alt+B)' : ''}`, click: () => readBrowserNow() },
+    { type: 'separator' },
     { label: 'Send digest now', click: () => sendDigest(true) },
     { label: 'Check for updates', click: () => checkUpdatesNow() },
     { type: 'separator' },
@@ -187,6 +200,75 @@ function startActivity() {
       onChange: (st) => { activityState = st; updateTray(); if (win) win.webContents.send('activity', st); },
     });
   } catch (e) { logError(e); }
+}
+
+// ------------------------------------------------------------- web pages
+const HOTKEY = 'CommandOrControl+Alt+B';
+let hotkeyOn = false;
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (_) { return ''; } };
+const READ_WHY = {
+  nobrowser: 'No browser window is open. Open the page in Edge, Chrome or Firefox and try again.',
+  private: 'That is a private browsing window, so it was not read.',
+  blocked: 'That page is on the never-read list (banking, sign-in or password pages), so it was not read.',
+  unsupported: 'Reading the browser works on Windows.',
+};
+
+/**
+ * Read the page open in the user's browser and save it. Text and tables come from the
+ * browser itself (so pages they are signed in to work); for a public page that gave little,
+ * the same address is also read in a hidden window for its lists and links.
+ */
+async function readBrowserPage() {
+  const r = await readBrowser(api.webPrivacy());
+  if (!r.ok) return { ok: false, reason: r.reason, message: READ_WHY[r.reason] || r.message || 'The browser could not be read.', title: r.title || '' };
+  const page = { url: r.url || '', title: r.title, text: r.text || '', tables: r.tables || [], lists: [], links: [], meta: {} };
+  if (/^https?:/i.test(page.url)) {
+    try {
+      const h = await webWindow.readInWindow(page.url, READER_JS, { timeout: 20000 });
+      const a = String(h && h.title || '').toLowerCase().slice(0, 20), b = String(r.title || '').toLowerCase();
+      const same = h && hostOf(h.url) === hostOf(page.url) && !api.webBlocked(h.url, h.title) && a && (b.includes(a) || a.includes(b.slice(0, 20)));
+      if (same) {
+        if (page.text.length < 400 && String(h.text || '').length > page.text.length) page.text = h.text;
+        if (!page.tables.length) page.tables = h.tables || [];
+        page.lists = h.lists || [];
+        page.links = h.links || [];
+        page.meta = h.meta || {};
+        page.headings = h.headings || [];
+      }
+    } catch (e) { logError(e); }
+  }
+  try {
+    const p = api.webSave(page, { via: 'browser' });
+    return { ok: true, id: p.id, title: p.title, url: p.url, chars: p.text.length, tables: p.tables.length, lists: p.lists.length, rows: [...p.tables, ...p.lists].reduce((n, t) => n + t.rows.length, 0), change: p.change };
+  } catch (e) {
+    return { ok: false, reason: e.blocked ? 'blocked' : 'error', message: e.message, title: page.title };
+  }
+}
+
+/** From the hotkey or the tray: read the browser and say what was kept. */
+async function readBrowserNow() {
+  try {
+    const r = await readBrowserPage();
+    if (!r.ok) { notify('Page not read', r.message); return; }
+    const bits = [r.tables ? `${r.tables} ${r.tables === 1 ? 'table' : 'tables'}` : '', r.lists ? `${r.lists} ${r.lists === 1 ? 'list' : 'lists'}` : '', r.rows ? `${r.rows} rows` : ''].filter(Boolean).join(', ');
+    const changed = r.change && r.change.changed ? ' It changed since you last read it.' : '';
+    notify(`Read: ${r.title.slice(0, 80)}`, `${bits ? `${bits}. ` : ''}Ask about it in Chat, or open it to scrape and export.${changed}`, { name: 'web', id: r.id });
+    if (win) win.webContents.send('changed', { web: r.id });
+  } catch (e) { logError(e); notify('Page not read', e.message); }
+}
+
+function registerHotkey() {
+  let want = true;
+  try { want = api.webStatus().hotkey !== false; } catch (_) { /* default on */ }
+  if (want === hotkeyOn) return;
+  if (want) {
+    hotkeyOn = globalShortcut.register(HOTKEY, () => { readBrowserNow(); });
+    if (!hotkeyOn) logError(new Error(`${HOTKEY} is taken by another app`));
+  } else {
+    globalShortcut.unregister(HOTKEY);
+    hotkeyOn = false;
+  }
+  updateTray();
 }
 
 // ---------------------------------------------------------- notifications
@@ -247,6 +329,7 @@ function registerIpc() {
       const fixed = (args || []).map((a) => fixBinary(a));
       const out = await api[method](...fixed);
       if (method === 'setSettings') applyOsSettings();
+      if (method === 'setWeb') registerHotkey();
       if (watcher && (method === 'setActivity' || method === 'activityMeetingStart' || method === 'activityMeetingStop' || method === 'activityDeleteAll')) watcher.refresh();
       return plain(out);
     } catch (e) {
@@ -299,6 +382,8 @@ function registerIpc() {
         case 'isFolder': { try { return fs.statSync(a.path).isDirectory(); } catch (_) { return false; } }
         case 'openAssistantFile': { const p = api.assistantFilePath(a.id, a.name); const err = await shell.openPath(p); if (err) throw new Error(err); return true; }
         case 'openExternal': { openExternal(a.url); return true; }
+        case 'readBrowser': return await readBrowserPage();
+        case 'webHotkey': return { on: hotkeyOn, keys: 'Ctrl+Alt+B' };
         case 'testNotification': { sendDigest(true); return true; }
         case 'chooseFolder': {
           const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
@@ -414,6 +499,8 @@ if (!app.requestSingleInstanceLock()) {
       app.exit(1);
       return;
     }
+    api.web.loader = (url) => webWindow.readInWindow(url, READER_JS);
+    api.web.fetcher = webWindow.sessionFetch;
     registerUiProtocol();
     registerIpc();
     createWindow();
@@ -423,7 +510,9 @@ if (!app.requestSingleInstanceLock()) {
     startScheduler();
     startUpdates();
     startActivity();
+    registerHotkey();
   });
+  app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch (_) { /* quitting */ } });
   app.on('before-quit', () => { quitting = true; try { if (watcher) watcher.stop(); } catch (_) { /* stopping */ } try { api && api.db.close(); } catch (_) { /* closing */ } });
   app.on('window-all-closed', () => { /* stay in tray */ });
   app.on('activate', () => showWindow());
