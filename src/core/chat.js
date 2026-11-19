@@ -19,6 +19,11 @@ const QUESTION = /^(who|what|when|where|why|how|which|whose|is|are|was|were|do|d
 const BRIEF = /^(brief(ing)?|today|good morning|morning|what('?s| is) (on|up|next)( for)?( today)?|what should i (do|work on)( first| next| today)?|what('?s| is) (my )?(priority|priorities)|plan my day)\b/i;
 
 // "completed the Omni battle card", "done with the price file", "sent the quote to Joe"
+// "what did I do today?", "summarize my day", "where did my time go yesterday"
+const MYDAY = /^(what (did|have) i (do|done|work(ed)? on)|how did i spend|where did (my|the) (time|day) go|(summari[sz]e|recap) my (day|time|activity)|my day so far|my activity)\b/i;
+// "recap my last meeting", "summarize the last call"
+const LASTMEETING = /^(recap|summari[sz]e|write up)\s+(my |the )?(last|latest|previous|recent) (meeting|call)\b/i;
+
 const DONE = /^(i\s+)?(just\s+|have\s+|'ve\s+)?(completed?|done|finished|closed( out)?|sent|submitted|delivered|wrapped up|ticked off|mark(ed)? (as )?done)\b/i;
 
 function isQuestion(text) {
@@ -111,6 +116,10 @@ class Chat {
       reply = this.post('assistant', 'cases', [...notes, head].join(' '), { caseIds: ids });
     } else if (DONE.test(t) && t.length < 300 && !t.includes('\n') && this.tasks.match(t).some((x) => x.m >= 0.34)) {
       reply = this.ticked(t);
+    } else if (this.activity && MYDAY.test(t) && t.length < 200) {
+      reply = await this.myDay(/yesterday/i.test(t) ? addDays(today(), -1) : today());
+    } else if (this.activity && LASTMEETING.test(t) && t.length < 200) {
+      reply = await this.lastMeeting();
     } else if (BRIEF.test(t)) {
       reply = this.briefing({ force: true, quiet: true });
     } else if (isQuestion(t)) {
@@ -208,6 +217,32 @@ class Chat {
     });
   }
 
+  /** "What did I do today?": the activity summary for the day, or how to turn tracking on. */
+  async myDay(date) {
+    const st = this.activity.settings();
+    const d = this.activity.day(date);
+    if (!d.timeline.length) {
+      const why = st.enabled ? 'Nothing was tracked on that day yet.' : 'Activity tracking is off. Turn it on in **Activity** (left menu) and I will keep a private log of the apps and documents you work in, on this PC only.';
+      return this.post('assistant', 'answer', why, { mode: 'basic' });
+    }
+    try {
+      const s = await this.activity.summarize(date);
+      return this.post('assistant', 'answer', `${s.text}${s.note ? `\n\n_${s.note}_` : ''}`, { mode: s.mode, model: s.model, activity: date });
+    } catch (e) { return this.post('assistant', 'answer', '', { error: String(e.message || e) }); }
+  }
+
+  /** "Recap my last meeting": the most recent meeting from the activity log goes to the assistant. */
+  async lastMeeting() {
+    const ms = [...this.activity.day(today()).meetings, ...this.activity.day(addDays(today(), -1)).meetings].filter((m) => !m.live).sort((a, b) => (a.start < b.start ? 1 : -1));
+    if (!ms.length) return this.post('assistant', 'answer', 'I did not see a meeting today or yesterday. Open **Activity** to start one by hand, or paste the transcript or your notes here.', { mode: 'basic' });
+    const m = ms[0];
+    if (m.recap) return this.post('assistant', 'cases', `${m.title} was already recapped.`, { caseIds: [m.recap.caseId] });
+    try {
+      const { caseId } = await this.activity.recap({ id: m.id, date: m.date, quiet: true });
+      return this.post('assistant', 'cases', `Recapping ${m.title} (${m.from}–${m.to}) from what was on your screen. Drop the Teams transcript here too for a fuller recap.`, { caseIds: [caseId] });
+    } catch (e) { return this.post('assistant', 'answer', '', { error: String(e.message || e) }); }
+  }
+
   /** Post the morning briefing once a day (or now, when asked). Returns the message id, or null. */
   briefing({ force = false, at = today() } = {}) {
     const key = `briefing:${at}`;
@@ -221,4 +256,4 @@ class Chat {
   }
 }
 
-module.exports = { Chat, isQuestion, BRIEF, DONE };
+module.exports = { Chat, isQuestion, BRIEF, DONE, MYDAY, LASTMEETING };

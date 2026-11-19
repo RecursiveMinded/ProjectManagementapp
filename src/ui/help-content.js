@@ -77,6 +77,29 @@ A task waiting on someone else that is past its date, or open for more than thre
 
 > Every done, snooze and dismiss is remembered, so Boardenda can learn what matters to you.` },
   // Getting started
+  { id: 'activity', topic: 'daily', title: 'Activity and meeting recaps', keys: 'activity track time apps windows screen screenshot ocr meeting recap teams zoom webex meet transcript vtt summary day what did i do pause privacy delete g y', body: `
+Activity keeps a private log of your day so Boardenda can summarize it and recap your meetings. It is **off** until you turn it on in **Activity** (left menu, \`g y\`).
+
+## What it notes
+- **Track my activity:** the app and window title in front (for example the email subject, document or web page), every 30 seconds. Nothing is kept while you are away for 5 minutes or the PC is locked.
+- **Read screen text (optional):** a picture of your screens every minute (every 20 seconds in a meeting), read with OCR on this PC. Shared slides, meeting chat and captions end up in your recaps. A screen whose text did not change is not kept twice.
+- A **red dot** on the tray icon and the line at the bottom of the sidebar show while it is on. Right-click the tray icon to pause for an hour or turn it off.
+
+## Your day
+Activity shows the time per app, what you worked on, a timeline and the meetings it saw. Press **Summarize my day**, or ask in Chat: "what did I do today?" or "what did I work on yesterday?". Use **Find something you saw** to search window titles and screen text, for example a ticket number or a price.
+
+## Meeting recaps
+1. Teams, Zoom, Webex and Google Meet meetings are spotted on their own. For a phone call or a meeting in a room, press **Start a meeting**, then **End meeting and recap**.
+2. When a meeting ends you get a "Recap it?" notification. Press **Recap** next to the meeting.
+3. Add the transcript (drop the .vtt or .docx from Teams, or paste it) or your own notes. With screen text on, this is optional.
+4. The recap shows in Chat: a summary, decisions, your tasks and what others owe you (they join your task list), and a follow-up email draft.
+You can also type "recap my last meeting" in Chat, or use **Recap from a transcript** for any meeting.
+
+## Privacy
+- Everything stays in your Boardenda data folder, under Activity, and is deleted after the days you choose (7 by default). **Delete this day** and **Delete everything** remove it at once.
+- Windows with words from your private list (passwords, banking, private browsing by default) are kept only as "(private)" and their screen is never read. Add your own words.
+- With a local AI (Ollama) everything is read on this PC. With an online AI (Claude or ChatGPT), only window titles are sent for summaries, and screen text is left out of summaries and recaps, unless you turn on **Let an online AI read it**. A transcript or notes you add to a recap are sent like any file you drop in Chat.
+` },
   { id: 'welcome', topic: 'start', title: 'What Boardenda is', keys: 'overview intro about local offline', body: `
 Boardenda is a work management app that runs entirely on this PC. There is no account and no server: everything is saved in one data file on your computer, backed up every day.
 
@@ -524,7 +547,7 @@ In **Settings › Appearance**, choose a light, dark or system theme, and comfor
 - \`Ctrl+P\` print or save as PDF
 - \`Ctrl+Shift+B\` new board
 - \`n\` new item, \`/\` search this board
-- \`g h\` Chat, \`g t\` Today, \`g o\` Tasks, \`g u\` Customers, \`g l\` Calls and meetings, \`g i\` Inbox
+- \`g h\` Chat, \`g t\` Today, \`g o\` Tasks, \`g y\` Activity, \`g u\` Customers, \`g l\` Calls and meetings, \`g i\` Inbox
 - \`g b\` Boards, \`g m\` My work, \`g c\` Calendar, \`g e\` All dropped files, \`g k\` Search folders, \`g r\` Reports, \`g a\` Archive, \`g s\` Settings
 - \`F1\` Help, \`?\` this list in the app
 - \`Esc\` closes a panel or dialog` },

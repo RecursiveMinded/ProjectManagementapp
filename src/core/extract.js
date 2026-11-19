@@ -183,4 +183,4 @@ async function extract(name, bytes, readTable) {
   return { kind: KINDS.txt, rows: linesToRows(text.split(/\r?\n/)), text, notes };
 }
 
-module.exports = { extract, linesToRows, htmlTables, outlineRows, kindOf, IMAGE_RE };
+module.exports = { ocr, extract, linesToRows, htmlTables, outlineRows, kindOf, IMAGE_RE };

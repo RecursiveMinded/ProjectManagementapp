@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('boardenda', {
   native: (op, args) => ipcRenderer.invoke('native', op, args),
   pathFor: (file) => { try { return webUtils.getPathForFile(file) || ''; } catch (_) { return ''; } },
   on: (channel, fn) => {
-    if (!['navigate', 'digest', 'update', 'changed', 'openItem'].includes(channel)) return () => {};
+    if (!['navigate', 'digest', 'update', 'changed', 'openItem', 'activity'].includes(channel)) return () => {};
     const h = (_e, payload) => fn(payload);
     ipcRenderer.on(channel, h);
     return () => ipcRenderer.removeListener(channel, h);

@@ -976,3 +976,36 @@ button.tk-due:disabled { cursor: default; }
 .tk-mini { display: flex; gap: 6px; align-items: center; padding: 3px 0; font-size: 13px; min-width: 0; }
 .tk-mini .clip { cursor: pointer; }
 .tk-mini .clip:hover { text-decoration: underline; }
+
+/* Activity */
+.ac-page h3 { display: flex; align-items: center; gap: 6px; font-size: 14px; margin: 0 0 10px; }
+.ac-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px; margin-bottom: 14px; align-items: start; }
+.ac-sec { padding: 14px 16px; margin-bottom: 14px; min-width: 0; }
+.ac-grid .ac-sec { margin-bottom: 0; }
+.ac-hero { max-width: 760px; margin: 10px auto; padding: 28px 32px; text-align: center; }
+.ac-hero h2 { margin: 8px 0 12px; }
+.ac-list { text-align: left; margin: 0 0 18px; padding-left: 18px; line-height: 1.5; }
+.ac-list li { margin-bottom: 6px; }
+.ac-status { display: flex; align-items: center; gap: 10px; padding: 12px 16px; margin-bottom: 14px; flex-wrap: wrap; }
+.ac-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.ac-status.on .ac-dot, .ac-pill.on .ac-dot { background: var(--good); }
+.ac-status.rec .ac-dot, .ac-pill.rec .ac-dot { background: var(--bad); box-shadow: 0 0 0 3px rgba(214, 69, 69, .25); }
+.ac-pill.paused .ac-dot { background: #c9a227; }
+.ac-pill { display: flex; align-items: center; gap: 8px; margin: 4px 10px 6px; padding: 6px 10px; border-radius: 8px; background: var(--side-2); color: var(--side-text); border: 0; cursor: pointer; font-size: 12px; text-align: left; }
+.ac-pill:hover { background: var(--side-3); }
+.ac-toggle { padding: 10px 0; border-bottom: 1px solid var(--line); gap: 12px; }
+.ac-meet { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.ac-meet:last-child { border-bottom: 0; }
+.ac-bar { display: grid; grid-template-columns: 110px 1fr 70px; gap: 8px; align-items: center; padding: 3px 0; }
+.ac-bar-t { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.ac-bar-t span { display: block; height: 100%; background: var(--brand); border-radius: 4px; }
+.ac-bar-v { text-align: right; }
+.ac-topic { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.ac-line { display: flex; gap: 10px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); min-width: 0; font-size: 13px; }
+.ac-line.meet { background: var(--brand-soft); }
+.ac-app { flex: none; width: 90px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-hit { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.ac-snip { white-space: pre-wrap; max-height: 80px; overflow: hidden; margin: 2px 0; }
+.ac-recap-text { width: 100%; font-family: inherit; margin-bottom: 8px; }
+.ac-drop { padding: 10px 12px; font-size: 13px; }
+.ac-summary { font-size: 13px; }

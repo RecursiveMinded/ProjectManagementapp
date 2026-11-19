@@ -540,6 +540,36 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.seg button:has-text("Waiting on others")');
       await page.waitForSelector('.tk-row .tk-who');
     });
+    await step('activity: turn on, see a meeting, recap it', async () => {
+      await page.click('.side .nav a:has-text("Activity")');
+      await page.waitForSelector('.ac-hero:has-text("Let Boardenda keep track of your day")');
+      await page.click('.ac-hero button:has-text("Track my activity")');
+      await page.waitForSelector('.ac-status:has-text("Tracking activity")');
+      await page.waitForSelector('.side .ac-pill:has-text("Tracking activity")');
+      await page.evaluate(async () => {
+        const t0 = Date.now() - 40 * 60000;
+        const rec = (min, proc, title) => fetch('/api/activityRecord', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify([{ proc, title, idleSec: 1, at: new Date(t0 + min * 60000).toISOString() }]) });
+        for (let m = 0; m < 10; m += 0.5) await rec(m, 'OUTLOOK', 'RE: Kroger pricing - Outlook');
+        for (let m = 10; m < 30; m += 0.5) await rec(m, 'ms-teams', 'Omni rollout sync | Microsoft Teams');
+        for (let m = 30; m < 36; m += 0.5) await rec(m, 'EXCEL', 'Q4 forecast.xlsx - Excel');
+      });
+      await page.click('.side .nav a:has-text("Today")');
+      await page.click('.side .nav a:has-text("Activity")');
+      await page.waitForSelector('.ac-meet:has-text("Omni rollout sync")');
+      await page.waitForSelector('.ac-bar:has-text("Teams")');
+      await page.click('.ac-sec button:has-text("Summarize my day")');
+      await page.waitForSelector('.ac-summary:has-text("Omni rollout sync")');
+      await page.click('.ac-meet button:has-text("Recap")');
+      await page.fill('.ac-recap-text', 'Dana: Brian sends the Omni pricing to Kroger by Friday. Agreed to pilot in 3 stores.');
+      await page.click('.modal button:has-text("Make the recap")');
+      await page.waitForSelector('.drawer');
+      await page.click('.drawer button[aria-label=Close]');
+      await page.waitForSelector('.ac-meet button:has-text("Open recap")');
+      await page.click('.ac-status button:has-text("Pause 1 hour")');
+      await page.waitForSelector('.side .ac-pill:has-text("Activity paused")');
+      await page.click('.ac-status button:has-text("Turn off")');
+      await page.waitForSelector('.side .ac-pill', { state: 'detached' });
+    });
     await step('settings', async () => { await page.click('.side .foot button[title=Settings]'); await page.waitForSelector('h1:has-text("Settings")'); });
     await step('settings: AI and Ask folders', async () => { await page.click('.page button:text-is("AI")'); await page.waitForSelector('.ask-setup:has-text("boardenda-docs")'); });
     await step('settings: connect ChatGPT', async () => {

@@ -1286,3 +1286,124 @@ test('archives: OneNote sections and notebooks, web pages, and Outlook emails as
     assert.ok(r.emails.every((x, i) => !i || String(r.emails[i - 1].date) >= String(x.date)), 'newest first');
   }
 });
+
+test('activity: opt-in tracking, private windows, the day, meetings, screen text, recaps, chat and clean-up', async () => {
+  const { isMeeting, vttText, cleanTitle } = require('../src/core/activity');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bd-activity-'));
+  const api = await AppApi.create({ dataDir: dir });
+  api.setAi({ provider: 'off' });
+  const A = api.activity;
+  A.ocr = async (b) => ({ text: Buffer.from(b).toString('utf8') });
+  // Off by default: nothing is kept, and no screen pictures are wanted.
+  assert.equal(api.activityStatus().enabled, false);
+  assert.equal(api.activityRecord({ proc: 'WINWORD', title: 'Plan.docx - Word' }), null);
+  assert.equal(api.activityWantShot({ proc: 'WINWORD', title: 'x' }), false);
+  assert.equal(api.bootstrap().activity.watching, false);
+  // Screen notes turn tracking on; turning tracking off turns screen notes off.
+  let st = api.setActivity({ screens: true });
+  assert.equal(st.enabled, true); assert.equal(st.recordingScreens, true);
+  st = api.setActivity({ enabled: false });
+  assert.equal(st.screens, false);
+  api.setActivity({ enabled: true, screens: true, everySec: 30 });
+
+  const d = today();
+  const at = (hh, mm, ss = 0) => new Date(`${d}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`).toISOString();
+  const run = (from, to, w) => { for (let t = from; t < to; t += 0.5) api.activityRecord({ ...w, at: at(Math.floor(t / 60), Math.floor(t % 60), (t % 1) * 60), idleSec: 3 }); };
+  run(9 * 60, 9 * 60 + 20, { proc: 'OUTLOOK', title: 'RE: Kroger pricing - Outlook' });
+  run(9 * 60 + 20, 9 * 60 + 50, { proc: 'ms-teams', title: 'Weekly retail review | Microsoft Teams', app: 'Microsoft Teams' });
+  run(9 * 60 + 50, 9 * 60 + 52, { proc: 'msedge', title: 'Chase Online Banking - Microsoft Edge' });
+  run(9 * 60 + 52, 10 * 60 + 10, { proc: 'EXCEL', title: 'Q4 forecast.xlsx - Excel' });
+  // Idle or locked time is not kept.
+  assert.equal(api.activityRecord({ proc: 'EXCEL', title: 'x', idleSec: 900 }), null);
+  assert.equal(api.activityRecord({ proc: 'EXCEL', title: 'x', locked: true }), null);
+  // A shot inside the meeting is read; a shot of the same text is dropped; a private window is never shot.
+  await api.activityAddShot({ bytes: Buffer.from('Slide 3: Omni rollout dates\nWalmart pilot starts Dec 2'), at: at(9, 30), app: 'Teams', title: 'Weekly retail review | Microsoft Teams' });
+  await api.activityAddShot({ bytes: Buffer.from('Slide 3: Omni rollout dates\nWalmart pilot starts Dec 2'), at: at(9, 31), app: 'Teams', title: 'Weekly retail review | Microsoft Teams' });
+  assert.equal(api.activityWantShot({ proc: 'msedge', title: 'Chase Online Banking' }), false);
+
+  const day = api.activityDay(d);
+  assert.ok(day.totalMinutes >= 65 && day.totalMinutes <= 75, `total ${day.totalMinutes}`);
+  assert.equal(day.apps[0].app, 'Teams');
+  assert.ok(day.topics.some((t) => t.label === 'Q4 forecast.xlsx - Excel' || t.label === 'Q4 forecast.xlsx'));
+  assert.ok(day.timeline.some((b) => b.title === '(private)'), 'banking window title is hidden');
+  assert.ok(!JSON.stringify(day).includes('Chase'));
+  assert.equal(day.meetings.length, 1);
+  const m = day.meetings[0];
+  assert.equal(m.title, 'Weekly retail review');
+  assert.equal(m.from, '09:20');
+  assert.ok(m.minutes >= 29 && m.minutes <= 31);
+  assert.equal(m.screens, 1, 'the repeated screen was dropped');
+  assert.equal(api.activitySearch('walmart pilot')[0].app, 'Teams');
+  assert.ok(api.activityShot(d, api.activitySearch('walmart')[0].file).length > 10);
+  assert.equal(api.activityShot(d, '../boardenda.db'), null, 'only screen pictures can be read');
+
+  // The built-in summary without an AI.
+  const s = await api.activitySummarize(d);
+  assert.equal(s.mode, 'basic');
+  assert.match(s.text, /Weekly retail review/);
+  assert.equal(api.activityDay(d).summary.text, s.text);
+
+  // An online AI gets window titles but not screen text unless allowed.
+  let sent = '';
+  api.capture.pickEngine = async () => ({ engine: 'chatgpt' });
+  api.capture.askText = async ({ messages }) => { sent = messages[0].content; return { mode: 'chatgpt', model: 'gpt', text: '**What you worked on**\n- Kroger pricing' }; };
+  await api.activitySummarize(d);
+  assert.match(sent, /Weekly retail review/); assert.doesNotMatch(sent, /Walmart pilot/);
+  api.setActivity({ allowCloud: true });
+  await api.activitySummarize(d);
+  assert.match(sent, /Walmart pilot/);
+  api.setActivity({ allowCloud: false });
+
+  // A recap with a Teams transcript becomes a case (summary, tasks, follow-up), shown in chat.
+  delete api.capture.pickEngine; delete api.capture.askText;
+  const vtt = 'WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n<v Dana Lee>Brian will send the Omni pricing to Kroger by Friday.</v>\n\n00:00:05.000 --> 00:00:07.000\n<v Brian>Agreed.</v>\n';
+  assert.equal(vttText(vtt), 'Dana Lee: Brian will send the Omni pricing to Kroger by Friday.\nBrian: Agreed.');
+  const { caseId } = await api.activityRecap({ id: m.id, date: d, files: [{ name: 'Weekly retail review.vtt', bytes: Buffer.from(vtt) }] });
+  const c = await api.assistantSettle(caseId);
+  assert.equal(c.state, 'ready');
+  assert.match(api.assistant.row(caseId).text, /Omni pricing to Kroger/);
+  assert.match(api.assistant.row(caseId).text, /Walmart pilot/, 'with no online AI, screen text from the meeting is included');
+  assert.equal(api.activityDay(d).meetings[0].recap.caseId, caseId);
+  assert.ok(api.chatHistory().some((x) => x.kind === 'cases' && (x.caseIds || []).includes(caseId)));
+  await assert.rejects(api.activityRecap({ title: 'Nothing' }), /transcript/);
+  // With an online AI that may not read activity, screen text is left out of the recap.
+  A.cloudAllowed = async () => ({ engine: 'chatgpt', cloud: true, ok: false });
+  const rc2 = await api.activityRecap({ id: m.id, date: d, text: 'Notes: send pricing.' });
+  assert.doesNotMatch(api.assistant.row(rc2.caseId).text, /Walmart pilot/);
+  await api.assistantSettle(rc2.caseId);
+  delete A.cloudAllowed;
+
+  // A meeting started by hand.
+  api.activityMeetingStart('Call with Lee');
+  assert.equal(api.activityStatus().meeting.title, 'Call with Lee');
+  assert.equal(api.activityDay(d).meetings.find((x) => x.manual).live, true);
+  const stopped = api.activityMeetingStop();
+  assert.equal(stopped.title, 'Call with Lee');
+  assert.equal(api.activityStatus().meeting, null);
+
+  // Chat: "what did I do today?" and "recap my last meeting".
+  const [, r1] = await api.chatSend({ text: 'What did I do today?' });
+  assert.equal(r1.kind, 'answer'); assert.match(r1.content, /Teams/);
+  const [, r2] = await api.chatSend({ text: 'recap my last meeting' });
+  assert.ok(r2.kind === 'cases' || r2.kind === 'answer');
+
+  // Pause, then clean-up: old days go, delete everything.
+  st = api.setActivity({ pauseMinutes: 60 });
+  assert.equal(st.paused, true); assert.equal(st.watching, false);
+  assert.equal(api.activityRecord({ proc: 'EXCEL', title: 'x' }), null);
+  api.setActivity({ pauseMinutes: 0 });
+  fs.mkdirSync(path.join(dir, 'Activity', '2020-01-01'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Activity', '2020-01-01', 'log.jsonl'), '{"t":"w","at":"2020-01-01T10:00:00Z","app":"Word","title":"Old"}\n');
+  assert.ok(api.activityDays().includes('2020-01-01'));
+  api.runSchedule(new Date());
+  assert.ok(!api.activityDays().includes('2020-01-01'));
+  api.activityDeleteAll();
+  assert.deepEqual(api.activityDays(), []);
+
+  // Meeting windows across apps.
+  assert.equal(isMeeting({ proc: 'Zoom', app: 'Zoom', title: 'Zoom Meeting' }), true);
+  assert.equal(isMeeting({ proc: 'ms-teams', app: 'Teams', title: 'Chat | Lee | Microsoft Teams' }), false);
+  assert.equal(isMeeting({ proc: 'msedge', app: 'Edge', title: 'Meet - abc-defg-hij - Microsoft Edge' }), true);
+  assert.equal(cleanTitle('(3) Pricing review | Microsoft Teams', 'Teams'), 'Pricing review');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
