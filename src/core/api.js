@@ -20,6 +20,8 @@ const { Capture } = require('./capture');
 const { Tasks } = require('./tasks');
 const { Chat } = require('./chat');
 const { Activity } = require('./activity');
+const { Web } = require('./web');
+const { READER_JS } = require('./page-script');
 const T = require('./templates');
 const io = require('./io');
 const C = require('./columns');
@@ -66,6 +68,8 @@ class AppApi {
     this.activity = new Activity({ db: this.db, dataDir: this.dataDir, capture: this.capture, assistant: this.assistant, readFile: (n, b) => this.notesText(n, b), ocr: (b) => require('./extract').ocr(b) });
     this.activity.chat = this.chat;
     this.chat.activity = this.activity;
+    this.web = new Web({ db: this.db, dataDir: this.dataDir, capture: this.capture, assistant: this.assistant, knowledge: this.knowledge, activity: this.activity, readFile: (n, b) => this.notesText(n, b) });
+    this.web.chat = this.chat;
     try {
       if (!this.db.get("SELECT value FROM settings WHERE key='customers_adopted'")) {
         this.customers.adoptCallCustomers();
@@ -429,6 +433,7 @@ class AppApi {
     try { this.knowledge.maybeRefresh(); } catch (_) { /* never block the schedule */ }
     try { this.briefs.maybeAutoWeekly(when); } catch (_) { /* never block the schedule */ }
     this.assistant.scanWatch().catch(() => {});
+    this.web.runWatches(when).catch(() => {});
     try { const k = `activity_pruned:${today(when)}`; if (!this.db.get('SELECT key FROM settings WHERE key=?', [k])) { this.activity.prune(today(when)); this.db.run("DELETE FROM settings WHERE key LIKE 'activity_pruned:%'"); this.db.run('INSERT INTO settings(key,value) VALUES(?,?)', [k, 'true']); } } catch (_) { /* never block the schedule */ }
     return this.automations.tick(when) + made;
   }
@@ -690,6 +695,26 @@ class AppApi {
   activityShot(date, file) { return this.activity.shot(date, file); }
   activityDeleteDay(date) { return this.activity.deleteDay(date); }
   activityDeleteAll() { return this.activity.deleteAll(); }
+
+  // ------------------------------------------------ web pages and scraping
+  webStatus() { return this.web.status(); }
+  setWeb(patch) { return this.web.setSettings(patch); }
+  webPages(o) { return this.web.list(o); }
+  webPage(id) { return this.web.get(id); }
+  webSave(page, o) { return this.web.save(page, o); }
+  webReadUrl(url, o) { return this.web.readUrl(url, o); }
+  webRecheck(id) { return this.web.recheck(id); }
+  webUpdate(id, patch) { return this.web.update(id, patch); }
+  webDelete(id) { return this.web.remove(id); }
+  webClear() { return this.web.clear(); }
+  webAsk(ids, question) { return this.web.ask(ids, question); }
+  webExtract(id, instruction) { return this.web.extract(id, instruction); }
+  webExport(id, which, format) { return this.web.exportTable(id, which, format); }
+  webToAssistant(id, o) { return this.web.toAssistant(id, o); }
+  webBlocked(url, title) { return this.web.blockedReason(url, title); }
+  webPrivacy() { return this.web.privacyRules(); }
+  /** The script the built-in browser runs in a page to read it. */
+  webScript() { return READER_JS; }
 
   // ------------------------------------------------------- chat and tasks
   chatHistory(o) { return this.chat.history(o); }

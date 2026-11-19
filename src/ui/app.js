@@ -25,6 +25,7 @@ import { AssistantPage, CaseView } from './assistant.js';
 import { ChatPage } from './chat.js';
 import { TodayPage, TasksPage } from './tasks.js';
 import { ActivityPage, ActivityPill } from './activity.js';
+import { WebPage } from './web.js';
 
 window.__bdSelfTest = selfTest;
 
@@ -122,7 +123,7 @@ function App() {
       if (!typing && !ctrl && !e.altKey) {
         if (Date.now() - gPrefix.current < 1200) {
           gPrefix.current = 0;
-          const to = { h: 'chat', t: 'today', o: 'tasks', y: 'activity', b: 'home', m: 'mywork', c: 'calendar', i: 'inbox', s: 'settings', a: 'archive', l: 'meetings', u: 'customers', k: 'ask', r: 'reports', e: 'assistant' }[e.key.toLowerCase()];
+          const to = { h: 'chat', t: 'today', o: 'tasks', y: 'activity', w: 'web', b: 'home', m: 'mywork', c: 'calendar', i: 'inbox', s: 'settings', a: 'archive', l: 'meetings', u: 'customers', k: 'ask', r: 'reports', e: 'assistant' }[e.key.toLowerCase()];
           if (to) { e.preventDefault(); nav(to); return; }
         }
         if (e.key === 'g') { gPrefix.current = Date.now(); return; }
@@ -157,6 +158,7 @@ function App() {
   if (r.name === 'chat') page = html`<${ChatPage} nav=${nav} version=${version} />`;
   else if (r.name === 'today') page = html`<${TodayPage} nav=${nav} version=${version} />`;
   else if (r.name === 'tasks') page = html`<${TasksPage} version=${version} />`;
+  else if (r.name === 'web') page = html`<${WebPage} id=${r.id} version=${version} />`;
   else if (r.name === 'activity') page = html`<${ActivityPage} version=${version} reloadShell=${reloadShell} />`;
   else if (r.name === 'board') page = html`<${BoardPage} key=${r.id} boardId=${r.id} openItem=${openItem} refreshShell=${reloadShell} nav=${nav} version=${version} />`;
   else if (r.name === 'dashboard') page = html`<${DashboardPage} key=${r.id} id=${r.id} boot=${boot} nav=${nav} openItem=${openItem} refreshShell=${reloadShell} version=${version} />`;
@@ -183,7 +185,7 @@ function App() {
     return t ? { ...f, name: t.name } : null;
   }).filter(Boolean);
   const allShut = boot.workspaces.length > 0 && boot.workspaces.every((w) => closedWs[w.id]);
-  const NAV = [['chat', 'Chat', 'msg'], ['today', 'Today', 'today'], ['tasks', 'Tasks', 'check'], ['activity', 'Activity', 'clock'], ['customers', 'Customers', 'building'], ['meetings', 'Calls and meetings', 'phone'],
+  const NAV = [['chat', 'Chat', 'msg'], ['today', 'Today', 'today'], ['tasks', 'Tasks', 'check'], ['activity', 'Activity', 'clock'], ['web', 'Web pages', 'globe'], ['customers', 'Customers', 'building'], ['meetings', 'Calls and meetings', 'phone'],
     ['inbox', 'Inbox', 'inbox', boot.unread || null], ['help', 'Help and guide', 'help']];
   const ADV = [['home', 'Boards', 'table'], ['mywork', 'My work (boards)', 'person'], ['calendar', 'Calendar', 'calendar'], ['assistant', 'All dropped files', 'spark'], ['ask', 'Search folders', 'search'], ['reports', 'Reports', 'report']];
   const navLink = (name, label, icon, badge) => html`<a key=${name} class=${r.name === name ? 'on' : ''} onClick=${() => nav(name)}><${Icon} name=${icon} />${label}${badge ? html`<span class="badge">${badge}</span>` : null}</a>`;
@@ -247,7 +249,7 @@ function App() {
 
 const SHORTCUTS = [
   ['Ctrl+K', 'Search and commands'], ['Ctrl+Z', 'Undo the last change'], ['Ctrl+P', 'Print or save the board or doc as PDF'],
-  ['g h', 'Go to Chat (home)'], ['g t', 'Go to Today'], ['g o', 'Go to Tasks'], ['g u', 'Go to Customers'], ['g l', 'Go to Calls and meetings'], ['g i', 'Go to Inbox'],
+  ['g h', 'Go to Chat (home)'], ['g t', 'Go to Today'], ['g o', 'Go to Tasks'], ['g y', 'Go to Activity'], ['g w', 'Go to Web pages'], ['g u', 'Go to Customers'], ['g l', 'Go to Calls and meetings'], ['g i', 'Go to Inbox'],
   ['g b', 'Go to Boards'], ['g m', 'Go to My work (boards)'], ['g c', 'Go to Calendar'], ['g e', 'Go to All dropped files'], ['g k', 'Search folders on this PC'], ['g r', 'Go to Reports'],
   ['Ctrl+Shift+B', 'New board'], ['n', 'New item on this board'], ['/', 'Search this board'], ['Ctrl J', 'Quick capture: turn notes into records'],
   ['g a', 'Go to Archive and trash'], ['g s', 'Go to Settings'], ['F1', 'Help and user guide'], ['Esc', 'Close a panel or dialog'], ['?', 'Show this list'],

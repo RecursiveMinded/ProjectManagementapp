@@ -53,6 +53,10 @@ jobs:
           $p = Start-Process -FilePath $exe.FullName -ArgumentList "--smoke-test" -PassThru -Wait -RedirectStandardOutput smoke.txt
           Get-Content smoke.txt
           if ($p.ExitCode -ne 0) { throw "Smoke test failed ($($p.ExitCode))" }
+      - name: Read a page open in Edge (Ctrl+Alt+B reader, informational)
+        continue-on-error: true
+        timeout-minutes: 4
+        run: node scripts/try-browser-read.js
       - name: Check the update manifest was built
         shell: pwsh
         run: if (!(Test-Path release/latest.yml)) { throw "release/latest.yml is missing" }
