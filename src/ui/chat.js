@@ -31,11 +31,11 @@ function CaseCard({ c }) {
     <span class="ch-case-ico">${working ? html`<${Spinner} />` : html`<${Icon} name=${c.kind === 'email' ? 'mail' : c.kind === 'chat' ? 'msg' : c.kind === 'text' ? 'text' : 'file'} size="16" />`}</span>
     <span class="grow" style="min-width:0">
       <b class="clip" style="display:block">${c.title}</b>
-      <span class="small muted ch-sum">${working ? (c.state === 'reading' ? 'Reading…' : 'Working out the tasks… a local model can take a minute.') : c.state === 'error' ? `Could not be read: ${c.error}` : `${c.sender ? `From ${c.sender}. ` : ''}${c.summary || ''}`}</span>
+      <span class="small muted ch-sum">${working ? (c.state === 'reading' ? 'Reading…' : 'Working out the tasks… a local model can take a minute.') : c.state === 'error' ? `Could not be read: ${c.error}` : `${c.sender && !String(c.summary || '').includes(c.sender.replace(/\s*<[^>]*>/, '').replace(/^"|"$/g, '')) ? `From ${c.sender.replace(/\s*<[^>]*>/, '').replace(/^"|"$/g, '')}. ` : ''}${c.summary || ''}`}</span>
       ${chips.length ? html`<span class="ch-chips">${chips}</span>` : null}
     </span>
     <${Icon} name="arrowRight" size="14" /></button>
-    ${steps.length ? html`<div class="ch-steps">${steps.slice(0, 8).map((t) => html`<${TaskRow} key=${t.key} t=${t} compact />`)}
+    ${steps.length ? html`<div class="ch-steps">${steps.slice(0, 8).map((t) => html`<${TaskRow} key=${t.key} t=${t} compact inCase />`)}
       ${steps.length > 8 ? html`<a class="link small" onClick=${() => openCase(c.id)}>${steps.length - 8} more</a>` : null}</div>` : null}
   </div>`;
 }
@@ -52,7 +52,9 @@ function Bubble({ m, nav }) {
   };
   let body;
   if (m.kind === 'cases') {
-    body = html`<div>${m.content}</div><div class="ch-cases">${(m.cases || []).map((c) => html`<${CaseCard} key=${c.id} c=${c} />`)}</div>`;
+    const cs = m.cases || [];
+    const head = /^Reading /.test(m.content || '') && cs.length && !cs.some(busyState) ? (cs.length === 1 ? 'Read it. Here is what it says and what to do next.' : `Read all ${cs.length}. Each has its summary and next steps.`) : m.content;
+    body = html`<div>${head}</div><div class="ch-cases">${(m.cases || []).map((c) => html`<${CaseCard} key=${c.id} c=${c} />`)}</div>`;
   } else if (m.kind === 'tasks') {
     body = html`<div>${m.content}</div><div class="ch-steps ch-tasks">${(m.tasks || []).length ? m.tasks.map((t) => html`<${TaskRow} key=${t.key} t=${t} compact />`) : html`<div class="small muted">These tasks are no longer on your list.</div>`}</div>`;
   } else if (m.kind === 'briefing' && m.briefing) {

@@ -143,13 +143,94 @@ function parsePasted(text) {
   return { subject, from, to: get(/^\s*To:\s*(.+)$/mi), cc: get(/^\s*Cc:\s*(.+)$/mi), date: date && !Number.isNaN(Date.parse(date.replace(/ at /, ' '))) ? new Date(date.replace(/ at /, ' ')).toISOString() : date, text: t.trim(), attachments: [] };
 }
 
-/** "Jane Doe <jane@acme.com>" → { name, email } */
-function address(s) {
-  const str = String(s || '').split(/[,;](?![^<]*>)/)[0].trim();
-  const m = str.match(/^"?([^"<]*?)"?\s*<([^>]+)>/);
-  if (m) return { name: m[1].trim() || m[2], email: m[2].trim().toLowerCase() };
-  const e = str.match(/[\w.+'-]+@[\w-]+(\.[\w-]+)+/);
-  return { name: e ? str.replace(e[0], '').replace(/[<>"()]/g, '').trim() || e[0] : str, email: e ? e[0].toLowerCase() : '' };
+/** Split an address list on commas or semicolons that are not inside quotes or <>. */
+function splitList(s) {
+  const out = [];
+  let cur = '';
+  let q = false;
+  let a = false;
+  for (const ch of String(s || '')) {
+    if (ch === '"') q = !q;
+    else if (ch === '<') a = true;
+    else if (ch === '>') a = false;
+    if ((ch === ',' || ch === ';') && !q && !a) {
+      // "Martinez, Carla <c@x>" without quotes: a comma before a lone first name is part of the name.
+      out.push(cur); cur = ''; continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur);
+  // Re-join "Last, First <email>" that was split on its comma.
+  const fixed = [];
+  for (const part of out.map((x) => x.trim()).filter(Boolean)) {
+    const prev = fixed[fixed.length - 1];
+    if (prev && !/[@<]/.test(prev) && /^[^@,]+<[^>]+>$/.test(part)) fixed[fixed.length - 1] = `${prev}, ${part}`;
+    else fixed.push(part);
+  }
+  return fixed;
 }
 
-module.exports = { parseEml, parseMsg, parsePasted, address, htmlToText, decodeWords };
+/** A display name written "Last, First" becomes "First Last". */
+function niceName(n) {
+  const t = String(n || '').replace(/^["']+|["']+$/g, '').replace(/\s+/g, ' ').trim();
+  const m = t.match(/^([^,]+),\s*([^,]+)$/);
+  return m && !/\b(inc|llc|ltd|co|corp)\b/i.test(m[2]) ? `${m[2].trim()} ${m[1].trim()}` : t;
+}
+
+/** "Jane Doe <jane@acme.com>" → { name, email } */
+function address(s) {
+  const str = splitList(s)[0] || '';
+  const m = str.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>/);
+  if (m) return { name: niceName(m[1]) || m[2].trim(), email: m[2].trim().toLowerCase() };
+  const e = str.match(/[\w.+'-]+@[\w-]+(\.[\w-]+)+/);
+  return { name: e ? niceName(str.replace(e[0], '').replace(/[<>"()\[\]]/g, '').replace(/^mailto:/i, '').trim()) || e[0] : niceName(str), email: e ? e[0].toLowerCase() : '' };
+}
+
+/** Every address in a list, as "Name <email>". */
+function addresses(s) { return splitList(s).map(address).filter((a) => a.name || a.email); }
+
+/** "RE: RE: FW: Subject" → "RE: Subject" */
+function replySubject(s) { return `RE: ${String(s || '').replace(/^\s*((re|fw|fwd|aw|wg|tr|rv)\s*(\[\d+\])?\s*:\s*)+/i, '').trim()}`; }
+
+const QUOTE_START = [
+  /^\s*-{2,}\s*(original message|forwarded message|message d'origine|mensaje original|ursprüngliche nachricht)\s*-{2,}/i,
+  /^\s*(from|de|von|van):\s.+$/i, // Outlook header block, checked with the next lines below
+  /^\s*on .{6,120}(wrote|écrit|schrieb|escribió):\s*$/i,
+  /^\s*_{10,}\s*$/,
+];
+const DISCLAIMER = /^\s*(confidentiality notice|disclaimer|this (e-?mail|message|communication)( and any attachments)? (is|are|may|contains?)|the information (contained )?in this (e-?mail|message)|if you (are not|have received) th(e|is) .*(intended|in error)|please consider the environment|caution: this email originated|external email|\[external\])/i;
+const SIGNOFF = /^\s*(thanks|thank you|many thanks|thanks again|best|best regards|kind regards|regards|warm regards|cheers|sincerely|br|rgds|thx|merci|cordialement|saludos|gracias|mit freundlichen grüßen)[\s,!.]*$/i;
+
+/**
+ * Split an email body into the newest message and the quoted history, and drop
+ * the signature, legal disclaimers and inline image placeholders.
+ * Returns { latest, signature, history, greeting }.
+ */
+function cleanBody(text) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').replace(/\[cid:[^\]]*\]/gi, '').replace(/ /g, ' ').split('\n');
+  let cut = lines.length;
+  for (let i = 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^\s*>/.test(l) && lines.slice(i, i + 3).filter((x) => /^\s*>/.test(x)).length >= 2) { cut = i; break; }
+    if (QUOTE_START[0].test(l) || QUOTE_START[2].test(l) || QUOTE_START[3].test(l)) { cut = i; break; }
+    if (QUOTE_START[1].test(l) && lines.slice(i + 1, i + 6).some((x) => /^\s*(sent|date|envoyé|gesendet|enviado|to|subject|objet|betreff):/i.test(x))) { cut = i; break; }
+  }
+  const history = lines.slice(cut).join('\n').trim();
+  let body = lines.slice(0, cut);
+  // Legal disclaimers: drop from the first disclaimer paragraph on.
+  const d = body.findIndex((l) => DISCLAIMER.test(l));
+  if (d > 0) body = body.slice(0, d);
+  // Signature: from "Thanks," / "--" to the end, when it comes after the main text.
+  let sig = '';
+  const dash = body.findIndex((l) => /^\s*--\s*$/.test(l));
+  const off = body.findIndex((l, i) => i > 0 && SIGNOFF.test(l));
+  const s = [dash, off].filter((i) => i > 0).sort((a, b) => a - b)[0];
+  if (s !== undefined && body.slice(0, s).join(' ').trim().length > 20) { sig = body.slice(s).join('\n').trim(); body = body.slice(0, s); }
+  let latest = body.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  let greeting = '';
+  const g = latest.match(/^(hi|hello|hey|dear|good (morning|afternoon|evening)|bonjour|hola|hallo)\b[^\n,]{0,40}[,!:]?\s*\n?/i);
+  if (g) { greeting = g[0].trim(); latest = latest.slice(g[0].length).trim(); }
+  return { latest, signature: sig, history, greeting };
+}
+
+module.exports = { parseEml, parseMsg, parsePasted, address, addresses, niceName, replySubject, cleanBody, htmlToText, decodeWords };

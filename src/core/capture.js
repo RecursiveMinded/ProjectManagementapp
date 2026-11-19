@@ -45,7 +45,7 @@ function parseDate(s, base = today()) {
   if (m) {
     const want = DAYS.findIndex((d) => d.startsWith(m[2].slice(0, 3))) + 1;
     let n = (want - dow(base) + 7) % 7 || 7;
-    if (m[1] && n < 7) n += 7;
+    if (m[1] && want > dow(base)) n += 7; // "next Friday" said on a Monday is the Friday after this one
     return addDays(base, n);
   }
   m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? (\d{1,2})(st|nd|rd|th)?\b/) || t.match(/\b(\d{1,2})(st|nd|rd|th)? (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);

@@ -58,7 +58,7 @@ function DatePop({ anchor, onClose, value, onPick }) {
  * One task, wherever it shows: tick it off, give it a target date, set its priority, change its words,
  * snooze or dismiss it, ask what's needed, nudge whoever owes it, open where it came from.
  */
-export function TaskRow({ t: given, onChanged, compact = false }) {
+export function TaskRow({ t: given, onChanged, compact = false, inCase = false }) {
   const [t, setT] = useState(given);
   useEffect(() => setT(given), [given]);
   const [anchor, openMenu, closeMenu] = useAnchor();
@@ -125,7 +125,7 @@ export function TaskRow({ t: given, onChanged, compact = false }) {
         ? html`<${InlineText} value=${t.title} onSave=${(v) => v && change({ title: v })} />` : t.title}</div>
       <div class="small muted tk-meta">
         ${t.who ? html`<span class="tk-who">${t.who}</span>` : null}
-        ${t.link ? html`<a class="link clip" title=${(SRC[t.source] || SRC.own)[1]} onClick=${() => openTaskSource(t)}><${Icon} name=${(SRC[t.source] || SRC.own)[0]} size="12" /> ${t.context || (SRC[t.source] || SRC.own)[1]}</a>` : t.context ? html`<span class="clip">${t.context}</span>` : null}
+        ${inCase ? null : t.link ? html`<a class="link clip" title=${(SRC[t.source] || SRC.own)[1]} onClick=${() => openTaskSource(t)}><${Icon} name=${(SRC[t.source] || SRC.own)[0]} size="12" /> ${t.context || (SRC[t.source] || SRC.own)[1]}</a>` : t.context ? html`<span class="clip">${t.context}</span>` : null}
         ${!compact && t.reason && live ? html`<span class="tk-why">${t.reason}</span>` : null}
         ${t.state === 'snoozed' ? html`<span>until ${shortDate(t.snoozeUntil)}</span>` : null}
       </div>

@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { uid, now, today, addDays, parseJson } = require('./util');
+const { parseDate, parseTime } = require('./capture');
 const mail = require('./mail');
 const archives = require('./archives');
 
@@ -19,6 +20,20 @@ const READABLE = /\.(msg|eml|pdf|docx|xlsx|xlsm|csv|tsv|txt|md|html?|mht|mhtml|o
 const MAX_TEXT = 60000;
 
 const DEFAULT_PROFILE = 'I run North America retail for Ingenico (payment terminals and services for retailers). I work with retail customers, partners and resellers, and internal teams such as sales, product, support, operations, finance and legal.';
+
+const bareSubject = (s) => String(s || '').replace(/^\s*((re|fw|fwd|aw|wg|tr|rv)\s*(\[\d+\])?\s*:\s*)+/i, '').trim();
+const who = (s) => { const a = mail.address(s); return a.email && a.name && a.name !== a.email ? `${a.name} <${a.email}>` : a.name || a.email || ''; };
+/** The body of a pasted email without its From/To/Subject lines. */
+const pastedBody = (t) => String(t || '').replace(/\r\n/g, '\n').replace(/^(?:\s*(?:from|sent|date|to|cc|subject|importance):.*\n)+\s*/i, '');
+/** An email for the model: headers, the newest message, the sender's signature, then the earlier thread as context. */
+function emailText(label, e, text) {
+  const b = mail.cleanBody(text);
+  const list = (v) => mail.addresses(v).map((a) => (a.email && a.name !== a.email ? `${a.name} <${a.email}>` : a.name || a.email)).join(', ');
+  return [`${label}\nFrom: ${list(e.from)}\nTo: ${list(e.to)}${e.cc ? `\nCc: ${list(e.cc)}` : ''}\nDate: ${e.date}\nSubject: ${e.subject}`,
+    `NEWEST MESSAGE (this is what needs a response):\n${b.greeting ? `${b.greeting}\n` : ''}${b.latest || '(empty)'}`,
+    b.signature ? `SENDER SIGNATURE:\n${b.signature.slice(0, 600)}` : '',
+    b.history ? `EARLIER MESSAGES IN THIS THREAD (context only, newest first):\n${b.history.slice(0, 15000)}` : ''].filter(Boolean).join('\n\n');
+}
 
 const SCHEMA = {
   type: 'object',
@@ -112,12 +127,12 @@ class Assistant {
   caseText(src) {
     const parts = [];
     for (const f of src.files || []) {
-      if (f.email) parts.push(`EMAIL "${f.name}"\nFrom: ${f.email.from}\nTo: ${f.email.to}${f.email.cc ? `\nCc: ${f.email.cc}` : ''}\nDate: ${f.email.date}\nSubject: ${f.email.subject}\n\n${f.text}`);
+      if (f.email) parts.push(emailText(`EMAIL "${f.name}"`, f.email, f.text));
       else parts.push(`DOCUMENT "${f.name}"\n${f.text}`);
       for (const a of f.attachments || []) if (a.text) parts.push(`ATTACHMENT "${a.name}" (of ${f.name})\n${a.text}`);
     }
     if (src.pasted && src.chat) parts.push(`CHAT CONVERSATION (pasted, e.g. from Teams)\n${src.pasted}`);
-    else if (src.pasted) parts.push(src.pastedEmail ? `EMAIL (pasted)\nFrom: ${src.pastedEmail.from}\nTo: ${src.pastedEmail.to}\nDate: ${src.pastedEmail.date}\nSubject: ${src.pastedEmail.subject}\n\n${src.pasted}` : `PASTED TEXT\n${src.pasted}`);
+    else if (src.pasted) parts.push(src.pastedEmail ? emailText('EMAIL (pasted)', src.pastedEmail, pastedBody(src.pasted)) : `PASTED TEXT\n${src.pasted}`);
     return parts.join('\n\n---\n\n').slice(0, MAX_TEXT);
   }
 
@@ -183,7 +198,7 @@ class Assistant {
       const body = this.caseText(src);
       if (!body.trim()) throw new Error(src.files.map((f) => f.error).filter(Boolean)[0] || 'No text could be read from this.');
       this.db.run('UPDATE assistant_cases SET source=?, text=?, sender=?, title=?, state=?, updated_at=? WHERE id=?',
-        [JSON.stringify(src), body, email ? email.from : '', title || (email && email.subject ? email.subject : src.chat ? 'Chat conversation' : firstName.replace(/\.[a-z0-9]+$/i, '')), 'thinking', now(), id]);
+        [JSON.stringify(src), body, email ? who(email.from) : '', title || (email && email.subject ? bareSubject(email.subject) : src.chat ? 'Chat conversation' : firstName.replace(/\.[a-z0-9]+$/i, '')), 'thinking', now(), id]);
       if (src.chat) this.db.run("UPDATE assistant_cases SET kind='chat' WHERE id=?", [id]);
       await this.slot(() => this.analyze(id));
     })().catch((e) => { this.db.run("UPDATE assistant_cases SET state='error', error=?, updated_at=? WHERE id=?", [String(e.message || e).slice(0, 400), now(), id]); })
@@ -274,12 +289,16 @@ class Assistant {
   systemPrompt(cfg) {
     return `You are a chief of staff and executive assistant built into Boardenda, a work management app on the user's PC.
 About the user: ${cfg.profile || DEFAULT_PROFILE}
+You drive the work: read each item like a sharp chief of staff, decide what has to happen, and hand the user a plan and ready-to-send drafts so nothing is missed.
+How to read an email: the NEWEST MESSAGE is what needs action. Earlier messages in the thread are context only. Ignore greetings, signatures, legal disclaimers and image placeholders. Use the signature to learn the sender's title and company. Resolve words like "Friday" or "next Tuesday" against the email's Date.
 For every email or document you get:
-- Write a short title and a 2-4 sentence summary of what it is and what is being asked.
+- Title: short and specific, naming the customer or topic and the issue (for example "Big Retail: Lane/5000 reboots after firmware 3.2.1"), never just the subject line with RE: or FW:.
+- Summary: 2-4 plain sentences: who wrote and their company, what is happening with the key facts and numbers, exactly what they are asking for, and by when. No greetings or filler.
+- key_points: the facts, numbers, decisions and deadlines, one per line.
 - If it is not in English, set language and give a faithful English translation in "translation"; otherwise language "English" and translation "".
 - Decide category, priority (urgent = same day; high = this week), and a due date (YYYY-MM-DD) if one is stated or implied, else "".
-- Make an action plan: concrete, ordered steps to respond or resolve. Owner is "me" (the user), "internal" (a colleague or team) or "third party" (customer, partner, vendor); put the person or team in "who" when known; give due dates where sensible.
-- Draft every reply needed: to the sender, and any internal or third-party messages needed to resolve it (e.g. ask support for a status, loop in finance). Write them ready to send, in a ${cfg.tone || 'professional'} tone, in the language the recipient used. Sign as the user${cfg.signature ? ` with this signature:\n${cfg.signature}` : ''}.
+- Make an action plan: concrete, ordered steps to respond or resolve. Every step starts with a verb and is specific enough to do without rereading the email (for example "Ask engineering for the 3.2.2 certification date", not "Look into it"). Cover every ask in the newest message, the internal steps needed to get each answer, and the reply itself. Owner is "me" (the user), "internal" (a colleague or team) or "third party" (customer, partner, vendor); put the person or team in "who" when known; give due dates where sensible.
+- Draft every reply needed: to the sender, and any internal or third-party messages needed to resolve it (e.g. ask support for a status, loop in finance). The reply to the sender answers each of their points in order; where only the user knows the answer, put a clear [placeholder]. Keep drafts short and natural. Subjects start with a single "RE:". Write them ready to send, in a ${cfg.tone || 'professional'} tone, in the language the recipient used. Sign as the user${cfg.signature ? ` with this signature:\n${cfg.signature}` : ''}.
 - If you need more data, a document, a contact name or a decision from the user, ask in "questions" (max 5) and say why. Never invent facts, numbers, names, emails or commitments; use placeholders like [order number] instead.
 - Placement: choose the existing workspace, board and group where the follow-up tasks belong (use exact names from <my_boards>). If none fits, set new_board true and name a sensible new board.
 - Organize: if the boards could be structured better for this kind of work (swim lanes/groups, a board per customer or program, columns to track), give short practical advice and, if useful, a proposed board with groups (swim lanes) and columns. Otherwise leave advice "" and the lists empty.
@@ -296,12 +315,7 @@ For every email or document you get:
     const ef = (src.files || []).find((f) => f.email);
     const email = ef ? { email: ef.email, text: ef.text } : src.pastedEmail ? { email: src.pastedEmail, text: src.pasted.replace(/^[\s\S]*?\n\s*\n/, '') } : null;
     const body = email ? email.text : (src.pasted || text);
-    const sentences = body.replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/).filter((s) => s.length > 20 && !/^(from|to|sent|subject|cc):/i.test(s));
-    const asks = sentences.filter((s) => /\?|please|could you|can you|need|required|request|asap|urgent|by (mon|tue|wed|thu|fri|sat|sun|end of|eod|cob|\d)/i.test(s)).slice(0, 6);
-    const urgent = /urgent|asap|immediately|escalat|outage|down\b|critical|today/i.test(body);
-    const dueM = body.match(/\b(?:by|before|due|no later than)\s+([A-Z][a-z]+ \d{1,2}(?:, \d{4})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|\d{4}-\d{2}-\d{2})/);
-    let due = '';
-    if (dueM) { const d = new Date(dueM[1].match(/\d{4}/) ? dueM[1] : `${dueM[1]} ${new Date().getFullYear()}`); if (!Number.isNaN(d.getTime())) due = today(d); }
+    void text;
     const sender = mail.address(c.sender || (email && email.email.from) || '');
     if (src.chat) {
       const lines = body.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -316,19 +330,17 @@ For every email or document you get:
     const words = new Set((`${c.title} ${body.slice(0, 2000)}`).toLowerCase().match(/[a-z0-9]{4,}/g) || []);
     const scored = struct.boards.map((b) => ({ b, s: (b.name.toLowerCase().match(/[a-z0-9]{4,}/g) || []).filter((w) => words.has(w)).length + (rel.biz.filter((x) => x.board === b.name).length) })).sort((a, b2) => b2.s - a.s);
     const best = scored[0] && scored[0].s > 0 ? scored[0].b : struct.boards[0];
+    const o = outline({ email: email && email.email, body, title: c.title, sender });
     return {
-      title: (email && email.email.subject) || c.title,
-      summary: sentences.slice(0, 3).join(' ').slice(0, 600) || body.slice(0, 400),
-      language: '', translation: '', category: email ? 'request' : 'information', priority: urgent ? 'urgent' : asks.length ? 'high' : 'normal', due,
-      sender_type: 'unknown', customer: rel.customers[0] ? rel.customers[0].name : '',
-      key_points: asks.length ? asks : sentences.slice(0, 4),
-      plan: [
-        { step: 'Read the full message and confirm what is being asked', owner: 'me', who: '', due: today() },
-        ...asks.slice(0, 4).map((s) => ({ step: `Answer: ${s.slice(0, 160)}`, owner: 'me', who: '', due: due || addDays(today(), 2) })),
-        ...(email ? [{ step: `Reply to ${sender.name || sender.email || 'the sender'}`, owner: 'me', who: sender.name || '', due: due || addDays(today(), 1) }] : []),
-      ],
-      replies: email ? [{ to: email.email.from, audience: 'external', purpose: 'Acknowledge and set expectations', subject: `RE: ${email.email.subject || ''}`.trim(), body: `Hi ${(sender.name || '').split(' ')[0] || 'there'},\n\nThank you for your message. I'm looking into this and will come back to you${due ? ` by ${due}` : ' shortly'}.\n\nBest regards,` }] : [],
-      questions: [], risks: urgent ? ['Marked urgent: reply today.'] : [],
+      title: (email && bareSubject(email.email.subject)) || c.title,
+      summary: o.summary,
+      language: '', translation: '', category: o.meeting && !o.asks.length ? 'meeting' : email ? (o.asks.length ? 'request' : 'information') : 'information',
+      priority: o.urgent ? 'urgent' : o.due && o.due <= addDays(today(), 3) ? 'high' : o.asks.length ? 'high' : 'normal', due: o.due,
+      sender_type: 'unknown', customer: rel.customers[0] ? rel.customers[0].name : o.company,
+      key_points: o.points,
+      plan: o.plan,
+      replies: o.replies,
+      questions: [], risks: o.urgent ? ['Marked urgent: reply today.'] : o.due && o.due <= addDays(today(), 2) ? [`Due ${DAY_FMT(o.due)}: reply before then.`] : [],
       placement: best ? { workspace: best.workspace, board: best.name, group: (best.groups[0] || {}).name || '', new_board: false, reason: scored[0] && scored[0].s > 0 ? 'Matched words in the board name or related items.' : 'Your first board; change it if another fits better.' } : { workspace: '', board: 'Action items', group: 'To do', new_board: true, reason: 'You have no boards yet.' },
       organize: { advice: '', board_name: '', workspace: '', groups: [], columns: [] },
       sources_used: [],
@@ -613,6 +625,87 @@ function isChat(text) {
   return stamp >= 3;
 }
 
+const DAY_FMT = (iso) => { const d = new Date(`${iso}T12:00:00Z`); return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }); };
+const ASK_START = /^(?:(?:hi|hey|so|also|and|but|ok|okay)[, ]+)?(?:(?:can|could|would|will) (?:you|u)(?: please| kindly)?|please(?: can you| could you)?|kindly|i(?:'d| would) (?:like|appreciate) (?:it )?if you(?: could)?|i need you to|we need you to|need you to|you need to|make sure (?:to|you))\s+/i;
+const isAsk = (s) => /\?\s*$/.test(s) || ASK_START.test(s) || /\b(please|asap|urgent(ly)?|need(s|ed)? (a|an|the|your|to)|require[sd]?|waiting (for|on) (you|your)|let (me|us) know|confirm|send (me|us|over)|share)\b/i.test(s) || /\b(wants?|needs?|expects?|requires?|is asking for|are asking for) (a|an|the|us|you|your|our|some)\b/i.test(s);
+const tidy = (s) => String(s || '').replace(/\s+/g, ' ').replace(/^[\s\-–•*·>]+/, '').trim();
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+/** An ask written as a to-do: "Can you please send the RMA process?" → "Send the RMA process". */
+function asStep(s) {
+  const raw = tidy(s).replace(/^(also|and|so|plus|finally|lastly|one more thing)[,:]?\s+/i, '');
+  if (/\?\s*$/.test(raw) && !ASK_START.test(raw)) return `Answer: ${cap(raw.replace(/\?+\s*$/, ''))}?`.slice(0, 220);
+  let t = raw.replace(ASK_START, '').replace(/\?+\s*$/, '').replace(/[.;:,]+$/, '');
+  t = t.replace(/^(?:a |the )?(?:quick )?(?:update|status) on\b/i, 'Send an update on');
+  const want = t.match(/^(?:[\w ]{2,40}?)\s(?:wants?|needs?|requires?|expects?|is asking for|are asking for|asked for)\s+(?:us to |you to |me to )?(.+)$/i);
+  if (want) t = /^(a|an|the|some|\d)/i.test(want[1]) ? `Provide ${want[1]}` : want[1];
+  return cap(t).slice(0, 220);
+}
+
+/** Built-in reading of an email or document: who, what is asked, by when, and the replies to send. */
+function outline({ email, body, title, sender }) {
+  const base = email && email.date && !Number.isNaN(Date.parse(email.date)) ? today(new Date(email.date)) : today();
+  const b = email ? mail.cleanBody(body) : { latest: String(body || ''), signature: '', history: '', greeting: '' };
+  const main = b.latest || String(body || '');
+  const lines = main.split('\n').map((l) => l.trim());
+  // Lists (1. / - / •) are usually the asks; the sentence before a list ("Can you please:") is their lead-in.
+  const items = [];
+  const prose = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const m = l.match(/^(?:\(?\d{1,2}[.)]|[a-h][.)]|[-–•*·])\s+(.{6,})$/);
+    if (m) items.push(m[1]); else if (l && !/:$/.test(l)) prose.push(l); else if (l && /:$/.test(l) && !(lines[i + 1] || '').match(/^(?:\(?\d{1,2}[.)]|[-–•*·])/)) prose.push(l);
+  }
+  const lead = lines.find((l) => /:$/.test(l)) || '';
+  const sentences = prose.join(' ').replace(/\s+/g, ' ').split(/(?<=[.!?])\s+(?=[A-Z0-9"'(])/).map(tidy).filter((x) => x.length > 12 && !/^(from|to|sent|subject|cc|date):/i.test(x));
+  const listAreAsks = items.length && (isAsk(lead) || items.some(isAsk) || /\b(action items?|next steps|to ?do|todo|asks?|requests?)\b/i.test(lead));
+  const asks = [...(listAreAsks ? items : []), ...sentences.filter(isAsk)].map(tidy).filter((x, i, a) => a.indexOf(x) === i).slice(0, 8);
+  const urgent = /\b(urgent|asap|immediately|escalat\w*|outage|is down|are down|critical|sev ?1|p1)\b/i.test(main);
+  const dateIn = (s) => { const m = String(s).match(/\b(?:by|before|due|no later than|until|on|for)\s+((?:next |this )?(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*|tomorrow|today|eod|cob|end of (?:the )?(?:day|week|month)|eow|eom|[A-Z][a-z]{2,8}\.? \d{1,2}(?:st|nd|rd|th)?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|\d{4}-\d{2}-\d{2})/i) || String(s).match(/\b((?:next |this )(?:mon|tue|wed|thu|fri)[a-z]*|tomorrow)\b/i); return m ? parseDate(m[1].replace(/\bcob\b/i, 'eod'), base) : null; };
+  const dues = asks.map(dateIn).concat(sentences.map(dateIn)).filter((d) => d && d >= base).sort();
+  const due = dues[0] || '';
+  const meetRe = /\b(call|meeting|meet|sync|catch ?up|demo|review|teams|zoom|webex|visit)\b/i;
+  const meeting = [...asks, ...sentences].find((x) => meetRe.test(x) && (dateIn(x) || parseTime(x) || /\b(mon|tue|wed|thu|fri)[a-z]*day\b/i.test(x)));
+  const name = (sender && sender.name) || '';
+  const first = name.split(' ')[0] || '';
+  const sigLines = b.signature.split('\n').map((l) => l.trim()).filter(Boolean);
+  const companyLine = sigLines.join(' | ').split(/\s*\|\s*|,\s+/).find((x) => /\b(inc|llc|ltd|co|corp|corporation|company|group|gmbh|plc|ag|bv)\b\.?/i.test(x) && x.length < 60 && !/@|\d{3}/.test(x));
+  const company = companyLine ? companyLine.replace(/[.,]$/, '').trim() : '';
+  const facts = sentences.filter((x) => !isAsk(x) && /\d|\b(issue|problem|delay|fail|error|broken|approved|signed|price|order|contract|launch|rollout)\b/i.test(x)).slice(0, 4);
+  // Plan: one step per ask, a meeting step, then the reply.
+  const plan = asks.map((a) => {
+    return { step: asStep(a), owner: 'me', who: '', due: dateIn(a) || due || addDays(base, 2) };
+  });
+  if (meeting && !asks.includes(meeting)) plan.push({ step: `Put the ${(meeting.match(meetRe) || ['call'])[0].toLowerCase()} in the calendar: ${tidy(meeting).slice(0, 160)}`, owner: 'me', who: '', due: dateIn(meeting) || addDays(base, 1) });
+  if (email) plan.push({ step: `Reply to ${name || 'the sender'}${asks.length ? ` on ${asks.length === 1 ? 'the request' : asks.length === 2 ? 'both points' : `all ${asks.length} points`}` : ''}`, owner: 'me', who: name, due: due && due < addDays(base, 1) ? due : addDays(base, 1) });
+  if (!plan.length) plan.push({ step: `Decide what to do with "${String(title || '').slice(0, 80)}"`, owner: 'me', who: '', due: addDays(base, 2) });
+  // Replies: answer point by point, with placeholders for what only the user knows.
+  const replies = [];
+  if (email) {
+    const pts = asks.map((a, i) => `${i + 1}. ${asStep(a)}: ${meeting && a === meeting ? `${parseTime(a) ? 'That time works for me' : 'Happy to join'}. I'll send an invite. [confirm time]` : '[your answer]'}`);
+    replies.push({ to: who(email.from), audience: 'external', purpose: asks.length ? 'Answer each point' : 'Acknowledge',
+      subject: mail.replySubject(email.subject),
+      body: `Hi ${first || 'there'},\n\nThanks for the update.${pts.length ? ` On your ${pts.length === 1 ? 'request' : 'points'}:\n\n${pts.join('\n')}` : " I'm looking into this."}\n\n${due ? `I'll come back to you with the rest by ${DAY_FMT(due)}.` : "I'll keep you posted."}\n\nBest regards,` });
+    // Colleagues copied in (same company as the person it was sent to) can be asked for help.
+    const toDomain = (mail.address(email.to).email.split('@')[1] || '').toLowerCase();
+    const team = mail.addresses(email.cc).filter((a) => toDomain && a.email.endsWith(`@${toDomain}`));
+    if (team.length && asks.length) {
+      replies.push({ to: team.map((a) => `${a.name} <${a.email}>`).join(', '), audience: 'internal', purpose: `Get help from ${team.map((a) => a.name.split(' ')[0]).join(' and ')}`,
+        subject: `${company || name || 'Customer'} needs: ${String(email.subject || '').replace(/^\s*((re|fw|fwd)\s*:\s*)+/i, '').slice(0, 80)}`,
+        body: `Hi ${team.map((a) => a.name.split(' ')[0]).join(' and ')},\n\n${name || 'The customer'}${company ? ` at ${company}` : ''} is asking for:\n\n${asks.map((a, i) => `${i + 1}. ${asStep(a)}`).join('\n')}\n\n${due ? `They need it by ${DAY_FMT(due)}. ` : ''}Can you help with [which point] and send me what you have by [date]?\n\nThanks,` });
+    }
+  }
+  const filler = /^(just )?(following up|circling back|checking in|hope (you|all|this)|i hope|as discussed|per our|thanks for|thank you for)\b/i;
+  const lead2 = sentences.filter((x) => !isAsk(x) && !(filler.test(x) && x.length < 60)).slice(0, 2).join(' ');
+  const summary = [
+    email ? `${name || 'The sender'}${company ? ` (${company})` : ''} ${b.history ? 'replied on the thread' : 'wrote'}.` : '',
+    lead2 || sentences.slice(0, 2).join(' '),
+    asks.length > 2 ? `${email ? `${first || 'They'} asks for ${asks.length} things` : `${asks.length} things are asked`}, listed below.`
+      : asks.length ? `${email ? `${first || 'They'} asks you to` : 'Asked'}: ${asks.map((a) => asStep(a).replace(/^Answer: (.)/, (_, c0) => `answer: ${c0.toLowerCase()}`).replace(/\?$/, '').replace(/^./, (c0) => c0.toLowerCase())).join('; ')}.` : '',
+    due ? `Needed by ${DAY_FMT(due)}.` : '',
+  ].filter(Boolean).join(' ').slice(0, 900);
+  return { summary: summary || main.slice(0, 400), asks, due, urgent, meeting, company, points: [...facts, ...asks.map(asStep)].slice(0, 8), plan: plan.slice(0, 12), replies };
+}
+
 function pick(o, keys) { return Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])); }
 
-module.exports = { Assistant, SCHEMA, DEFAULT_PROFILE, isChat };
+module.exports = { Assistant, SCHEMA, DEFAULT_PROFILE, isChat, outline, emailText };

@@ -1407,3 +1407,37 @@ test('activity: opt-in tracking, private windows, the day, meetings, screen text
   assert.equal(cleanTitle('(3) Pricing review | Microsoft Teams', 'Teams'), 'Pricing review');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('assistant reads a real Outlook reply: newest message, asks as steps, names, dates and drafts', () => {
+  const mail = require('../src/core/mail');
+  const { outline, emailText } = require('../src/core/assistant');
+  const e = mail.parseEml(fs.readFileSync(path.join(__dirname, 'fixtures', 'thread-reply.eml')));
+  assert.deepEqual(mail.address(e.from), { name: 'Carla Martinez', email: 'carla.martinez@bigretail.example' });
+  assert.deepEqual(mail.addresses(e.cc).map((a) => a.name), ['Tom Lee', 'Ops Team']);
+  assert.equal(mail.replySubject('RE: Re: FW: Lane 5000'), 'RE: Lane 5000');
+  const b = mail.cleanBody(e.text);
+  assert.equal(b.greeting, 'Hi Brian,');
+  assert.match(b.latest, /^Following up on our call/);
+  assert.doesNotMatch(b.latest, /CONFIDENTIALITY|Director, Store Technology|Let's talk tomorrow/);
+  assert.match(b.signature, /Big Retail Co\./);
+  assert.match(b.history, /Let's talk tomorrow at 3/);
+  const forModel = emailText('EMAIL', e, e.text);
+  assert.match(forModel, /NEWEST MESSAGE[\s\S]*Can you please[\s\S]*EARLIER MESSAGES/);
+  assert.doesNotMatch(forModel, /CONFIDENTIALITY/);
+  const o = outline({ email: e, body: e.text, title: e.subject, sender: mail.address(e.from) });
+  const steps = o.plan.map((p) => p.step);
+  assert.ok(steps.includes('Confirm if 3.2.2 fixes the reboot and when it will be certified'));
+  assert.ok(steps.includes('Send the RMA process for the 18 units we pulled'));
+  assert.ok(steps.some((x) => /^Provide a root cause by Friday/.test(x)));
+  assert.ok(!steps.some((x) => /Read the full message/.test(x)));
+  assert.equal(o.due, '2026-11-20', '"by Friday" counts from the email date');
+  assert.equal(o.plan.find((p) => /CIO/.test(p.step)).due, '2026-11-24', '"next Tuesday" from a Wednesday');
+  assert.equal(o.company, 'Big Retail Co');
+  assert.match(o.summary, /^Carla Martinez \(Big Retail Co\) replied/);
+  const [reply, internal] = o.replies;
+  assert.equal(reply.subject, 'RE: Lane 5000 rollout - store pilot delays and firmware issue');
+  assert.match(reply.body, /^Hi Carla,/);
+  assert.match(reply.body, /1\. Confirm if 3\.2\.2/);
+  assert.equal(internal.audience, 'internal');
+  assert.match(internal.to, /Tom Lee <tom\.lee@ingenico\.example>/);
+});
