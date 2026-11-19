@@ -61,6 +61,7 @@ class AppApi {
     this.briefs = new Briefs({ db: this.db, store: this.store, reports: this.reports, meetings: this.meetings, capture: this.capture });
     this.assistant = new Assistant({ db: this.db, store: this.store, capture: this.capture, knowledge: this.knowledge, customers: this.customers, meetings: this.meetings, dataDir: this.dataDir, readFile: (n, b) => this.notesText(n, b) });
     this.tasks = new Tasks({ db: this.db, store: this.store, assistant: this.assistant, meetings: this.meetings, myWork: () => this.myWork(), setItemDone: (id) => this.setItemDone(id) });
+    this.migrateReview();
     this.chat = new Chat({ db: this.db, assistant: this.assistant, knowledge: this.knowledge, tasks: this.tasks, myWork: () => this.myWork() });
     this.activity = new Activity({ db: this.db, dataDir: this.dataDir, capture: this.capture, assistant: this.assistant, readFile: (n, b) => this.notesText(n, b), ocr: (b) => require('./extract').ocr(b) });
     this.activity.chat = this.chat;
@@ -453,6 +454,31 @@ class AppApi {
   assistantTeachFolders(paths) { return this.assistant.teachFolders(paths); }
   assistantNotes() { return this.assistant.notes(); }
   assistantForget(name) { return this.assistant.forget(name); }
+  /**
+   * v0.2.5: plan steps became suggestions to approve. Steps made before that, which the user never
+   * touched (no tick, date, snooze or board task), go back to Suggested once, so the list is only what they chose.
+   */
+  migrateReview() {
+    if (this.db.get("SELECT value FROM settings WHERE key='review_migrated'")) return;
+    const touched = new Set([...this.db.all('SELECT key FROM task_state'), ...this.db.all('SELECT key FROM task_edits')].map((r) => r.key));
+    const { hash } = require('./tasks');
+    for (const r of this.db.all("SELECT id, analysis FROM assistant_cases WHERE analysis IS NOT NULL AND analysis<>''")) {
+      let a;
+      try { a = JSON.parse(r.analysis); } catch (_) { continue; }
+      let changed = false;
+      for (const s of (a && a.plan) || []) {
+        if (s.review || !s.step) continue;
+        s.review = s.done || s.itemId || touched.has(`case:${r.id}:${hash(s.step)}`) ? 'approved' : 'suggested';
+        changed = true;
+      }
+      if (changed) this.db.run('UPDATE assistant_cases SET analysis=? WHERE id=?', [JSON.stringify(a), r.id]);
+    }
+    this.db.run("INSERT INTO settings(key,value) VALUES('review_migrated','1') ON CONFLICT(key) DO UPDATE SET value='1'");
+  }
+
+  actionItems() { return this.assistant.actionItems(); }
+  actionItemReview(caseId, index, decision) { return this.assistant.review(caseId, index, decision); }
+  actionItemsReviewAll(decision, caseId) { return this.assistant.reviewAll(decision, caseId); }
 
   // --------------------------------------------------------------- reports
   reportOptions() { return this.briefs.options(); }

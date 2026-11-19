@@ -20,7 +20,7 @@ export const TOPICS = [
 
 export const ARTICLES = [
   // Chat, Today and Tasks
-  { id: 'chat', topic: 'daily', title: 'Chat: drop any file, ask anything', keys: 'chat home drop file email msg eml pst outlook data file pdf word excel picture ocr markdown onenote one onepkg mht notebook teams paste note question assistant completed done', body: `
+  { id: 'chat', topic: 'daily', title: 'Chat: drop any file, ask anything', keys: 'chat home action items suggested approve reject not an action item drop file email msg eml pst outlook data file pdf word excel picture ocr markdown onenote one onepkg mht notebook teams paste note question assistant completed done', body: `
 Chat is where Boardenda starts. Drop anything into it and it is read on this PC.
 
 ## What you can drop or type
@@ -34,7 +34,15 @@ Chat is where Boardenda starts. Drop anything into it and it is read on this PC.
 - **"What should I do today?"** (or the **Briefing** button) posts your briefing. See [[today]].
 
 ## What you get back
-Each file shows who it is from, a short summary, how many tasks it found for you, how many are waiting on others, drafted replies and questions the assistant has. Its open tasks are listed under the card, so you can tick them off, give them a date or a priority right there (see [[tasks]]). Click the card to see the full plan, draft replies and sources, and to answer its questions.
+Each file shows who it is from, a short summary, how many action items it suggests, drafted replies and questions the assistant has. Emails that need nothing from you (newsletters, notifications, FYIs) say **No action needed** and add nothing. Click the card to see the full plan, draft replies and sources, and to answer its questions.
+
+## Action items: approve or reject
+Suggested action items wait in the **Action items** panel beside the chat, under **Suggested**. Nothing goes on your task list until you approve it.
+- **Approve** (or **Approve all**) adds it to your tasks (see [[tasks]]).
+- **✕** means it is not an action item. It moves to **Rejected**, and the assistant learns from it: similar suggestions are skipped from then on, and the AI model is told what you accept and reject. **Restore** brings one back.
+- In the chat you can also type "not an action item: the RMA one", "remove the CIO call", "approve the pricing one" or "approve all".
+
+Long emails, threads and documents are read in parts first, so nothing past the model's limit is missed.
 
 > Drop a folder to add it to what the assistant knows, instead of reading every file in it as a new item.
 

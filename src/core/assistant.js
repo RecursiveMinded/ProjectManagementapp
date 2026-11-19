@@ -49,7 +49,8 @@ const SCHEMA = {
     sender_type: { type: 'string', enum: ['internal', 'customer', 'partner', 'vendor', 'unknown'] },
     customer: { type: 'string' },
     key_points: { type: 'array', items: { type: 'string' } },
-    plan: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { step: { type: 'string' }, owner: { type: 'string', enum: ['me', 'internal', 'third party'] }, who: { type: 'string' }, due: { type: 'string' } }, required: ['step', 'owner', 'who', 'due'] } },
+    needs_action: { type: 'boolean' },
+    plan: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { step: { type: 'string' }, owner: { type: 'string', enum: ['me', 'internal', 'third party'] }, who: { type: 'string' }, due: { type: 'string' }, why: { type: 'string' } }, required: ['step', 'owner', 'who', 'due', 'why'] } },
     replies: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { to: { type: 'string' }, audience: { type: 'string', enum: ['internal', 'external'] }, purpose: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } }, required: ['to', 'audience', 'purpose', 'subject', 'body'] } },
     questions: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { question: { type: 'string' }, why: { type: 'string' } }, required: ['question', 'why'] } },
     risks: { type: 'array', items: { type: 'string' } },
@@ -57,7 +58,7 @@ const SCHEMA = {
     organize: { type: 'object', additionalProperties: false, properties: { advice: { type: 'string' }, board_name: { type: 'string' }, workspace: { type: 'string' }, groups: { type: 'array', items: { type: 'string' } }, columns: { type: 'array', items: { type: 'string' } } }, required: ['advice', 'board_name', 'workspace', 'groups', 'columns'] },
     sources_used: { type: 'array', items: { type: 'integer' } },
   },
-  required: ['title', 'summary', 'language', 'translation', 'category', 'priority', 'due', 'sender_type', 'customer', 'key_points', 'plan', 'replies', 'questions', 'risks', 'placement', 'organize', 'sources_used'],
+  required: ['title', 'summary', 'language', 'translation', 'category', 'priority', 'due', 'sender_type', 'customer', 'key_points', 'needs_action', 'plan', 'replies', 'questions', 'risks', 'placement', 'organize', 'sources_used'],
 };
 
 const COLUMN_TYPES = { owner: 'people', status: 'status', priority: 'priority', due: 'date', 'due date': 'date', date: 'date', timeline: 'timeline', customer: 'customer', notes: 'long_text', budget: 'numbers', amount: 'numbers', value: 'numbers', region: 'dropdown', store: 'text', link: 'link', files: 'files' };
@@ -263,6 +264,15 @@ class Assistant {
     const notes = [];
     if (cloud && !cfg.allowCloudFiles && rel.files.length) notes.push(`${rel.files.length} related passages from your PC files were not sent to ${engine === 'chatgpt' ? 'ChatGPT' : 'Claude'}. Allow it in the assistant settings, or use a local model.`);
     if (engine !== 'basic') {
+      // Long emails, threads and documents are read in parts first, so nothing past the model's limit is lost.
+      const cap = engine === 'local' ? 14000 : 40000;
+      let caseBody = r.text || '';
+      if (caseBody.length > cap) {
+        try {
+          const d = await this.digest(caseBody, engine === 'local' ? 10000 : 30000);
+          if (d) { caseBody = `${caseBody.slice(0, Math.round(cap / 4))}\n\n[The rest was read in parts. Notes from each part:]\n${d}`.slice(0, cap); notes.push(`This was long (${Math.round((r.text || '').length / 1000)}k characters), so it was read in parts first.`); }
+        } catch (e) { notes.push(`Only the first part of this long text was read (${e.message || e}).`); }
+      }
       const system = this.systemPrompt(cfg);
       const user = [
         `Today is ${today()}.`,
@@ -270,7 +280,7 @@ class Assistant {
         `<people>\n${this.store.people().map((p) => `${p.name}${p.is_me ? ' (me)' : ''}${p.email ? ` <${p.email}>` : ''}${p.team ? `, ${p.team}` : ''}`).join('\n')}\n</people>`,
         sources.length ? `<related>\n${sources.map((s) => `<source n="${s.n}" kind="${s.kind}"${s.path ? ` file="${s.path}"` : ''}>\n${String(s.text).slice(0, 1800)}\n</source>`).join('\n')}\n</related>` : '<related>Nothing related was found on your boards or in your indexed folders.</related>',
         answers.length ? `<my_answers_to_your_questions>\n${answers.map((q) => `Q: ${q.question}\nA: ${q.answer}`).join('\n\n')}\n</my_answers_to_your_questions>` : '',
-        `<case>\n${(r.text || '').slice(0, engine === 'local' ? 14000 : 40000)}\n</case>`,
+        `<case>\n${caseBody.slice(0, cap)}\n</case>`,
       ].filter(Boolean).join('\n\n');
       try {
         const out = await this.capture.askJson({ system, text: user, schema: SCHEMA });
@@ -286,6 +296,22 @@ class Assistant {
     return this.get(id);
   }
 
+  /** Notes from each part of a long text: facts, asks of the user, decisions, deadlines and people. */
+  async digest(text, size) {
+    const parts = [];
+    for (let i = 0; i < text.length && parts.length < 12; i += size) parts.push(text.slice(i, i + size));
+    const out = [];
+    for (const [i, part] of parts.entries()) {
+      const r = await this.capture.askText({
+        system: 'You take notes on one part of a long email thread or document for a busy executive. List, as short bullets: what is asked of the reader or their team (who asked, what, by when), commitments and decisions, deadlines and dates, key facts and numbers, and the people and companies involved. Skip greetings, signatures, disclaimers and repeated quoted text. Max 20 bullets. If nothing matters in this part, write "- nothing new".',
+        messages: [{ role: 'user', content: `Part ${i + 1} of ${parts.length}:\n\n${part}` }], temperature: 0, maxTokens: 1500,
+      });
+      if (!r) return '';
+      out.push(`Part ${i + 1}:\n${r.text.trim()}`);
+    }
+    return out.join('\n\n');
+  }
+
   systemPrompt(cfg) {
     return `You are a chief of staff and executive assistant built into Boardenda, a work management app on the user's PC.
 About the user: ${cfg.profile || DEFAULT_PROFILE}
@@ -297,6 +323,8 @@ For every email or document you get:
 - key_points: the facts, numbers, decisions and deadlines, one per line.
 - If it is not in English, set language and give a faithful English translation in "translation"; otherwise language "English" and translation "".
 - Decide category, priority (urgent = same day; high = this week), and a due date (YYYY-MM-DD) if one is stated or implied, else "".
+- Decide first whether the user actually has to do anything (needs_action). Newsletters, automated notifications, FYI copies, receipts, "thanks" replies and threads where nothing is asked of the user or their team need no action: set needs_action false, leave plan and replies empty, and say in the summary why no action is needed.
+- Only real action items go in the plan: things someone asked of the user or their team, commitments the user made, deadlines, and the follow-ups that resolve them. Never turn background facts or every sentence into a step. Merge steps that belong together. Usually 1-5 steps; never more than 8. Give each step a short "why" (who asked or what it unblocks).
 - Make an action plan: concrete, ordered steps to respond or resolve. Every step starts with a verb and is specific enough to do without rereading the email (for example "Ask engineering for the 3.2.2 certification date", not "Look into it"). Cover every ask in the newest message, the internal steps needed to get each answer, and the reply itself. Owner is "me" (the user), "internal" (a colleague or team) or "third party" (customer, partner, vendor); put the person or team in "who" when known; give due dates where sensible.
 - Draft every reply needed: to the sender, and any internal or third-party messages needed to resolve it (e.g. ask support for a status, loop in finance). The reply to the sender answers each of their points in order; where only the user knows the answer, put a clear [placeholder]. Keep drafts short and natural. Subjects start with a single "RE:". Write them ready to send, in a ${cfg.tone || 'professional'} tone, in the language the recipient used. Sign as the user${cfg.signature ? ` with this signature:\n${cfg.signature}` : ''}.
 - If you need more data, a document, a contact name or a decision from the user, ask in "questions" (max 5) and say why. Never invent facts, numbers, names, emails or commitments; use placeholders like [order number] instead.
@@ -305,7 +333,15 @@ For every email or document you get:
 - List risks (escalation, SLA, revenue, compliance, reputation) when relevant.
 - customer: the customer or partner company this is about, if any, else "".
 - If the input is a chat conversation (for example copied from Microsoft Teams), treat it as context for planning: summarise the thread, list decisions made, open questions and who owns what, then plan the next steps and any messages to send.
-- sources_used: numbers of the related sources you relied on.`;
+- sources_used: numbers of the related sources you relied on.${this.learned()}`;
+  }
+
+  /** What the user approved and rejected before, so the model learns what counts as an action item for them. */
+  learned() {
+    const rej = this.db.all("SELECT step FROM step_feedback WHERE decision='rejected' ORDER BY id DESC LIMIT 25").map((r) => r.step);
+    const ok = this.db.all("SELECT step FROM step_feedback WHERE decision='approved' ORDER BY id DESC LIMIT 12").map((r) => r.step);
+    if (!rej.length && !ok.length) return '';
+    return `\nLearn from the user's past decisions on suggested action items:${rej.length ? `\nThey said these were NOT action items (don't suggest steps like them):\n${rej.map((x) => `- ${x}`).join('\n')}` : ''}${ok.length ? `\nThey accepted these as action items:\n${ok.map((x) => `- ${x}`).join('\n')}` : ''}`;
   }
 
   /** Built-in reader: a usable outline without a model. */
@@ -338,6 +374,7 @@ For every email or document you get:
       priority: o.urgent ? 'urgent' : o.due && o.due <= addDays(today(), 3) ? 'high' : o.asks.length ? 'high' : 'normal', due: o.due,
       sender_type: 'unknown', customer: rel.customers[0] ? rel.customers[0].name : o.company,
       key_points: o.points,
+      needs_action: o.needsAction,
       plan: o.plan,
       replies: o.replies,
       questions: [], risks: o.urgent ? ['Marked urgent: reply today.'] : o.due && o.due <= addDays(today(), 2) ? [`Due ${DAY_FMT(o.due)}: reply before then.`] : [],
@@ -351,6 +388,7 @@ For every email or document you get:
     const str = (v, n = 4000) => String(v == null ? '' : v).slice(0, n);
     const arr = (v) => (Array.isArray(v) ? v : []);
     const prevDone = new Set(prev ? arr(prev.plan).filter((s) => s.done).map((s) => s.step) : []);
+    const prevReview = new Map(prev ? arr(prev.plan).filter((s) => s.review && s.review !== 'suggested').map((s) => [s.step, s.review]) : []);
     const prevSent = new Set(prev ? arr(prev.replies).filter((s) => s.sent).map((s) => s.subject + s.to) : []);
     const answerFor = (q) => { const m = answers.find((a) => a.question.toLowerCase() === String(q).toLowerCase()); return m ? m.answer : ''; };
     // Resolve placement to real ids.
@@ -363,7 +401,14 @@ For every email or document you get:
       title: str(x.title, 200), summary: str(x.summary, 3000), language: str(x.language, 40), translation: /^english$/i.test(str(x.language)) ? '' : str(x.translation, 40000),
       category: CATEGORIES.includes(x.category) ? x.category : 'other', priority: PRIORITIES.includes(x.priority) ? x.priority : 'normal', due: isoDate(x.due),
       senderType: str(x.sender_type, 20), customer: str(x.customer, 200), keyPoints: arr(x.key_points).map((s) => str(s, 500)).slice(0, 12),
-      plan: arr(x.plan).slice(0, 20).map((s) => ({ step: str(s.step, 500), owner: ['me', 'internal', 'third party'].includes(s.owner) ? s.owner : 'me', who: str(s.who, 120), due: isoDate(s.due), done: prevDone.has(str(s.step, 500)), itemId: null })),
+      needsAction: x.needs_action !== false || arr(x.plan).length > 0,
+      plan: (x.needs_action === false ? [] : arr(x.plan)).slice(0, 12).map((s) => {
+        const step = str(s.step, 500);
+        const was = prevReview.get(step);
+        const auto = was ? null : this.looksRejected(step);
+        return { step, owner: ['me', 'internal', 'third party'].includes(s.owner) ? s.owner : 'me', who: str(s.who, 120), due: isoDate(s.due), why: str(s.why, 300), done: prevDone.has(step), itemId: null,
+          review: was || (auto ? 'rejected' : 'suggested'), ...(auto ? { autoRejected: auto } : {}) };
+      }),
       replies: arr(x.replies).slice(0, 8).map((s) => ({ to: str(s.to, 300), audience: s.audience === 'internal' ? 'internal' : 'external', purpose: str(s.purpose, 200), subject: str(s.subject, 300), body: str(s.body, 10000), sent: prevSent.has(str(s.subject, 300) + str(s.to, 300)) })),
       questions: arr(x.questions).slice(0, 6).map((q) => ({ question: str(q.question, 400), why: str(q.why, 300), answer: answerFor(q.question) })),
       answered: answers,
@@ -373,6 +418,76 @@ For every email or document you get:
       sources: sources.map((s) => ({ n: s.n, kind: s.kind, id: s.id || null, name: s.name || '', path: s.path || null, board: s.board || null, snippet: String(s.text || '').replace(/\s+/g, ' ').slice(0, 240), used: used.has(s.n) })),
       mode, model, notes, analyzedAt: now(),
     };
+  }
+
+  // ------------------------------------------------------ action items
+  /** A rejected step this one looks like, by words in common (so the same kind of noise isn't suggested again). */
+  looksRejected(step) {
+    const w = stepWords(step);
+    if (w.size < 2) return null;
+    for (const r of this.db.all("SELECT step FROM step_feedback WHERE decision='rejected' ORDER BY id DESC LIMIT 500")) {
+      const v = stepWords(r.step);
+      let both = 0;
+      for (const x of w) if (v.has(x)) both += 1;
+      if (both / Math.max(w.size, v.size) >= 0.7) return r.step;
+    }
+    return null;
+  }
+
+  /** Approve, reject or put back a suggested step. Approved steps join the task list; rejected ones teach the assistant. */
+  review(id, index, decision) {
+    if (!['approved', 'rejected', 'suggested'].includes(decision)) throw new Error('Approve or reject');
+    const r = this.row(id);
+    const a = parseJson(r.analysis, null);
+    const s = a && a.plan[index];
+    if (!s) throw new Error('That action item is no longer there');
+    s.review = decision;
+    delete s.autoRejected;
+    this.db.run('UPDATE assistant_cases SET analysis=?, updated_at=? WHERE id=?', [JSON.stringify(a), now(), id]);
+    if (decision !== 'suggested') this.db.run('INSERT INTO step_feedback(ts,decision,step,sender,subject) VALUES(?,?,?,?,?)', [now(), decision, s.step, r.sender || '', r.title || '']);
+    else this.db.run('DELETE FROM step_feedback WHERE step=? AND id=(SELECT MAX(id) FROM step_feedback WHERE step=?)', [s.step, s.step]);
+    return true;
+  }
+
+  /** Approve or reject every suggestion (of one case, or all). */
+  reviewAll(decision, caseId = null) {
+    let n = 0;
+    for (const x of this.actionItems().suggested) {
+      if (caseId && x.caseId !== caseId) continue;
+      this.review(x.caseId, x.index, decision); n += 1;
+    }
+    return n;
+  }
+
+  /** Every suggested, approved and rejected action item from open cases, newest first. */
+  actionItems({ limit = 300 } = {}) {
+    const out = { suggested: [], approved: [], rejected: [] };
+    for (const r of this.db.all("SELECT id, title, sender, priority, analysis, created_at FROM assistant_cases WHERE status<>'done' AND state='ready' ORDER BY created_at DESC LIMIT 400")) {
+      const a = parseJson(r.analysis, null);
+      for (const [i, s] of ((a && a.plan) || []).entries()) {
+        if (!s.step || s.done) continue;
+        const rv = s.review || 'approved';
+        const list = out[rv] || out.approved;
+        if (list.length >= limit) continue;
+        list.push({ key: `case:${r.id}:${stepHash(s.step)}`, caseId: r.id, index: i, step: s.step, why: s.why || '', due: s.due || null, owner: s.owner, who: s.who || '',
+          caseTitle: r.title, sender: (r.sender || '').replace(/\s*<[^>]*>/, ''), priority: r.priority, at: r.created_at, autoRejected: s.autoRejected || null });
+      }
+    }
+    return { ...out, counts: { suggested: out.suggested.length, approved: out.approved.length, rejected: out.rejected.length } };
+  }
+
+  /** The suggested or approved item that best matches some words ("not an action item: the RMA one"). */
+  matchItems(text, which = ['suggested', 'approved']) {
+    const want = stepWords(text);
+    const all = this.actionItems();
+    const pool = which.flatMap((k) => all[k]);
+    if (!want.size) return pool.map((x) => ({ x, m: 0 }));
+    return pool.map((x) => {
+      const have = stepWords(`${x.step} ${x.caseTitle}`);
+      let hit = 0;
+      for (const w of want) if (have.has(w) || [...have].some((h) => h.length > 4 && w.length > 4 && (h.startsWith(w) || w.startsWith(h)))) hit += 1;
+      return { x, m: hit / want.size };
+    }).filter((y) => y.m > 0).sort((p, q) => q.m - p.m);
   }
 
   matchCustomer(name, rel) {
@@ -394,8 +509,8 @@ For every email or document you get:
     if (patch.customerId !== undefined) { sets.push('customer_id=?'); args.push(patch.customerId || null); }
     if (a) {
       let changed = false;
-      if (patch.step) { const s = a.plan[patch.step.index]; if (s) { Object.assign(s, pick(patch.step, ['done', 'step', 'owner', 'who', 'due'])); changed = true; } }
-      if (patch.addStep) { a.plan.push({ step: String(patch.addStep.step || '').slice(0, 500), owner: patch.addStep.owner || 'me', who: patch.addStep.who || '', due: isoDate(patch.addStep.due), done: false, itemId: null }); changed = true; }
+      if (patch.step) { const s = a.plan[patch.step.index]; if (s) { Object.assign(s, pick(patch.step, ['done', 'step', 'owner', 'who', 'due', 'review'])); changed = true; } }
+      if (patch.addStep) { a.plan.push({ step: String(patch.addStep.step || '').slice(0, 500), owner: patch.addStep.owner || 'me', who: patch.addStep.who || '', due: isoDate(patch.addStep.due), done: false, itemId: null, review: 'approved' }); changed = true; }
       if (patch.removeStep != null) { a.plan.splice(patch.removeStep, 1); changed = true; }
       if (patch.reply) { const s = a.replies[patch.reply.index]; if (s) { Object.assign(s, pick(patch.reply, ['to', 'subject', 'body', 'sent'])); changed = true; } }
       if (patch.answer) { const q = a.questions[patch.answer.index]; if (q) { q.answer = String(patch.answer.answer || '').slice(0, 2000); changed = true; } }
@@ -676,11 +791,13 @@ function outline({ email, body, title, sender }) {
     return { step: asStep(a), owner: 'me', who: '', due: dateIn(a) || due || addDays(base, 2) };
   });
   if (meeting && !asks.includes(meeting)) plan.push({ step: `Put the ${(meeting.match(meetRe) || ['call'])[0].toLowerCase()} in the calendar: ${tidy(meeting).slice(0, 160)}`, owner: 'me', who: '', due: dateIn(meeting) || addDays(base, 1) });
-  if (email) plan.push({ step: `Reply to ${name || 'the sender'}${asks.length ? ` on ${asks.length === 1 ? 'the request' : asks.length === 2 ? 'both points' : `all ${asks.length} points`}` : ''}`, owner: 'me', who: name, due: due && due < addDays(base, 1) ? due : addDays(base, 1) });
-  if (!plan.length) plan.push({ step: `Decide what to do with "${String(title || '').slice(0, 80)}"`, owner: 'me', who: '', due: addDays(base, 2) });
+  const automated = email && (/\b(no-?reply|do-?not-?reply|notifications?|mailer-daemon|newsletter|news|marketing|alerts?)@/i.test(String(email.from)) || /\bunsubscribe\b|view (this|it) in (your|a) browser|manage (your )?(email )?preferences/i.test(String(body)));
+  if (automated) plan.length = 0;
+  if (email && !automated && (asks.length || meeting)) plan.push({ step: `Reply to ${name || 'the sender'}${asks.length ? ` on ${asks.length === 1 ? 'the request' : asks.length === 2 ? 'both points' : `all ${asks.length} points`}` : ''}`, owner: 'me', who: name, due: due && due < addDays(base, 1) ? due : addDays(base, 1) });
+  void title;
   // Replies: answer point by point, with placeholders for what only the user knows.
   const replies = [];
-  if (email) {
+  if (email && !automated && (asks.length || meeting)) {
     const pts = asks.map((a, i) => `${i + 1}. ${asStep(a)}: ${meeting && a === meeting ? `${parseTime(a) ? 'That time works for me' : 'Happy to join'}. I'll send an invite. [confirm time]` : '[your answer]'}`);
     replies.push({ to: who(email.from), audience: 'external', purpose: asks.length ? 'Answer each point' : 'Acknowledge',
       subject: mail.replySubject(email.subject),
@@ -703,8 +820,13 @@ function outline({ email, body, title, sender }) {
       : asks.length ? `${email ? `${first || 'They'} asks you to` : 'Asked'}: ${asks.map((a) => asStep(a).replace(/^Answer: (.)/, (_, c0) => `answer: ${c0.toLowerCase()}`).replace(/\?$/, '').replace(/^./, (c0) => c0.toLowerCase())).join('; ')}.` : '',
     due ? `Needed by ${DAY_FMT(due)}.` : '',
   ].filter(Boolean).join(' ').slice(0, 900);
-  return { summary: summary || main.slice(0, 400), asks, due, urgent, meeting, company, points: [...facts, ...asks.map(asStep)].slice(0, 8), plan: plan.slice(0, 12), replies };
+  const noAction = !plan.length ? (automated ? ' This looks like an automated or newsletter email, so no action items.' : ' Nothing is asked of you here, so no action items.') : '';
+  return { summary: `${summary || main.slice(0, 400)}${noAction}`.trim(), needsAction: plan.length > 0, asks, due, urgent, meeting, company, points: [...facts, ...asks.map(asStep)].slice(0, 8), plan: plan.slice(0, 12), replies };
 }
+
+const STEP_STOP = new Set('the a an and or of to for on in at with by from is are be this that it we our us you your i me my not action item items task tasks todo remove reject drop delete dismiss ignore one about please'.split(' '));
+function stepWords(s) { return new Set((String(s || '').toLowerCase().match(/[a-z0-9][a-z0-9./-]{2,}/g) || []).filter((w) => !STEP_STOP.has(w))); }
+function stepHash(s) { return require('crypto').createHash('sha1').update(String(s || '')).digest('hex').slice(0, 10); }
 
 function pick(o, keys) { return Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])); }
 

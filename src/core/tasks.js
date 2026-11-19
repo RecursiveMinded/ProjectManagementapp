@@ -72,6 +72,7 @@ class Tasks {
       const a = parseJson(r.analysis, null);
       for (const [i, s] of ((a && a.plan) || []).entries()) {
         if (s.done || !s.step) continue;
+        if (s.review && s.review !== 'approved') continue; // suggestions wait for approval; rejected ones are not tasks
         if (s.itemId && items.has(s.itemId)) continue;
         out.push({
           key: `case:${r.id}:${hash(s.step)}`, source: 'case', sourceId: r.id, index: i, title: s.step, mine: s.owner === 'me', who: s.owner === 'me' ? '' : (s.who || (s.owner === 'internal' ? 'Internal' : 'Third party')),

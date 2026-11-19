@@ -361,6 +361,14 @@ CREATE TABLE IF NOT EXISTS task_events (
   who TEXT DEFAULT '',
   subject TEXT DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS step_feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  step TEXT NOT NULL,
+  sender TEXT DEFAULT '',
+  subject TEXT DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS task_edits (
   key TEXT PRIMARY KEY,
   title TEXT,

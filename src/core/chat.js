@@ -24,6 +24,13 @@ const MYDAY = /^(what (did|have) i (do|done|work(ed)? on)|how did i spend|where 
 // "recap my last meeting", "summarize the last call"
 const LASTMEETING = /^(recap|summari[sz]e|write up)\s+(my |the )?(last|latest|previous|recent) (meeting|call)\b/i;
 
+// "not an action item: the RMA one", "remove the CIO call", "that's not a task"
+const NOT_ACTION = /^(that'?s |this is |it'?s |these are )?(not|no) (an? )?(real )?(action items?|tasks?|to-?dos?)\b|^reject\b/i;
+const REMOVE = /^(remove|drop|delete|dismiss|ignore|skip)\b/i;
+const REJECT = new RegExp(`${NOT_ACTION.source}|${REMOVE.source}`, 'i');
+// "approve all", "approve the RMA one", "yes add them", "accept these"
+const APPROVE = /^(approve|accept|ok,? add|yes,? add|add (them|these|all|those)\b)/i;
+
 const DONE = /^(i\s+)?(just\s+|have\s+|'ve\s+)?(completed?|done|finished|closed( out)?|sent|submitted|delivered|wrapped up|ticked off|mark(ed)? (as )?done)\b/i;
 
 function isQuestion(text) {
@@ -68,9 +75,15 @@ class Chat {
             return open[key] || { key, title: s.step, mine: s.owner === 'me', who: s.owner === 'me' ? '' : (s.who || (s.owner === 'internal' ? 'Internal' : 'Third party')), due: s.due || null, state: s.done ? 'done' : 'hidden' };
           });
           return { id, title: c.title, state: c.state, error: c.error, summary: c.summary, priority: c.priority, due: c.due, sender: c.sender, files: c.files, kind: c.kind, steps,
-            mine: plan.filter((s) => !s.done && s.owner === 'me').length, waiting: plan.filter((s) => !s.done && s.owner !== 'me').length, questions: c.questions, replies: ((c.analysis && c.analysis.replies) || []).length };
+            suggested: plan.filter((s) => !s.done && s.review === 'suggested').length, rejected: plan.filter((s) => s.review === 'rejected').length, needsAction: c.analysis ? c.analysis.needsAction !== false : true,
+            mine: plan.filter((s) => !s.done && s.owner === 'me' && (s.review || 'approved') === 'approved').length, waiting: plan.filter((s) => !s.done && s.owner !== 'me' && (s.review || 'approved') === 'approved').length, questions: c.questions, replies: ((c.analysis && c.analysis.replies) || []).length };
         } catch (_) { return { id, gone: true }; }
       });
+    }
+    if (data.pick) {
+      const ai = this.assistant.actionItems();
+      const by = Object.fromEntries([...ai.suggested, ...ai.approved, ...ai.rejected].map((x) => [x.key, { ...x, review: ai.suggested.includes(x) ? 'suggested' : ai.approved.includes(x) ? 'approved' : 'rejected' }]));
+      m.items = data.pick.map((k) => by[k]).filter(Boolean);
     }
     if (data.briefing) {
       m.briefing = { ...data.briefing, top: (data.briefing.top || []).filter((x) => open[x.key]).map((x) => open[x.key]), waiting: (data.briefing.waiting || []).filter((x) => open[x.key]).map((x) => open[x.key]) };
@@ -114,6 +127,10 @@ class Chat {
       if (t && (files.length > 1 || plain.length !== files.length)) ids.push(await this.assistant.intake({ text: t, origin: 'chat' }));
       const head = ids.length === 1 ? 'Reading it now.' : ids.length ? `Reading ${ids.length} items now. Each gets its own summary and tasks.` : 'Nothing new to read.';
       reply = this.post('assistant', 'cases', [...notes, head].join(' '), { caseIds: ids });
+    } else if (t.length < 300 && !t.includes('\n') && (NOT_ACTION.test(t) || (REMOVE.test(t) && this.assistant.matchItems(t.replace(REMOVE, '')).some((h) => h.m >= 0.5)))) {
+      reply = this.decide(t, 'rejected');
+    } else if (APPROVE.test(t) && t.length < 300 && !t.includes('\n')) {
+      reply = this.decide(t, 'approved');
     } else if (DONE.test(t) && t.length < 300 && !t.includes('\n') && this.tasks.match(t).some((x) => x.m >= 0.34)) {
       reply = this.ticked(t);
     } else if (this.activity && MYDAY.test(t) && t.length < 200) {
@@ -129,6 +146,25 @@ class Chat {
       reply = this.post('assistant', 'cases', 'Got it. I will turn this into tasks.', { caseIds: [id] });
     }
     return [this.get(first), this.get(reply)];
+  }
+
+  /** "Not an action item: …" or "approve …": decide on the suggestion that clearly matches, or show the likely ones. */
+  decide(text, decision) {
+    const words = text.replace(REJECT, '').replace(APPROVE, '').replace(/^[\s:,.-]+/, '').trim();
+    const pool = decision === 'rejected' ? ['suggested', 'approved'] : ['suggested'];
+    if (decision === 'approved' && (!words || /^(all|them|these|those|everything|it)\b/i.test(words))) {
+      const n = this.assistant.reviewAll('approved');
+      return this.post('assistant', 'review', n ? `Approved ${n} ${n === 1 ? 'action item' : 'action items'}. ${n === 1 ? 'It is' : 'They are'} on your task list now.` : 'There are no suggestions waiting.', { decided: n });
+    }
+    const hits = this.assistant.matchItems(words || '', pool);
+    const [best, next] = hits;
+    if (words && best && best.m >= 0.5 && (!next || next.m <= best.m - 0.2)) {
+      this.assistant.review(best.x.caseId, best.x.index, decision);
+      return this.post('assistant', 'review', decision === 'rejected' ? `Removed "${best.x.step}". I'll skip things like that from now on.` : `Approved "${best.x.step}". It is on your task list now.`, { decided: 1 });
+    }
+    // Not clear which one: show the newest suggestions (or the likely matches) to pick from.
+    const pick = (words ? hits.filter((h) => h.m >= 0.25).map((h) => h.x) : this.assistant.actionItems().suggested).slice(0, 8);
+    return this.post('assistant', 'review', pick.length ? `Which one${decision === 'rejected' ? ' is not an action item' : ' should I add'}? Use the buttons below or the Action items panel.` : 'There are no suggestions waiting.', { pick: pick.map((x) => x.key) });
   }
 
   /**

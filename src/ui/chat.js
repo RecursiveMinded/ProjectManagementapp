@@ -18,6 +18,8 @@ function CaseCard({ c }) {
   const working = busyState(c);
   const chips = [];
   if (!working && c.state !== 'error') {
+    if (c.needsAction === false) chips.push(html`<span class="chip">No action needed</span>`);
+    if (c.suggested) chips.push(html`<span class="chip ch-ask" role="button" onClick=${(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('bd-action-tab', { detail: 'suggested' })); }}>${c.suggested} suggested ${c.suggested === 1 ? 'action' : 'actions'}</span>`);
     if (c.mine) chips.push(html`<span class="chip ch-good">${c.mine} ${c.mine === 1 ? 'task' : 'tasks'} for you</span>`);
     if (c.waiting) chips.push(html`<span class="chip">${c.waiting} waiting on others</span>`);
     if (c.replies) chips.push(html`<span class="chip">${c.replies} ${c.replies === 1 ? 'reply' : 'replies'} drafted</span>`);
@@ -26,7 +28,7 @@ function CaseCard({ c }) {
     if (PRI[c.priority] && PRI[c.priority][0]) chips.push(html`<span class="chip" style=${`color:${PRI[c.priority][1]}`}>${PRI[c.priority][0]}</span>`);
   }
   // Open steps are real tasks: tick, date and prioritise them right here.
-  const steps = working || c.state === 'error' ? [] : (c.steps || []).filter((s) => s.state === 'open');
+  const steps = [];
   return html`<div class="ch-case-wrap"><button class="ch-case" onClick=${() => openCase(c.id)} title="Open the summary, plan and replies">
     <span class="ch-case-ico">${working ? html`<${Spinner} />` : html`<${Icon} name=${c.kind === 'email' ? 'mail' : c.kind === 'chat' ? 'msg' : c.kind === 'text' ? 'text' : 'file'} size="16" />`}</span>
     <span class="grow" style="min-width:0">
@@ -57,6 +59,8 @@ function Bubble({ m, nav }) {
     body = html`<div>${head}</div><div class="ch-cases">${(m.cases || []).map((c) => html`<${CaseCard} key=${c.id} c=${c} />`)}</div>`;
   } else if (m.kind === 'tasks') {
     body = html`<div>${m.content}</div><div class="ch-steps ch-tasks">${(m.tasks || []).length ? m.tasks.map((t) => html`<${TaskRow} key=${t.key} t=${t} compact />`) : html`<div class="small muted">These tasks are no longer on your list.</div>`}</div>`;
+  } else if (m.kind === 'review') {
+    body = html`<div>${m.content}</div>${(m.items || []).length ? html`<div class="ai-list mt1">${m.items.map((x) => html`<${ActionRow} key=${x.key} x=${x} tab=${x.review} />`)}</div>` : null}`;
   } else if (m.kind === 'briefing' && m.briefing) {
     const b = m.briefing;
     const hour = new Date(m.at).getHours();
@@ -85,6 +89,62 @@ function Bubble({ m, nav }) {
     <div class="small faint mt1">${m.kind === 'briefing' ? 'Briefing · ' : m.mode === 'local' ? `Answered by ${m.model} on this PC · ` : m.mode === 'claude' ? `Answered by Claude · ` : m.mode === 'chatgpt' ? `Answered by ChatGPT · ` : ''}${relTime(m.at)}</div></div></div>`;
 }
 
+const changed = () => window.dispatchEvent(new CustomEvent('bd-actions-changed'));
+
+/** One action item with its decision buttons. */
+function ActionRow({ x, tab }) {
+  const [state, setState] = useState(tab);
+  const decide = async (d) => { try { await call('actionItemReview', x.caseId, x.index, d); setState(d); changed(); if (d === 'rejected') toast('Removed. It will learn from this.'); } catch (e) { toastError(e); } };
+  return html`<div class=${`ai-row ${state}`}>
+    <div class="grow" style="min-width:0">
+      <div class="ai-step">${x.step}</div>
+      <div class="small muted ai-meta">
+        ${x.due ? html`<span class="chip">${shortDate(x.due)}</span>` : null}
+        ${x.who && x.owner !== 'me' ? html`<span>${x.who}</span>` : null}
+        <a class="link clip" onClick=${() => openCase(x.caseId)} title="Open where it came from">${x.sender ? `${x.sender}: ` : ''}${x.caseTitle}</a>
+      </div>
+      ${x.why ? html`<div class="small faint ai-why">${x.why}</div>` : null}
+      ${x.autoRejected && state === 'rejected' ? html`<div class="small faint ai-why">Skipped because you rejected something like it before.</div>` : null}
+    </div>
+    <div class="ai-btns">
+      ${state === 'suggested' ? html`<button class="btn small primary" title="Add to my tasks" onClick=${() => decide('approved')}><${Icon} name="check" size="14" /> Approve</button>
+        <button class="btn small ghost" title="Not an action item" aria-label="Not an action item" onClick=${() => decide('rejected')}><${Icon} name="x" size="14" /></button>`
+      : state === 'approved' ? html`<span class="small ai-ok">On your list</span><button class="btn small ghost" title="Not an action item after all" aria-label="Not an action item" onClick=${() => decide('rejected')}><${Icon} name="x" size="14" /></button>`
+      : html`<span class="small muted">Not an action item</span><button class="btn small ghost" onClick=${() => decide('suggested')}>Restore</button>`}
+    </div>
+  </div>`;
+}
+
+/** Suggested, approved and rejected action items from everything dropped into the chat. */
+function ActionPanel({ refresh }) {
+  const [tab, setTab] = useState('suggested');
+  const [data, setData] = useState(null);
+  const [q, setQ] = useState('');
+  const load = () => call('actionItems').then(setData, toastError);
+  useEffect(() => { load(); }, [refresh]);
+  useEffect(() => {
+    const h = () => load();
+    const t = (e) => setTab(e.detail || 'suggested');
+    window.addEventListener('bd-actions-changed', h);
+    window.addEventListener('bd-action-tab', t);
+    return () => { window.removeEventListener('bd-actions-changed', h); window.removeEventListener('bd-action-tab', t); };
+  }, []);
+  const all = async (d) => { try { const n = await call('actionItemsReviewAll', d); toast(d === 'approved' ? `${n} added to your tasks` : `${n} removed`); load(); } catch (e) { toastError(e); } };
+  const list = data ? data[tab].filter((x) => !q || `${x.step} ${x.caseTitle} ${x.sender}`.toLowerCase().includes(q.toLowerCase())) : [];
+  const TABS = [['suggested', 'Suggested'], ['approved', 'Approved'], ['rejected', 'Rejected']];
+  return html`<aside class="ai-panel" aria-label="Action items">
+    <div class="ai-head"><b>Action items</b><span class="grow"></span>
+      ${tab === 'suggested' && data && data.counts.suggested ? html`<button class="btn small" onClick=${() => all('approved')}>Approve all</button>` : null}</div>
+    <div class="seg ai-tabs">${TABS.map(([k, l]) => html`<button key=${k} class=${tab === k ? 'on' : ''} onClick=${() => setTab(k)}>${l}${data ? ` ${data.counts[k]}` : ''}</button>`)}</div>
+    ${data && data[tab].length > 6 ? html`<input class="input ai-filter" placeholder="Filter…" value=${q} onInput=${(e) => setQ(e.target.value)} />` : null}
+    <div class="ai-list">
+      ${!data ? html`<${Spinner} />` : list.length ? list.map((x) => html`<${ActionRow} key=${`${tab}:${x.key}`} x=${x} tab=${tab} />`)
+        : html`<div class="small muted ai-empty">${tab === 'suggested' ? 'Nothing waiting. When you drop an email or file, the action items it suggests show here for you to approve or reject.' : tab === 'approved' ? 'Approved action items are on your task list.' : 'Nothing rejected. Say "not an action item" in the chat, or press ✕, and the assistant learns from it.'}</div>`}
+    </div>
+    <div class="small faint ai-foot">Approve adds it to your tasks. ✕ means it is not an action item, and the assistant stops suggesting things like it.</div>
+  </aside>`;
+}
+
 export function ChatPage({ nav, version }) {
   const [msgs, setMsgs] = useState(null);
   const [text, setText] = useState('');
@@ -96,6 +156,7 @@ export function ChatPage({ nav, version }) {
   const fileIn = useRef(null);
   const depth = useRef(0);
   const load = () => call('chatHistory').then(setMsgs, toastError);
+  const actionsKey = msgs ? msgs.map((m) => `${m.id}:${(m.cases || []).map((c) => c.state + (c.suggested || 0)).join(',')}`).join('|') : '';
   const sendRef = useRef(null);
   // "Ask what is needed" on a task, from any page: ask it here.
   useEffect(() => {
@@ -148,6 +209,7 @@ export function ChatPage({ nav, version }) {
       <button class="btn" onClick=${() => send({ words: 'What should I do today?' })} disabled=${busy}><${Icon} name="today" size="15" /> Briefing</button>
       ${msgs && msgs.length ? html`<button class="btn ghost" title="Clear chat" aria-label="Clear chat" onClick=${clear}><${Icon} name="trash" size="15" /></button>` : null}
       <button class="btn ghost" title="Assistant settings: about you, reply tone, watched folder, what it knows" aria-label="Assistant settings" onClick=${() => setSettings(true)}><${Icon} name="gear" size="16" /></button></div>
+    <div class="ch-split"><div class="ch-main">
     <div class="ask-thread">
       ${!msgs ? html`<${Spinner} />` : !msgs.length ? html`<div class="ask-empty"><${Icon} name="spark" size="30" /><h3>Drop anything here</h3>
         <div class="muted small">Outlook emails (.msg, .eml) and Outlook data files (.pst), OneNote sections, notebooks and pages (.one, .onepkg, .mht), PDF, Word, Excel, Markdown, pictures and scans, or a pasted Teams chat. I read each one on this PC, pull out who, what and when, and put the tasks on your list. Ask me anything about it later.</div>
@@ -162,7 +224,8 @@ export function ChatPage({ nav, version }) {
       <textarea ref=${input} class="input" rows="2" autoFocus placeholder="Drop files here, paste an email, write a note, or ask a question… (Enter to send, Shift+Enter for a new line)" value=${text} onInput=${(e) => setText(e.target.value)}
         onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} aria-label="Message"></textarea>
       <button class="btn primary" disabled=${busy || !text.trim()} onClick=${() => send()}><${Icon} name="arrowRight" /> Send</button>
-    </div>
+    </div></div>
+    <${ActionPanel} refresh=${actionsKey} /></div>
     ${drag ? html`<div class="as-overlay ch-overlay"><div class="as-overlay-zone" onDragOver=${(e) => e.preventDefault()} onDrop=${onDrop}><${Icon} name="upload" size="34" />Drop to read<span>Each file gets a summary and its tasks</span></div></div>` : null}
     ${settings ? html`<${AssistantSettings} onClose=${() => setSettings(false)} />` : null}
   </div>`;

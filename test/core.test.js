@@ -1118,6 +1118,10 @@ test('chat, one task list, priority and the morning briefing', async () => {
   const [, ans] = await api.chatSend({ text: 'What happened with PO 4471?' });
   assert.equal(ans.kind, 'answer');
   assert.ok(ans.sources.some((s) => s.kind === 'case'), 'cases are searched for answers');
+  // Plan steps are suggestions until approved.
+  assert.ok(!api.tasksList().mine.some((x) => x.source === 'case'), 'suggested steps are not tasks yet');
+  assert.ok(api.actionItems().counts.suggested >= 2);
+  api.actionItemsReviewAll('approved');
   // One list from plan steps, board items and meeting actions.
   const L = api.tasksList();
   const all = [...L.mine, ...L.waiting];
@@ -1189,6 +1193,7 @@ test('managing tasks: target dates, priority, words, "completed …" in chat, re
   // Dates on a dropped file's plan step go back to the plan.
   const [, r] = await api.chatSend({ text: 'Remind Jordan to send the Q4 forecast. I need to update the Kroger planogram.' });
   await api.assistantSettle(r.caseIds[0]);
+  api.actionItemsReviewAll('approved');
   const msg = api.chatMessage(r.id);
   assert.ok(msg.cases[0].steps.length, 'the file card lists its steps as tasks');
   const step = [...api.tasksList().mine, ...api.tasksList().waiting].find((x) => x.source === 'case');
@@ -1440,4 +1445,46 @@ test('assistant reads a real Outlook reply: newest message, asks as steps, names
   assert.match(reply.body, /1\. Confirm if 3\.2\.2/);
   assert.equal(internal.audience, 'internal');
   assert.match(internal.to, /Tom Lee <tom\.lee@ingenico\.example>/);
+});
+
+test('action items: suggested until approved, rejected ones teach it, no-action emails, chat commands', async () => {
+  const api = await fresh();
+  api.setAi({ provider: 'off' });
+  const drop = async (name, text) => { const [, r] = await api.chatSend({ files: [{ name, bytes: Buffer.from(text) }] }); await api.assistantSettle(r.caseIds[0]); return r.caseIds[0]; };
+  const id = await drop('pilot.eml', fs.readFileSync(path.join(__dirname, 'fixtures', 'thread-reply.eml')));
+  let ai = api.actionItems();
+  assert.ok(ai.counts.suggested >= 4);
+  assert.equal(api.tasksList().mine.filter((x) => x.source === 'case').length, 0, 'nothing is a task until approved');
+  // Chat: "not an action item" removes the clear match and remembers it.
+  const [, no] = await api.chatSend({ text: 'not an action item: the RMA process for the 18 units' });
+  assert.equal(no.kind, 'review');
+  assert.match(no.content, /Removed "Send the RMA process/);
+  ai = api.actionItems();
+  assert.ok(ai.rejected.some((x) => /RMA/.test(x.step)));
+  // Approve one in chat; it lands on the task list.
+  const [, yes] = await api.chatSend({ text: 'approve the CIO call' });
+  assert.match(yes.content, /Approved "Join a call with our CIO/);
+  assert.ok(api.tasksList().mine.some((x) => /CIO/.test(x.title)));
+  // The model is told what was rejected and approved before.
+  assert.match(api.assistant.learned(), /NOT action items[\s\S]*RMA[\s\S]*accepted[\s\S]*CIO/);
+  // A similar step later is skipped on its own (and can be restored).
+  const id2 = await drop('again.eml', 'From: "Martinez, Carla" <carla.martinez@bigretail.example>\r\nTo: Brian <brian.pickens@ingenico.example>\r\nSubject: RMA\r\nContent-Type: text/plain\r\n\r\nHi Brian,\r\n\r\nCan you please send the RMA process for the 18 units we pulled?\r\n\r\nThanks,\r\nCarla\r\n');
+  const c2 = api.assistantCase(id2);
+  const rma = c2.analysis.plan.find((s) => /RMA/.test(s.step));
+  assert.equal(rma.review, 'rejected');
+  assert.ok(rma.autoRejected);
+  api.actionItemReview(id2, c2.analysis.plan.indexOf(rma), 'suggested');
+  assert.doesNotMatch(api.assistant.learned(), /NOT action items/, 'restoring takes the rejection back');
+  assert.ok(api.actionItems().suggested.some((x) => x.caseId === id2 && /RMA/.test(x.step)));
+  // Newsletters and FYIs need no action.
+  const id3 = await drop('news.eml', 'From: Retail Weekly <newsletter@retailweekly.example>\r\nSubject: This week in retail\r\nContent-Type: text/plain\r\n\r\nTop stories this week: self-checkout grows 12%.\r\n\r\nUnsubscribe | Manage preferences\r\n');
+  const c3 = api.assistantCase(id3);
+  assert.equal(c3.analysis.plan.length, 0);
+  assert.equal(c3.analysis.needsAction, false);
+  assert.match(c3.analysis.summary, /no action items/);
+  // Approve all.
+  const n = api.actionItemsReviewAll('approved');
+  assert.ok(n >= 3);
+  assert.equal(api.actionItems().counts.suggested, 0);
+  void id;
 });
