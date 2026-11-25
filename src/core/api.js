@@ -740,6 +740,7 @@ class AppApi {
   taskSeen(keys) { return this.tasks.seen(keys); }
   taskAdd(t) { return this.tasks.add(t); }
   taskEdit(key, patch) { return this.tasks.edit(key, patch); }
+  taskReorder(keys, moved) { return this.tasks.reorder(keys, moved); }
   taskReopen(key) { return this.tasks.reopen(key); }
   tasksWeek() { return this.tasks.week(); }
   briefing() { return this.tasks.briefing(); }

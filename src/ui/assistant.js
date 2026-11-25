@@ -106,6 +106,7 @@ export function AssistantSettings({ onClose }) {
     <div class="grid2 mt">
       <label class="field">Tone for replies<input class="input" value=${cfg.tone} onChange=${(e) => save({ tone: e.target.value })} /></label>
       <label class="field">Email signature<textarea class="input" rows="3" value=${cfg.signature} onChange=${(e) => save({ signature: e.target.value })}></textarea></label>
+      <label class="check mt"><input type="checkbox" checked=${cfg.autoCustomers !== false} onChange=${(e) => save({ autoCustomers: e.target.checked })} /> Add customers and contacts from emails automatically (company, website, names, titles, phone numbers)</label>
     </div>
     <h3 class="mt2">Watch a folder</h3>
     <div class="small muted">New files saved into this folder become cases automatically within a minute, for example a folder you save Outlook emails into, or a OneDrive folder.</div>
@@ -160,6 +161,33 @@ export function CaseView({ id, nav, onChanged, onDeleted }) {
     try { const chat = await call('assistantChat', id, text); setC((x) => ({ ...x, chat })); } catch (e) { toastError(e); } finally { setChatBusy(false); }
   };
   const openFile = (name) => native('openAssistantFile', { id, name }).catch(toastError);
+  const qs = a ? a.questions : [];
+  const q1i = qs.findIndex((q) => !q.answer);
+  const q1 = q1i >= 0 ? qs[q1i] : null;
+  const facts = [];
+  const names = (v) => (Array.isArray(v) ? v : [v]).filter(Boolean).map((x) => (typeof x === 'string' ? x : x.name || x.email || '')).filter(Boolean).join(', ');
+  const kb = (n) => (n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+  for (const f of (c.source && c.source.files) || []) {
+    const m = f.meta || (f.email && f.email.meta) || {};
+    const e = f.email;
+    const tag = (c.source.files.length > 1 ? `${f.name}: ` : '');
+    if (e) {
+      if (e.from) facts.push([`${tag}From`, names(e.from)]);
+      if (e.to) facts.push([`${tag}To`, names(e.to)]);
+      if (e.cc && names(e.cc)) facts.push([`${tag}Cc`, names(e.cc)]);
+      if (e.date) facts.push([`${tag}Sent`, String(e.date)]);
+    }
+    if (m.importance) facts.push([`${tag}Importance`, m.importance === 'high' ? 'High' : 'Low']);
+    if ((m.categories || []).length) facts.push([`${tag}Categories`, m.categories.join(', ')]);
+    if (m.meeting && m.meeting.start) facts.push([`${tag}Meeting`, `${m.meeting.start}${m.meeting.location ? ` at ${m.meeting.location}` : ''}`]);
+    if ((m.attachments || []).length) facts.push([`${tag}Attachments`, m.attachments.map((x) => `${x.name} (${kb(x.size || 0)})`).join(', ')]);
+    if (m.app === 'OneNote') {
+      if (m.notebook) facts.push([`${tag}Notebook`, m.notebook]);
+      if (m.section) facts.push([`${tag}Section`, m.section]);
+      if (m.page) facts.push([`${tag}Page`, m.page]);
+    }
+    if (m.date && !e) facts.push([`${tag}Date`, String(m.date).slice(0, 10)]);
+  }
 
   return html`<div class="as-case">
     <div class="as-case-head">
@@ -177,19 +205,15 @@ export function CaseView({ id, nav, onChanged, onDeleted }) {
       <div class="card pad"><div class="row between"><b>Summary</b><span class="row" style="gap:6px">
         ${c.due ? html`<span class="chip">Due ${shortDate(c.due)}</span>` : null}<span class="chip" style=${`color:${PRI[c.priority][1]}`}>${PRI[c.priority][0]}</span></span></div>
         <div class="mt as-text">${a.summary}</div>
-        ${a.keyPoints.length ? html`<ul class="as-list mt">${a.keyPoints.map((k, i) => html`<li key=${i}>${k}</li>`)}</ul>` : null}
         ${a.translation ? html`<div class="mt"><a class="link small" onClick=${() => setShowTr(!showTr)}>${showTr ? 'Hide' : 'Show'} English translation (from ${a.language})</a>${showTr ? html`<div class="as-text as-quote mt">${a.translation}</div>` : null}</div>` : null}
-        ${a.risks.length ? html`<div class="mt"><div class="small muted">Risks</div><ul class="as-list">${a.risks.map((k, i) => html`<li key=${i} class="bad">${k}</li>`)}</ul></div>` : null}
       </div>
 
-      ${a.questions.length ? html`<div class="card pad as-questions"><b>I need a few things from you</b>
-        ${a.questions.map((q, i) => html`<div key=${i} class="mt"><div>${q.question}</div>${q.why ? html`<div class="small muted">${q.why}</div>` : null}
-          <input class="input mt1" placeholder=${q.answer ? '' : 'Your answer, a name, an email address…'} value=${answers[i] != null ? answers[i] : q.answer || ''} onInput=${(e) => setAnswers({ ...answers, [i]: e.target.value })} /></div>`)}
-        <textarea class="input mt" rows="2" placeholder="Anything else I should know? (optional)" value=${extra} onInput=${(e) => setExtra(e.target.value)}></textarea>
-        <div class="row mt"><span class="grow"></span><button class="btn primary" disabled=${!!busy} onClick=${() => run('answer', () => call('assistantAnswer', id, { answers, extra }).then(() => { setAnswers({}); setExtra(''); }))}>
-          ${busy === 'answer' ? html`<${Spinner} />` : html`<${Icon} name="refresh" size="14" />`} Update the plan</button></div></div>` : null}
+      ${q1 ? html`<form class="card pad as-question row" style="gap:8px;flex-wrap:wrap" onSubmit=${(e) => { e.preventDefault(); run('answer', () => call('assistantAnswer', id, { answers: { [q1i]: answers[q1i] || '' }, extra: '' }).then(() => setAnswers({}))); }}>
+        <span class="small muted">One thing would help:</span><span class="grow" style="min-width:200px">${q1.question}</span>
+        <input class="input small grow" style="min-width:200px" placeholder="Your answer (optional)" value=${answers[q1i] != null ? answers[q1i] : ''} onInput=${(e) => setAnswers({ [q1i]: e.target.value })} />
+        <button class="btn small primary" type="submit" disabled=${!!busy || !(answers[q1i] || '').trim()}>${busy === 'answer' ? html`<${Spinner} />` : 'Update'}</button></form>` : null}
 
-      <div class="card pad"><div class="row between"><b>Action plan</b><span class="small muted">${a.plan.filter((s) => s.done).length} of ${a.plan.length} done</span></div>
+      <div class="card pad"><div class="row between"><b>Action items</b><span class="small muted">${a.plan.filter((s) => s.done).length} of ${a.plan.length} done</span></div>
         <div class="as-plan">${a.plan.map((s, i) => html`<div key=${i} class=${`as-step ${s.done ? 'done' : ''}`}>
           <input type="checkbox" checked=${s.done} onChange=${(e) => upd({ step: { index: i, done: e.target.checked } })} aria-label="Done" />
           <div class="grow"><div style=${s.review === 'rejected' ? 'text-decoration:line-through;opacity:.6' : ''}>${s.step}</div>${s.why ? html`<div class="small faint">${s.why}</div>` : null}<div class="small muted">${s.review === 'suggested' ? html`<b>Suggested</b> · ` : s.review === 'rejected' ? 'Not an action item · ' : ''}${OWNER[s.owner] || s.owner}${s.who ? ` · ${s.who}` : ''}${s.due ? ` · due ${shortDate(s.due)}` : ''}${s.itemId ? html` · <a class="link" onClick=${() => window.dispatchEvent(new CustomEvent('bd-open-item', { detail: s.itemId }))}>task on board</a>` : ''}</div></div>
@@ -198,21 +222,6 @@ export function CaseView({ id, nav, onChanged, onDeleted }) {
             : html`<button class="btn ghost small" aria-label="Not an action item" title="Not an action item (the assistant learns from this)" onClick=${() => call('actionItemReview', id, i, 'rejected').then(() => { window.dispatchEvent(new CustomEvent('bd-actions-changed')); load && load(); }, toastError)}><${Icon} name="x" size="13" /></button>`}</div>`)}</div>
         <form class="row mt" style="gap:6px" onSubmit=${(e) => { e.preventDefault(); const v = e.target.step.value.trim(); if (v) { upd({ addStep: { step: v, owner: 'me' } }); e.target.reset(); } }}>
           <input name="step" class="input grow" placeholder="Add a step" /><button class="btn small" type="submit">Add</button></form>
-      </div>
-
-      <div class="card pad"><b>Where this work goes</b>
-        <div class="small mt">${pl.boardId ? html`Suggested: <b>${pl.workspace} › ${pl.board} › ${pl.group}</b>` : html`Suggested new board: <b>${pl.board}</b>${pl.workspace ? ` in ${pl.workspace}` : ''}`}${pl.reason ? html`<div class="muted">${pl.reason}</div>` : null}</div>
-        <div class="row mt" style="gap:8px;flex-wrap:wrap">
-          <${Select} cls="input small" value=${tgtBoard} onChange=${(v) => setTarget({ boardId: v, groupId: '' })} placeholder="Choose a board" options=${boardOpts} title="Board" />
-          ${tgtGroups.length ? html`<${Select} cls="input small" value=${tgtGroup} onChange=${(v) => setTarget({ boardId: tgtBoard, groupId: v })} options=${tgtGroups.map((g) => ({ value: g.id, label: g.name }))} title="Group" />` : null}
-          <button class="btn primary small" disabled=${!tgtBoard || !!busy || !a.plan.some((s) => !s.itemId)} onClick=${() => run('tasks', async () => { const r = await call('assistantToTasks', id, { boardId: tgtBoard, groupId: tgtGroup }); toast(`${r.created} ${r.created === 1 ? 'task' : 'tasks'} added`, '', { label: 'Open board', run: () => nav('board', r.boardId) }); })}>
-            <${Icon} name="plus" size="14" /> Add plan steps as tasks</button>
-          ${!pl.boardId ? html`<button class="btn small" disabled=${!!busy} onClick=${() => run('board', async () => { const b = await call('assistantCreateBoard', id, {}); setTarget({ boardId: b, groupId: '' }); call('assistantConfig').then((x) => setStruct(x.structure)); toast('Board created'); })}>Create "${pl.board}"</button>` : null}
-        </div>
-        ${a.organize && a.organize.advice ? html`<div class="as-organize mt2"><div class="small muted">How to organize this kind of work</div><div class="as-text">${a.organize.advice}</div>
-          ${a.organize.boardName ? html`<div class="small mt">Proposed board <b>${a.organize.boardName}</b>${a.organize.groups.length ? html` with swim lanes: ${a.organize.groups.map((g) => html`<span key=${g} class="chip">${g}</span>`)}` : null}${a.organize.columns.length ? html` and columns: ${a.organize.columns.join(', ')}` : null}</div>
-            <button class="btn small mt" disabled=${!!busy} onClick=${() => run('board', async () => { const b = await call('assistantCreateBoard', id, { name: a.organize.boardName, groups: a.organize.groups, columns: a.organize.columns }); setTarget({ boardId: b, groupId: '' }); call('assistantConfig').then((x) => setStruct(x.structure)); toast('Board created', '', { label: 'Open board', run: () => nav('board', b) }); })}>
-              <${Icon} name="plus" size="14" /> Create this board</button>` : null}</div>` : null}
       </div>
 
       ${a.replies.length ? html`<div class="card pad"><b>Replies to send</b>
@@ -234,17 +243,37 @@ export function CaseView({ id, nav, onChanged, onDeleted }) {
           onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } }}></textarea>
           <button class="btn primary" disabled=${chatBusy || !msg.trim()} onClick=${sendChat}>Send</button></div></div>
 
-      <div class="card pad"><div class="row between"><b>Sources</b><span class="row" style="gap:6px">
-        <button class="btn small" onClick=${() => setPaste(true)}><${Icon} name="plus" size="14" /> Add more</button>
-        <button class="btn small" disabled=${!!busy} onClick=${() => run('re', () => call('assistantAnalyze', id))}><${Icon} name="refresh" size="14" /> Read again</button></span></div>
-        <div class="as-files mt">${c.source.files.map((f) => html`<div key=${f.name} class="row small" style="gap:6px"><${Icon} name=${f.email ? 'mail' : 'file'} size="14" />
-          ${f.stored && isDesktop ? html`<a class="link clip" onClick=${() => openFile(f.name)}>${f.name}</a>` : html`<span class="clip">${f.name}</span>`}
-          ${f.attachments.length ? html`<span class="faint">+ ${f.attachments.map((x) => x.name).join(', ')}</span>` : null}</div>`)}
-          ${c.source.pasted ? html`<div class="row small" style="gap:6px"><${Icon} name=${c.kind === 'chat' ? 'msg' : 'text'} size="14" />${c.kind === 'chat' ? 'Pasted chat' : 'Pasted text'} · ${c.source.pasted.length.toLocaleString()} characters</div>` : null}</div>
-        ${a.sources.length ? html`<div class="mt"><a class="link small" onClick=${() => setShowSrc(!showSrc)}>${showSrc ? 'Hide' : 'Show'} ${a.sources.length} related records and documents it looked at</a>
-          ${showSrc ? html`<div class="as-related mt1">${a.sources.map((s) => html`<button key=${s.n} class="ask-src" onClick=${() => (s.kind === 'file' ? native('openPath', { path: s.path }).catch(toastError) : s.kind === 'customer' ? window.dispatchEvent(new CustomEvent('bd-open-customer', { detail: s.id })) : s.kind === 'meeting' ? window.dispatchEvent(new CustomEvent('bd-open-meeting', { detail: s.id })) : s.kind === 'item' ? window.dispatchEvent(new CustomEvent('bd-open-item', { detail: s.id })) : null)}>
-            <span class="n">${s.n}</span><span class="grow" style="min-width:0"><b class="clip">${s.name || s.kind}${s.used ? ' · used' : ''}</b><span class="small muted clip">${s.path || s.snippet}</span></span></button>`)}</div>` : null}</div>` : null}
-      </div>
+      <details class="card pad as-more"><summary><b>More details</b> <span class="small muted">key points, risks, email and OneNote details, where tasks go, sources</span></summary>
+        ${a.keyPoints.length ? html`<div class="mt"><div class="small muted">Key points</div><ul class="as-list">${a.keyPoints.map((k, i) => html`<li key=${i}>${k}</li>`)}</ul></div>` : null}
+        ${a.risks.length ? html`<div class="mt"><div class="small muted">Risks</div><ul class="as-list">${a.risks.map((k, i) => html`<li key=${i} class="bad">${k}</li>`)}</ul></div>` : null}
+        ${facts.length ? html`<div class="mt"><div class="small muted">Details</div><div class="as-facts">${facts.map(([k, v], i) => html`<div key=${i} class="as-fact"><span class="muted">${k}</span><span>${v}</span></div>`)}</div></div>` : null}
+        <div class="card pad"><b>Where this work goes</b>
+          <div class="small mt">${pl.boardId ? html`Suggested: <b>${pl.workspace} › ${pl.board} › ${pl.group}</b>` : html`Suggested new board: <b>${pl.board}</b>${pl.workspace ? ` in ${pl.workspace}` : ''}`}${pl.reason ? html`<div class="muted">${pl.reason}</div>` : null}</div>
+          <div class="row mt" style="gap:8px;flex-wrap:wrap">
+            <${Select} cls="input small" value=${tgtBoard} onChange=${(v) => setTarget({ boardId: v, groupId: '' })} placeholder="Choose a board" options=${boardOpts} title="Board" />
+            ${tgtGroups.length ? html`<${Select} cls="input small" value=${tgtGroup} onChange=${(v) => setTarget({ boardId: tgtBoard, groupId: v })} options=${tgtGroups.map((g) => ({ value: g.id, label: g.name }))} title="Group" />` : null}
+            <button class="btn primary small" disabled=${!tgtBoard || !!busy || !a.plan.some((s) => !s.itemId)} onClick=${() => run('tasks', async () => { const r = await call('assistantToTasks', id, { boardId: tgtBoard, groupId: tgtGroup }); toast(`${r.created} ${r.created === 1 ? 'task' : 'tasks'} added`, '', { label: 'Open board', run: () => nav('board', r.boardId) }); })}>
+              <${Icon} name="plus" size="14" /> Add plan steps as tasks</button>
+            ${!pl.boardId ? html`<button class="btn small" disabled=${!!busy} onClick=${() => run('board', async () => { const b = await call('assistantCreateBoard', id, {}); setTarget({ boardId: b, groupId: '' }); call('assistantConfig').then((x) => setStruct(x.structure)); toast('Board created'); })}>Create "${pl.board}"</button>` : null}
+          </div>
+          ${a.organize && a.organize.advice ? html`<div class="as-organize mt2"><div class="small muted">How to organize this kind of work</div><div class="as-text">${a.organize.advice}</div>
+            ${a.organize.boardName ? html`<div class="small mt">Proposed board <b>${a.organize.boardName}</b>${a.organize.groups.length ? html` with swim lanes: ${a.organize.groups.map((g) => html`<span key=${g} class="chip">${g}</span>`)}` : null}${a.organize.columns.length ? html` and columns: ${a.organize.columns.join(', ')}` : null}</div>
+              <button class="btn small mt" disabled=${!!busy} onClick=${() => run('board', async () => { const b = await call('assistantCreateBoard', id, { name: a.organize.boardName, groups: a.organize.groups, columns: a.organize.columns }); setTarget({ boardId: b, groupId: '' }); call('assistantConfig').then((x) => setStruct(x.structure)); toast('Board created', '', { label: 'Open board', run: () => nav('board', b) }); })}>
+                <${Icon} name="plus" size="14" /> Create this board</button>` : null}</div>` : null}
+        </div>
+
+        <div class="card pad"><div class="row between"><b>Sources</b><span class="row" style="gap:6px">
+          <button class="btn small" onClick=${() => setPaste(true)}><${Icon} name="plus" size="14" /> Add more</button>
+          <button class="btn small" disabled=${!!busy} onClick=${() => run('re', () => call('assistantAnalyze', id))}><${Icon} name="refresh" size="14" /> Read again</button></span></div>
+          <div class="as-files mt">${c.source.files.map((f) => html`<div key=${f.name} class="row small" style="gap:6px"><${Icon} name=${f.email ? 'mail' : 'file'} size="14" />
+            ${f.stored && isDesktop ? html`<a class="link clip" onClick=${() => openFile(f.name)}>${f.name}</a>` : html`<span class="clip">${f.name}</span>`}
+            ${f.attachments.length ? html`<span class="faint">+ ${f.attachments.map((x) => x.name).join(', ')}</span>` : null}</div>`)}
+            ${c.source.pasted ? html`<div class="row small" style="gap:6px"><${Icon} name=${c.kind === 'chat' ? 'msg' : 'text'} size="14" />${c.kind === 'chat' ? 'Pasted chat' : 'Pasted text'} · ${c.source.pasted.length.toLocaleString()} characters</div>` : null}</div>
+          ${a.sources.length ? html`<div class="mt"><a class="link small" onClick=${() => setShowSrc(!showSrc)}>${showSrc ? 'Hide' : 'Show'} ${a.sources.length} related records and documents it looked at</a>
+            ${showSrc ? html`<div class="as-related mt1">${a.sources.map((s) => html`<button key=${s.n} class="ask-src" onClick=${() => (s.kind === 'file' ? native('openPath', { path: s.path }).catch(toastError) : s.kind === 'customer' ? window.dispatchEvent(new CustomEvent('bd-open-customer', { detail: s.id })) : s.kind === 'meeting' ? window.dispatchEvent(new CustomEvent('bd-open-meeting', { detail: s.id })) : s.kind === 'item' ? window.dispatchEvent(new CustomEvent('bd-open-item', { detail: s.id })) : null)}>
+              <span class="n">${s.n}</span><span class="grow" style="min-width:0"><b class="clip">${s.name || s.kind}${s.used ? ' · used' : ''}</b><span class="small muted clip">${s.path || s.snippet}</span></span></button>`)}</div>` : null}</div>` : null}
+        </div>
+      </details>
       <div class="small faint">${a.mode === 'local' ? `Read by ${a.model} on this PC` : a.mode === 'claude' ? `Read by Claude (${a.model})` : a.mode === 'chatgpt' ? `Read by ChatGPT (${a.model})` : 'Read by the built-in reader'} · ${relTime(a.analyzedAt)}</div>
     ` : null}
     ${paste ? html`<${PasteBox} caseId=${id} onClose=${() => setPaste(false)} onDone=${() => load()} />` : null}
@@ -315,7 +344,7 @@ export function AssistantPage({ nav, version }) {
           : list.map((c) => html`<button key=${c.id} class=${`as-case-row ${sel === c.id ? 'on' : ''}`} onClick=${() => setSel(c.id)}>
             <span class="as-pri" style=${`background:${PRI[c.priority][1]}`} title=${PRI[c.priority][0]}></span>
             <span class="grow" style="min-width:0"><b class="clip">${c.title}</b><span class="small muted clip">${c.state === 'reading' || c.state === 'thinking' ? 'Working on it…' : c.state === 'error' ? 'Could not be read' : c.summary || c.sender}</span>
-              <span class="small faint">${relTime(c.createdAt)}${c.openSteps ? ` · ${c.openSteps} open ${c.openSteps === 1 ? 'step' : 'steps'}` : ''}${c.questions ? ` · ${c.questions} ${c.questions === 1 ? 'question' : 'questions'}` : ''}${c.due ? ` · due ${shortDate(c.due)}` : ''}</span></span>
+              <span class="small faint">${relTime(c.createdAt)}${c.openSteps ? ` · ${c.openSteps} open ${c.openSteps === 1 ? 'step' : 'steps'}` : ''}${c.due ? ` · due ${shortDate(c.due)}` : ''}</span></span>
             ${c.state === 'reading' || c.state === 'thinking' ? html`<${Spinner} />` : html`<${Icon} name=${KIND_ICON[c.kind] || 'file'} size="15" />`}</button>`)}</div>
       </div>
       <div class="as-detail">${sel && list && (list.some((c) => c.id === sel) || filter === 'all' || true) ? html`<${CaseView} key=${sel} id=${sel} nav=${nav} onChanged=${load} onDeleted=${() => { setSel(''); load(); }} />`

@@ -29,7 +29,9 @@ const pastedBody = (t) => String(t || '').replace(/\r\n/g, '\n').replace(/^(?:\s
 function emailText(label, e, text) {
   const b = mail.cleanBody(text);
   const list = (v) => mail.addresses(v).map((a) => (a.email && a.name !== a.email ? `${a.name} <${a.email}>` : a.name || a.email)).join(', ');
-  return [`${label}\nFrom: ${list(e.from)}\nTo: ${list(e.to)}${e.cc ? `\nCc: ${list(e.cc)}` : ''}\nDate: ${e.date}\nSubject: ${e.subject}`,
+  const m = e.meta || {};
+  const extra = [m.importance ? `Importance: ${m.importance}` : '', (m.categories || []).length ? `Categories: ${m.categories.join(', ')}` : '', (m.attachments || []).length ? `Attachments: ${m.attachments.map((x) => x.name).join(', ')}` : '', m.meeting ? `Meeting: ${m.meeting.start}${m.meeting.location ? ` at ${m.meeting.location}` : ''}` : ''].filter(Boolean).join('\n');
+  return [`${label}\nFrom: ${list(e.from)}\nTo: ${list(e.to)}${e.cc ? `\nCc: ${list(e.cc)}` : ''}\nDate: ${e.date}\nSubject: ${e.subject}${extra ? `\n${extra}` : ''}`,
     `NEWEST MESSAGE (this is what needs a response):\n${b.greeting ? `${b.greeting}\n` : ''}${b.latest || '(empty)'}`,
     b.signature ? `SENDER SIGNATURE:\n${b.signature.slice(0, 600)}` : '',
     b.history ? `EARLIER MESSAGES IN THIS THREAD (context only, newest first):\n${b.history.slice(0, 15000)}` : ''].filter(Boolean).join('\n\n');
@@ -73,6 +75,21 @@ function isoDate(s) {
   return m ? m[0] : '';
 }
 
+
+// ------------------------------------------------------------- customer profiles from email
+const FREE_MAIL = /(^|\.)(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|icloud|me|mac|aol|proton|protonmail|gmx|comcast|att|verizon)\.[a-z.]+$/i;
+const TITLE_RE = /\b(director|manager|vp|vice president|president|ceo|cfo|cto|cio|coo|owner|founder|engineer|specialist|lead|head of|officer|analyst|coordinator|buyer|consultant|administrator|architect|supervisor|executive|representative|partner|associate|technician)\b/i;
+/** Title and phone numbers from an email signature block. */
+function sigInfo(sig, name) {
+  const segs = String(sig || '').split('\n').slice(0, 10).flatMap((l) => l.split(/\s+\|\s+|\s{3,}/)).map((x) => x.trim()).filter(Boolean);
+  const title = (segs.find((x) => TITLE_RE.test(x) && x.length < 80 && !/@|https?:|\d{3}/.test(x) && x.toLowerCase() !== String(name || '').toLowerCase()) || '').replace(/[,.]$/, '');
+  const num = (re) => { const x = segs.find((y) => re.test(y)); const m = x && x.match(/(\+?\d[\d\s().-]{8,}\d)/); return m ? m[1].trim() : ''; };
+  const mobile = num(/^(m|mob|mobile|cell|c)\b\s*[:.]?\s*\+?\(?\d/i);
+  const phone = num(/^(t|tel|phone|office|o|p|direct|d|w|work)\b\s*[:.]?\s*\+?\(?\d/i) || (mobile ? '' : num(/^\+?[\d(][\d\s().-]{9,}$/));
+  return { title: title.slice(0, 120), phone, mobile };
+}
+const orgFromDomain = (d) => { const parts = String(d).toLowerCase().split('.'); const base = parts.length > 2 && /^(co|com|org|net|ac|gov)$/.test(parts[parts.length - 2]) ? parts[parts.length - 3] : parts[parts.length - 2] || parts[0]; return base ? base.split(/[-_]/).map((w) => (w.length <= 3 ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1))).join(' ') : ''; };
+
 class Assistant {
   constructor({ db, store, capture, knowledge, customers, meetings, dataDir, readFile }) {
     this.db = db; this.store = store; this.capture = capture; this.knowledge = knowledge; this.customers = customers; this.meetings = meetings;
@@ -114,11 +131,21 @@ class Assistant {
         if (!READABLE.test(a.name) || depth > 1 || a.bytes.length > 25e6) { atts.push({ name: a.name, size: a.bytes.length, text: '', skipped: true }); continue; }
         try { const r = await this.read(a.name, a.bytes, depth + 1); atts.push({ name: a.name, size: a.bytes.length, text: r.text.slice(0, 20000), email: r.email || null }); } catch (err) { atts.push({ name: a.name, size: a.bytes.length, text: '', error: String(err.message || err).slice(0, 160) }); }
       }
-      return { name, kind: 'email', email: { subject: e.subject, from: e.from, to: e.to, cc: e.cc, date: e.date }, text: e.text, attachments: atts, raw: e.attachments };
+      const meta = { ...(e.meta || {}), attachments: e.attachments.map((x) => ({ name: x.name, size: x.bytes.length })) };
+      return { name, kind: 'email', email: { subject: e.subject, from: e.from, to: e.to, cc: e.cc, date: e.date, meta }, text: e.text, attachments: atts, raw: e.attachments };
     }
     if (ext === '.json') return { name, kind: 'document', text: Buffer.from(bytes).toString('utf8'), attachments: [] };
-    if (ext === '.mht' || ext === '.mhtml') { const r = archives.mhtText(bytes); return { name, kind: 'document', title: r.title, text: r.title ? `${r.title}\n\n${r.text}` : r.text, attachments: [] }; }
-    if (ext === '.one') return { name, kind: 'document', text: archives.oneText(bytes), attachments: [] };
+    if (ext === '.mht' || ext === '.mhtml') {
+      const r = archives.mhtText(bytes);
+      const h = Buffer.from(bytes).subarray(0, 4000).toString('latin1');
+      const dm = h.match(/^Date:\s*(.+)$/mi);
+      return { name, kind: 'document', title: r.title, text: r.title ? `${r.title}\n\n${r.text}` : r.text, attachments: [], meta: { app: /onenote/i.test(h) ? 'OneNote' : 'Web page', page: r.title || '', date: dm && !Number.isNaN(Date.parse(dm[1])) ? new Date(dm[1]).toISOString() : '' } };
+    }
+    if (ext === '.one') {
+      const text = archives.oneText(bytes);
+      const lines = text.split('\n').filter(Boolean);
+      return { name, kind: 'document', text, attachments: [], meta: { app: 'OneNote', section: path.basename(name, ext), notebook: (name.split(/[\\/]/).slice(-2, -1)[0]) || '', firstLines: lines.slice(0, 3), size: bytes.length } };
+    }
     if (ext === '.pst' || ext === '.onepkg') throw new Error('Drop Outlook .pst files and OneNote notebooks (.onepkg) in Chat: each email or section is read on its own.');
     const text = await this.readFile(name, bytes);
     return { name, kind: 'document', text: String(text || ''), attachments: [] };
@@ -129,7 +156,7 @@ class Assistant {
     const parts = [];
     for (const f of src.files || []) {
       if (f.email) parts.push(emailText(`EMAIL "${f.name}"`, f.email, f.text));
-      else parts.push(`DOCUMENT "${f.name}"\n${f.text}`);
+      else parts.push(`DOCUMENT "${f.name}"${f.meta && f.meta.app === 'OneNote' ? ` (OneNote${f.meta.notebook ? `, notebook "${f.meta.notebook}"` : ''}${f.meta.section ? `, section "${f.meta.section}"` : ''}${f.meta.page ? `, page "${f.meta.page}"` : ''})` : ''}\n${f.text}`);
       for (const a of f.attachments || []) if (a.text) parts.push(`ATTACHMENT "${a.name}" (of ${f.name})\n${a.text}`);
     }
     if (src.pasted && src.chat) parts.push(`CHAT CONVERSATION (pasted, e.g. from Teams)\n${src.pasted}`);
@@ -154,7 +181,7 @@ class Assistant {
       questions: a ? (a.questions || []).filter((q) => !q.answer).length : 0, files: (src.files || []).map((f) => f.name),
     };
     if (full) {
-      Object.assign(out, { analysis: a, source: { ...src, files: (src.files || []).map((f) => ({ name: f.name, kind: f.kind, email: f.email || null, attachments: (f.attachments || []).map((x) => ({ name: x.name, size: x.size, skipped: !!x.skipped, error: x.error || '' })), stored: f.stored || null, chars: (f.text || '').length })) },
+      Object.assign(out, { analysis: a, source: { ...src, files: (src.files || []).map((f) => ({ name: f.name, kind: f.kind, email: f.email || null, meta: f.meta || null, size: f.size || 0, attachments: (f.attachments || []).map((x) => ({ name: x.name, size: x.size, skipped: !!x.skipped, error: x.error || '' })), stored: f.stored || null, chars: (f.text || '').length })) },
         chat: parseJson(r.chat, []), text: (r.text || '').slice(0, 20000) });
       if (r.customer_id) { try { const c = this.customers.get(r.customer_id); out.customer = { id: c.id, name: c.name }; } catch (_) { out.customer = null; } }
     }
@@ -189,7 +216,7 @@ class Assistant {
         }
         try {
           const r = await this.read(f.name, bytes);
-          src.files.push({ name: f.name, kind: r.kind, email: r.email || null, text: r.text.slice(0, MAX_TEXT), attachments: r.attachments, stored });
+          src.files.push({ name: f.name, kind: r.kind, email: r.email || null, meta: r.meta || (r.email && r.email.meta) || null, text: r.text.slice(0, MAX_TEXT), attachments: r.attachments, stored, size: bytes.length, ...(f.meta ? { from: f.meta } : {}) });
         } catch (e) {
           src.files.push({ name: f.name, kind: 'document', text: '', error: String(e.message || e), attachments: [], stored });
         }
@@ -290,7 +317,11 @@ class Assistant {
     } else notes.push(this.capture.aiConfig().provider === 'off' ? 'AI is off in Settings › AI, so the built-in reader made this outline.' : 'No AI model is running (start Ollama for a full plan and draft replies), so the built-in reader made this outline.');
     if (!result) result = this.basic(r, c, struct, rel);
     const a = this.normalize(result, { struct, sources, answers, prev, mode, model, notes });
-    const cust = this.matchCustomer(a.customer, rel);
+    let cust = this.matchCustomer(a.customer, rel);
+    try {
+      const got = this.learnCustomer(r, a, cust);
+      if (got) { cust = got.customer; if (got.note) a.notes = [...(a.notes || []), got.note]; }
+    } catch (_) { /* a profile is a bonus; never fail the case for it */ }
     this.db.run('UPDATE assistant_cases SET analysis=?, title=?, priority=?, due=?, customer_id=?, state=?, updated_at=? WHERE id=?',
       [JSON.stringify(a), (a.title || r.title).slice(0, 200), a.priority, a.due || null, cust ? cust.id : r.customer_id || null, 'ready', now(), id]);
     return this.get(id);
@@ -327,7 +358,8 @@ For every email or document you get:
 - Only real action items go in the plan: things someone asked of the user or their team, commitments the user made, deadlines, and the follow-ups that resolve them. Never turn background facts or every sentence into a step. Merge steps that belong together. Usually 1-5 steps; never more than 8. Give each step a short "why" (who asked or what it unblocks).
 - Make an action plan: concrete, ordered steps to respond or resolve. Every step starts with a verb and is specific enough to do without rereading the email (for example "Ask engineering for the 3.2.2 certification date", not "Look into it"). Cover every ask in the newest message, the internal steps needed to get each answer, and the reply itself. Owner is "me" (the user), "internal" (a colleague or team) or "third party" (customer, partner, vendor); put the person or team in "who" when known; give due dates where sensible.
 - Draft every reply needed: to the sender, and any internal or third-party messages needed to resolve it (e.g. ask support for a status, loop in finance). The reply to the sender answers each of their points in order; where only the user knows the answer, put a clear [placeholder]. Keep drafts short and natural. Subjects start with a single "RE:". Write them ready to send, in a ${cfg.tone || 'professional'} tone, in the language the recipient used. Sign as the user${cfg.signature ? ` with this signature:\n${cfg.signature}` : ''}.
-- If you need more data, a document, a contact name or a decision from the user, ask in "questions" (max 5) and say why. Never invent facts, numbers, names, emails or commitments; use placeholders like [order number] instead.
+- Be smart, not chatty: work it out from the email, the related records and the user's past decisions, and make sensible assumptions. Ask at most ONE question, and only when you truly cannot plan without the answer (usually ask none). Never ask about scope, format, timelines or contacts you can infer or put as a [placeholder]. Never invent facts, numbers, names, emails or commitments; use placeholders like [order number] instead.
+- Use the email details (importance, categories, attachments, who was copied) and OneNote details (notebook, section) to judge priority and context.
 - Placement: choose the existing workspace, board and group where the follow-up tasks belong (use exact names from <my_boards>). If none fits, set new_board true and name a sensible new board.
 - Organize: if the boards could be structured better for this kind of work (swim lanes/groups, a board per customer or program, columns to track), give short practical advice and, if useful, a proposed board with groups (swim lanes) and columns. Otherwise leave advice "" and the lists empty.
 - List risks (escalation, SLA, revenue, compliance, reputation) when relevant.
@@ -371,7 +403,7 @@ For every email or document you get:
       title: (email && bareSubject(email.email.subject)) || c.title,
       summary: o.summary,
       language: '', translation: '', category: o.meeting && !o.asks.length ? 'meeting' : email ? (o.asks.length ? 'request' : 'information') : 'information',
-      priority: o.urgent ? 'urgent' : o.due && o.due <= addDays(today(), 3) ? 'high' : o.asks.length ? 'high' : 'normal', due: o.due,
+      priority: o.urgent ? 'urgent' : (email && email.email.meta && email.email.meta.importance === 'high') || (o.due && o.due <= addDays(today(), 3)) ? 'high' : o.asks.length ? 'high' : 'normal', due: o.due,
       sender_type: 'unknown', customer: rel.customers[0] ? rel.customers[0].name : o.company,
       key_points: o.points,
       needs_action: o.needsAction,
@@ -410,7 +442,7 @@ For every email or document you get:
           review: was || (auto ? 'rejected' : 'suggested'), ...(auto ? { autoRejected: auto } : {}) };
       }),
       replies: arr(x.replies).slice(0, 8).map((s) => ({ to: str(s.to, 300), audience: s.audience === 'internal' ? 'internal' : 'external', purpose: str(s.purpose, 200), subject: str(s.subject, 300), body: str(s.body, 10000), sent: prevSent.has(str(s.subject, 300) + str(s.to, 300)) })),
-      questions: arr(x.questions).slice(0, 6).map((q) => ({ question: str(q.question, 400), why: str(q.why, 300), answer: answerFor(q.question) })),
+      questions: arr(x.questions).slice(0, 1).map((q) => ({ question: str(q.question, 400), why: str(q.why, 300), answer: answerFor(q.question) })),
       answered: answers,
       risks: arr(x.risks).map((s) => str(s, 400)).slice(0, 8),
       placement: { workspace: board ? board.workspace : str(p.workspace, 120), workspaceId: board ? board.workspaceId : ws ? ws.id : null, board: board ? board.name : str(p.board, 120), boardId: board ? board.id : null, group: group ? group.name : str(p.group, 120), groupId: group ? group.id : null, newBoard: !board, reason: str(p.reason, 500) },
@@ -488,6 +520,57 @@ For every email or document you get:
       for (const w of want) if (have.has(w) || [...have].some((h) => h.length > 4 && w.length > 4 && (h.startsWith(w) || w.startsWith(h)))) hit += 1;
       return { x, m: hit / want.size };
     }).filter((y) => y.m > 0).sort((p, q) => q.m - p.m);
+  }
+
+  /**
+   * Create or update a customer profile from an email's sender: company, website and
+   * contacts (name, email, title and phone from the signature, plus colleagues copied in).
+   * Skips internal mail, free-mail senders without a named company, and Settings › autoCustomers off.
+   */
+  learnCustomer(r, a, cust) {
+    if (this.config().autoCustomers === false) return null;
+    const src = parseJson(r.source, {});
+    const f = (src.files || []).find((x) => x.email);
+    if (!f || a.senderType === 'internal') return null;
+    const e = f.email;
+    const from = mail.addresses(e.from)[0];
+    if (!from || !from.email || !from.email.includes('@')) return null;
+    const dom = from.email.split('@')[1].toLowerCase();
+    const mine = new Set([...this.store.people().map((p) => String(p.email || '').split('@')[1]), ...(this.config().myDomains || [])].filter(Boolean).map((x) => x.toLowerCase()));
+    const toDom = ((mail.addresses(e.to)[0] || {}).email || '').split('@')[1];
+    if (mine.has(dom) || (toDom && toDom.toLowerCase() === dom)) return null; // a colleague
+    const free = FREE_MAIL.test(dom);
+    const sig = sigInfo(mail.cleanBody(f.text).signature, from.name);
+    let created = false;
+    if (!cust) {
+      const name = String(a.customer || '').trim() || (!free ? orgFromDomain(dom) : '');
+      if (!name || (name.length > 3 && new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(this.config().profile || ''))) return null; // that's my own company
+      cust = this.customers.byName(name, false);
+      if (!cust) {
+        const id = this.customers.save({ name, status: 'active', website: free ? '' : dom, email: '', tags: ['from email'], notes: `<p>Added automatically from the email "${String(e.subject || '').replace(/[<>&]/g, '')}"${e.date ? ` (${String(e.date).slice(0, 16)})` : ''}.</p>` });
+        cust = { id, name };
+        created = true;
+      }
+    }
+    const full = this.customers.get(cust.id);
+    if (!full.website && !free) this.customers.save({ id: cust.id, website: dom });
+    const have = new Set(full.contacts.map((k) => String(k.email || '').toLowerCase()).filter(Boolean));
+    const people = [{ ...from, ...sig }, ...[...mail.addresses(e.to), ...mail.addresses(e.cc)].filter((x) => x.email && !free && x.email.toLowerCase().endsWith(`@${dom}`))];
+    let added = 0;
+    for (const k of people) {
+      const em = k.email.toLowerCase();
+      if (have.has(em)) {
+        // Fill in a title or phone we did not have before.
+        const old = full.contacts.find((x) => String(x.email || '').toLowerCase() === em);
+        if (old && ((k.title && !old.title) || (k.phone && !old.phone) || (k.mobile && !old.mobile))) this.customers.saveContact(cust.id, { ...old, title: old.title || k.title || '', phone: old.phone || k.phone || '', mobile: old.mobile || k.mobile || '' });
+        continue;
+      }
+      have.add(em);
+      this.customers.saveContact(cust.id, { name: k.name && k.name !== k.email ? k.name : em.split('@')[0], email: em, title: k.title || '', phone: k.phone || '', mobile: k.mobile || '' });
+      added += 1;
+    }
+    const note = created ? `Added ${cust.name} to Customers with ${added} ${added === 1 ? 'contact' : 'contacts'} from this email.` : added ? `Added ${added} ${added === 1 ? 'contact' : 'contacts'} to ${cust.name}.` : '';
+    return { customer: cust, created, added, note };
   }
 
   matchCustomer(name, rel) {
@@ -830,4 +913,4 @@ function stepHash(s) { return require('crypto').createHash('sha1').update(String
 
 function pick(o, keys) { return Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])); }
 
-module.exports = { Assistant, SCHEMA, DEFAULT_PROFILE, isChat, outline, emailText };
+module.exports = { Assistant, SCHEMA, DEFAULT_PROFILE, isChat, outline, emailText, sigInfo, orgFromDomain };

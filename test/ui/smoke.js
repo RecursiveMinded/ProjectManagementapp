@@ -376,6 +376,10 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.waitForSelector('.as-case-head h2:has-text("Terminals offline at 3 stores")', { timeout: 20000 });
       await page.waitForSelector('.as-plan .as-step', { timeout: 20000 });
       await page.waitForSelector('.as-reply textarea');
+      if (await page.$('.as-questions')) throw new Error('the old questions card should be gone');
+      await page.click('.as-more > summary');
+      await page.waitForSelector('.as-facts .as-fact:has-text("dana@northwind.example")');
+      await page.waitForSelector('.as-case > .small.faint:has-text("Northwind")');
       await page.click('button:has-text("Add plan steps as tasks")');
       await page.waitForSelector('.toast:has-text("tasks added")');
       await page.click('.as-step input[type=checkbox] >> nth=0');
@@ -550,6 +554,11 @@ const SHOTS = process.env.SHOTS_DIR || '';
       await page.click('.side .nav a:has-text("Tasks")');
       await page.waitForSelector('.tk-page .tk-row');
       if (await page.$('.tk-row:has-text("Send the Omni battle card")')) throw new Error('completed task should be off the list');
+      const before = await page.$$eval('.tk-page .tk-drag', (els) => els.map((e) => e.querySelector('.tk-row').dataset.key));
+      if (before.length > 1) {
+        await page.dragAndDrop(`.tk-drag:nth-child(${before.length}) .tk-handle`, '.tk-drag:nth-child(1)', { targetPosition: { x: 40, y: 3 } });
+        await page.waitForFunction((k) => document.querySelector('.tk-page .tk-drag .tk-row').dataset.key === k, before[before.length - 1], { timeout: 5000 });
+      }
       await page.click('.seg button:has-text("Waiting on others")');
       await page.waitForSelector('.tk-row .tk-who');
     });

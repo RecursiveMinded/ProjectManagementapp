@@ -58,7 +58,7 @@ function DatePop({ anchor, onClose, value, onPick }) {
  * One task, wherever it shows: tick it off, give it a target date, set its priority, change its words,
  * snooze or dismiss it, ask what's needed, nudge whoever owes it, open where it came from.
  */
-export function TaskRow({ t: given, onChanged, compact = false, inCase = false }) {
+export function TaskRow({ t: given, onChanged, compact = false, inCase = false, onMove = null }) {
   const [t, setT] = useState(given);
   useEffect(() => setT(given), [given]);
   const [anchor, openMenu, closeMenu] = useAnchor();
@@ -107,6 +107,7 @@ export function TaskRow({ t: given, onChanged, compact = false, inCase = false }
   const menu = [
     { head: 'Priority' },
     ...PRIS.map(([k, l, hint]) => ({ label: l, hint: k === 'auto' ? 'learned' : '', icon: k === 'auto' ? 'spark' : 'flag', active: pri === k, onClick: () => change({ priority: k }, k === 'auto' ? 'Boardenda will rank it' : `Marked ${l.toLowerCase()}`) })),
+    ...(onMove ? [{ sep: true }, { head: 'Order' }, { label: 'Move to top', icon: 'arrowUp', onClick: () => onMove('top') }, { label: 'Move up', icon: 'arrowUp', onClick: () => onMove('up') }, { label: 'Move down', icon: 'arrowDown', onClick: () => onMove('down') }] : []),
     { sep: true },
     { label: 'Ask what is needed', icon: 'help', onClick: ask },
     !t.mine ? { label: 'Copy a check-in message', icon: 'copy', onClick: () => copyNudge(t) } : null,
@@ -172,6 +173,9 @@ export function TasksPage({ version }) {
   const [due, setDue] = useState('');
   const [who, setWho] = useState('');
   const marked = useRef(false);
+  const [grab, setGrab] = useState(null);
+  const [dragKey, setDragKey] = useState(null);
+  const [over, setOver] = useState(null);
   const load = () => call('tasksList').then((d) => {
     setData(d);
     if (!marked.current) { marked.current = true; setTimeout(() => call('taskSeen', d.mine.filter((t) => t.isNew).map((t) => t.key)).catch(() => {}), 4000); }
@@ -184,9 +188,20 @@ export function TasksPage({ version }) {
   };
   if (!data) return html`<div class="page"><${Spinner} /></div>`;
   const list = data[tab] || [];
+  const canDrag = tab === 'mine' || tab === 'waiting';
+  const move = async (from, to, after) => {
+    setDragKey(null); setOver(null); setGrab(null);
+    if (!from || !to || from === to) return;
+    const keys = list.map((t) => t.key).filter((k) => k !== from);
+    const at = keys.indexOf(to) + (after ? 1 : 0);
+    keys.splice(at, 0, from);
+    const byKey = Object.fromEntries(list.map((t) => [t.key, t]));
+    setData({ ...data, [tab]: keys.map((k) => byKey[k]) });
+    try { await call('taskReorder', keys, from); load(); } catch (e) { toastError(e); load(); }
+  };
   const tabs = [['mine', 'Mine', data.mine.length], ['waiting', 'Waiting on others', data.waiting.length], ['snoozed', 'Snoozed', data.snoozed.length], ['dismissed', 'Dismissed', data.dismissed.length]];
   return html`<div class="page tk-page">
-    <div class="page-head"><h1>Tasks</h1><span class="muted small">Everything on you and everything you're waiting on, from dropped files, boards and meetings. Highest priority first.</span></div>
+    <div class="page-head"><h1>Tasks</h1><span class="muted small">Everything on you and everything you're waiting on, from dropped files, boards and meetings. Highest priority first, or drag them into your own order.</span></div>
     <form class="tk-add card" onSubmit=${add}>
       <input class="input grow" placeholder="Add a task (Enter)" value=${title} onInput=${(e) => setTitle(e.target.value)} aria-label="New task" />
       <input class="input" type="date" value=${due} onInput=${(e) => setDue(e.target.value)} title="Due date" aria-label="Due date" />
@@ -194,7 +209,15 @@ export function TasksPage({ version }) {
       <button class="btn primary" type="submit" disabled=${!title.trim()}><${Icon} name="plus" size="15" /> Add</button>
     </form>
     <div class="seg mt">${tabs.map(([k, l, n]) => html`<button key=${k} class=${tab === k ? 'on' : ''} onClick=${() => setTab(k)}>${l}${n ? html` <span class="faint">${n}</span>` : null}</button>`)}</div>
-    <div class="card tk-list mt">${list.length ? list.map((t) => html`<${TaskRow} key=${t.key} t=${t} onChanged=${load} />`)
+    ${canDrag && list.length > 1 ? html`<div class="small faint mt1">Drag the handle to set your own order. Boardenda learns from it and ranks similar work the same way.</div>` : null}
+    <div class="card tk-list mt">${list.length ? list.map((t, i) => (canDrag ? html`<div key=${t.key} class=${`tk-drag ${dragKey === t.key ? 'dragging' : ''} ${over && over.key === t.key ? `over-${over.after ? 'after' : 'before'}` : ''}`}
+        draggable=${grab === t.key} onDragStart=${(e) => { setDragKey(t.key); try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.key); } catch (_) { /* old browsers */ } }}
+        onDragOver=${(e) => { if (!dragKey) return; e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); const after = e.clientY > r.top + r.height / 2; if (!over || over.key !== t.key || over.after !== after) setOver({ key: t.key, after }); }}
+        onDrop=${(e) => { e.preventDefault(); move(dragKey, t.key, over ? over.after : false); }}
+        onDragEnd=${() => { setDragKey(null); setOver(null); setGrab(null); }}>
+        <span class="tk-handle" title="Drag to reorder" aria-hidden="true" onMouseDown=${() => setGrab(t.key)} onMouseUp=${() => setGrab(null)}><${Icon} name="drag" size="14" /></span>
+        <div class="grow" style="min-width:0"><${TaskRow} t=${t} onChanged=${load} onMove=${(dir) => { const k = list.map((x) => x.key); const j = dir === 'top' ? 0 : Math.max(0, Math.min(k.length - 1, i + (dir === 'up' ? -1 : 1))); if (j !== i) move(t.key, k[j], dir === 'down'); }} /></div></div>`
+      : html`<${TaskRow} key=${t.key} t=${t} onChanged=${load} />`))
       : html`<div class="pad small muted">${tab === 'mine' ? 'Nothing on your list. Drop an email or a file in Chat and the tasks in it show up here.' : tab === 'waiting' ? 'Nobody owes you anything right now.' : tab === 'snoozed' ? 'No snoozed tasks.' : 'No dismissed tasks.'}</div>`}</div>
   </div>`;
 }

@@ -57,7 +57,7 @@ The gear button opens the assistant settings: a few lines about you and your wor
 
 ## The morning briefing
 At the time set in **Settings › Notifications** (8:30 by default), the briefing is posted in [[chat]] and shown as a Windows notification. Every task in it has a checkbox, a date and the **⋯** menu, so you can work it straight from the chat. Ask "What should I do today?" in Chat, or use **Post briefing in chat**, to get it at any time.` },
-  { id: 'tasks', topic: 'daily', title: 'One task list', keys: 'tasks todo list priority urgent auto snooze dismiss done undo reopen waiting mine reminder target date due edit rename nudge check in follow up questions clarify', body: `
+  { id: 'tasks', topic: 'daily', title: 'One task list', keys: 'tasks todo list drag reorder order move up top priority urgent auto snooze dismiss done undo reopen waiting mine reminder target date due edit rename nudge check in follow up questions clarify', body: `
 **Tasks** is one list of everything on you and everything you are waiting on, wherever it came from:
 - steps in the plans made from files and notes you dropped in [[chat]],
 - items assigned to you on boards,
@@ -65,6 +65,9 @@ At the time set in **Settings › Notifications** (8:30 by default), the briefin
 - tasks you type at the top of the list.
 
 The list is sorted by priority: overdue first, then due today, then by urgency and due date. The reason is shown under each task.
+
+## Put tasks in your own order
+On **Mine** and **Waiting on others**, drag a task by the handle on its left (or use **Move to top**, **Move up** and **Move down** in the **⋯** menu). Tasks you place keep their spot. New tasks slot in by priority, so something overdue still lands on top. Boardenda learns from what you move up: work from the same people is ranked higher next time, with the reason **You usually put these first**.
 
 ## Work the list
 - Tick the box to mark it done. Done is written back where it came from: the plan step, the board item's status, or the meeting action.
@@ -372,13 +375,16 @@ The **Portfolio** page lists every board with its owner, progress, dates, overdu
 The **Timesheets** page totals time from every Time tracking column by person and week. Add time by hand for work that isn't tracked, and export to CSV for payroll or billing.` },
 
   // Customers
-  { id: 'customers', topic: 'customers', title: 'The customer directory', keys: 'customer account client directory profile company crm', body: `
+  { id: 'customers', topic: 'customers', title: 'The customer directory', keys: 'customer account client directory profile company crm outlook email automatic contacts signature', body: `
 **Customers** (\`g u\`) is one list of every account you work with. Each customer has a profile with:
 - Details: account number, industry, main phone and email, website, address, account owner and tags.
 - **Contacts:** names, job titles, emails, phones and mobiles. One is the main contact shown in the list.
 - **Devices:** equipment at the customer, with type, model, serial number, location, status and install date.
 - **Notes:** rich notes for background, preferences and history.
 - **Tasks:** every item assigned to the customer on any board.
+
+## Added for you from email
+When you drop an Outlook email from someone outside your company, the assistant adds the company to **Customers** if it is not there yet (tagged **from email**, with the website from their email address) and adds the sender as a contact with the job title and phone numbers from their signature. Their colleagues copied on the email are added too. Later emails fill in missing titles and phones and never make duplicates. Turn this off in the Assistant settings (the gear on the Assistant page).
 - **Calls:** every call and meeting with them.
 - **Files:** contracts, site photos, configs and manuals.
 
@@ -481,13 +487,15 @@ Click **Assistant** in the sidebar, or press \`g\` then \`e\`.
 - **Watch a folder**: in the assistant settings (gear button), choose a folder; new files saved there become cases within a minute.
 
 ## What you get for each case
-- A summary, and an English translation when it is in another language.
-- Priority, due date, the customer it is about, and risks.
-- An **action plan**: steps for you, for colleagues and for third parties, with due dates. Tick steps off as you go.
-- **Replies to send**: drafts to the sender and to anyone internal or external who needs to act. Edit them, then **Copy** or **Open in email**.
-- **Questions** when it needs more data, a contact or a decision. Answer them and click **Update the plan**.
-- **Where this work goes**: the workspace, board and group for the tasks, or a new board. Click **Add plan steps as tasks** to put them on the board. It may also suggest a better way to organize this kind of work, such as a board with swim lanes; click **Create this board** to make it.
+Up top, only what you act on:
+- A short summary (with an English translation when it is in another language), the priority and the due date.
+- **Action items**: suggested steps for you, colleagues and third parties. **Approve** the real ones, **✕** the rest (it learns from that), and tick them off as you go.
+- **Replies to send**: drafts to the sender and to anyone who needs to act. Edit them, then **Copy** or **Open in email**.
 - **Talk it through**: chat about the case to plan a meeting, rewrite a reply or decide what to do first.
+
+The assistant works things out on its own and asks at most one short question, only when it really cannot plan without it. Answer it in one line and click **Update**, or ignore it.
+
+Everything else is folded under **More details**: key points, risks, the email and OneNote details it picked up (who sent it and who was copied, when, importance, Outlook categories, attachments, meeting time, OneNote notebook and section), **Where this work goes** (the board for the tasks, or a new board), and the sources it read. High-importance emails are ranked higher automatically, and senders from other companies are added to **Customers** with their contact details.
 
 ## Teach it
 - Drop OneNote pages exported as .md, documents or whole folders on **Teach the assistant**. They are kept on this PC and used in every answer.

@@ -87,6 +87,15 @@ function walkPart(buf, acc, depth = 0) {
   else if (type === 'text/html') acc.html.push(iconvSafe(data, param(ct, 'charset')));
 }
 
+/** Details from email headers: importance, categories, ids for threading. */
+function headerMeta(h) {
+  const imp = String(h.importance || h.priority || '').toLowerCase();
+  const xp = String(h['x-priority'] || '').trim();
+  const importance = /high|urgent/.test(imp) || /^[12]\b/.test(xp) ? 'high' : /low|non-urgent/.test(imp) || /^[45]\b/.test(xp) ? 'low' : '';
+  const cats = decodeWords(h.keywords || h['x-ms-exchange-organization-categories'] || h.categories || '').split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+  return { importance, categories: cats, messageId: String(h['message-id'] || '').trim(), inReplyTo: String(h['in-reply-to'] || '').trim(), threadTopic: decodeWords(h['thread-topic'] || ''), sensitivity: String(h.sensitivity || '').trim() };
+}
+
 /** Parse an .eml file (bytes) into { subject, from, to, cc, date, text, attachments }. */
 function parseEml(bytes) {
   const buf = Buffer.from(bytes);
@@ -99,7 +108,7 @@ function parseEml(bytes) {
   return {
     subject: decodeWords(h.subject || ''), from: decodeWords(h.from || ''), to: decodeWords(h.to || ''), cc: decodeWords(h.cc || ''),
     date: h.date ? new Date(h.date).toString() !== 'Invalid Date' ? new Date(h.date).toISOString() : h.date : '',
-    text: text.replace(/\r\n/g, '\n'), attachments: acc.attachments,
+    text: text.replace(/\r\n/g, '\n'), attachments: acc.attachments, meta: headerMeta(h),
   };
 }
 
@@ -125,9 +134,14 @@ function parseMsg(bytes) {
     } catch (_) { /* skip an unreadable attachment */ }
   }
   const date = info.messageDeliveryTime || info.clientSubmitTime || info.creationTime || '';
+  const meta = headerMeta(info.headers ? parseHeaders(String(info.headers)) : {});
+  if (!meta.messageId && info.messageId) meta.messageId = info.messageId;
+  if (!meta.threadTopic && info.conversationTopic) meta.threadTopic = info.conversationTopic;
+  if (info.messageClass) meta.messageClass = info.messageClass;
+  if (/IPM\.Schedule\.Meeting|IPM\.Appointment/i.test(info.messageClass || '')) meta.meeting = { start: info.apptStartWhole || '', end: info.apptEndWhole || '', location: info.apptLocation || '' };
   return {
     subject: info.subject || '', from: `${info.senderName || ''}${info.senderSmtpAddress || info.senderEmail ? ` <${info.senderSmtpAddress || info.senderEmail}>` : ''}`.trim(), to, cc,
-    date: date && !Number.isNaN(Date.parse(date)) ? new Date(date).toISOString() : '', text: String(text).replace(/\r\n/g, '\n').trim(), attachments,
+    date: date && !Number.isNaN(Date.parse(date)) ? new Date(date).toISOString() : '', text: String(text).replace(/\r\n/g, '\n').trim(), attachments, meta,
   };
 }
 
@@ -233,4 +247,4 @@ function cleanBody(text) {
   return { latest, signature: sig, history, greeting };
 }
 
-module.exports = { parseEml, parseMsg, parsePasted, address, addresses, niceName, replySubject, cleanBody, htmlToText, decodeWords };
+module.exports = { headerMeta, parseEml, parseMsg, parsePasted, address, addresses, niceName, replySubject, cleanBody, htmlToText, decodeWords };

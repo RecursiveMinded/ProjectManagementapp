@@ -1488,3 +1488,75 @@ test('action items: suggested until approved, rejected ones teach it, no-action 
   assert.equal(api.actionItems().counts.suggested, 0);
   void id;
 });
+
+test('Outlook details: importance, attachments, OneNote section, and a customer profile from the sender', async () => {
+  const mail = require('../src/core/mail');
+  const { sigInfo, orgFromDomain } = require('../src/core/assistant');
+  const raw = fs.readFileSync(path.join(__dirname, 'fixtures', 'thread-reply.eml'), 'latin1').replace('MIME-Version: 1.0', 'Importance: High\r\nKeywords: Pilot, Escalation\r\nMIME-Version: 1.0');
+  const e = mail.parseEml(Buffer.from(raw, 'latin1'));
+  assert.equal(e.meta.importance, 'high');
+  assert.deepEqual(e.meta.categories, ['Pilot', 'Escalation']);
+  const sig = sigInfo(mail.cleanBody(e.text).signature, 'Carla Martinez');
+  assert.equal(sig.title, 'Director, Store Technology');
+  assert.equal(sig.mobile, '+1 614 555 0199');
+  assert.equal(orgFromDomain('mail.acme-stores.co.uk'), 'Acme Stores');
+
+  const api = await fresh();
+  api.setAi({ provider: 'off' });
+  const [, r] = await api.chatSend({ files: [{ name: 'pilot.eml', bytes: Buffer.from(raw, 'latin1') }] });
+  await api.assistantSettle(r.caseIds[0]);
+  const c = api.assistantCase(r.caseIds[0]);
+  assert.equal(c.priority, 'high', 'high importance raises priority');
+  assert.equal(c.source.files[0].meta.importance, 'high');
+  const cu = api.listCustomers({}).find((x) => x.name === 'Big Retail Co');
+  assert.ok(cu, 'customer profile created from the email');
+  assert.equal(c.customer.id, cu.id);
+  const full = api.getCustomer(cu.id);
+  assert.equal(full.website, 'bigretail.example');
+  const carla = full.contacts.find((k) => k.email === 'carla.martinez@bigretail.example');
+  assert.equal(carla.title, 'Director, Store Technology');
+  assert.equal(carla.mobile, '+1 614 555 0199');
+  assert.ok(full.contacts.some((k) => k.email === 'ops@bigretail.example'), 'colleagues copied in are added');
+  assert.ok(!full.contacts.some((k) => /ingenico/.test(k.email)), 'my own colleagues are not');
+  assert.match(c.analysis.notes.join(' '), /Added Big Retail Co to Customers/);
+  // A second email from the same company adds no duplicate.
+  const [, r2] = await api.chatSend({ files: [{ name: 'again.eml', bytes: Buffer.from(raw, 'latin1') }] });
+  await api.assistantSettle(r2.caseIds[0]);
+  assert.equal(api.listCustomers({}).filter((x) => x.name === 'Big Retail Co').length, 1);
+  assert.equal(api.getCustomer(cu.id).contacts.length, full.contacts.length);
+  // Turned off in settings: nothing is created.
+  api.setAssistantConfig({ autoCustomers: false });
+  const other = raw.replace(/bigretail\.example/g, 'shopmart.example').replace(/Big Retail Co\./g, 'ShopMart Inc.');
+  const [, r3] = await api.chatSend({ files: [{ name: 'other.eml', bytes: Buffer.from(other, 'latin1') }] });
+  await api.assistantSettle(r3.caseIds[0]);
+  assert.ok(!api.listCustomers({}).some((x) => /shopmart/i.test(x.name)));
+
+  // OneNote section files keep their notebook and section.
+  const a = api.assistant;
+  const one = await a.read('Work Notebook/Customers.one', Buffer.from('ignored'));
+  assert.equal(one.meta.app, 'OneNote');
+  assert.equal(one.meta.section, 'Customers');
+  assert.equal(one.meta.notebook, 'Work Notebook');
+});
+
+test('tasks: drag order sticks, new tasks slot in by score, and moving up teaches it', async () => {
+  const api = await fresh();
+  const ids = [];
+  for (const t of ['Alpha', 'Bravo', 'Charlie']) ids.push(await api.taskAdd({ title: t }));
+  let mine = api.tasksList().mine.map((t) => t.title);
+  assert.equal(mine.length, 3);
+  const keys = api.tasksList().mine.map((t) => t.key);
+  const moved = keys[2];
+  api.taskReorder([moved, keys[0], keys[1]], moved);
+  mine = api.tasksList().mine;
+  assert.equal(mine[0].key, moved, 'dragged task stays on top');
+  assert.equal(mine[1].key, keys[0]);
+  // An urgent new task goes above the hand-ordered ones; a normal one goes below.
+  await api.taskAdd({ title: 'Delta', due: today() });
+  await api.taskAdd({ title: 'Echo' });
+  mine = api.tasksList().mine.map((t) => t.title);
+  assert.equal(mine[0], 'Delta');
+  assert.equal(mine[mine.length - 1], 'Echo');
+  const ev = api.db.all("SELECT action FROM task_events WHERE action IN ('up','down')");
+  assert.deepEqual(ev.map((x) => x.action), ['up']);
+});

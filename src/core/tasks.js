@@ -96,6 +96,7 @@ class Tasks {
 
     const edits = Object.fromEntries(this.db.all('SELECT * FROM task_edits').map((r) => [r.key, r]));
     const list = [];
+    const lean0 = this.leanings();
     for (const t of out) {
       const s = st[t.key];
       const e = edits[t.key];
@@ -112,9 +113,58 @@ class Tasks {
       t.needsDate = t.mine && !t.due;
       t.stalled = !t.mine && ((t.due && t.due <= at) || (t.createdAt && Date.now() - Date.parse(t.createdAt) > 3 * 864e5));
       Object.assign(t, score(t, at));
+      const lean = this.leaning(t, lean0);
+      if (lean) { t.score += lean; t.reason = t.reason ? `${t.reason} · You usually put these first` : 'You usually put these first'; }
       list.push(t);
     }
-    return list.sort((a, b) => b.score - a.score || String(a.due || '9999').localeCompare(String(b.due || '9999')) || a.title.localeCompare(b.title));
+    list.sort((a, b) => b.score - a.score || String(a.due || '9999').localeCompare(String(b.due || '9999')) || a.title.localeCompare(b.title));
+    return this.applyOrder(list);
+  }
+
+  /** Who the user tends to drag up (or down): sender or owner -> points. */
+  leanings() {
+    const m = {};
+    for (const r of this.db.all("SELECT who, action, COUNT(*) AS n FROM task_events WHERE action IN ('up','down') AND who<>'' GROUP BY who, action")) {
+      const k = r.who.toLowerCase();
+      m[k] = (m[k] || 0) + (r.action === 'up' ? r.n : -r.n);
+    }
+    return m;
+  }
+
+  leaning(t, m) {
+    const k = String(t.who || t.from || '').toLowerCase();
+    const n = k ? m[k] || 0 : 0;
+    return n > 0 ? Math.min(15, n * 5) : 0;
+  }
+
+  /** Tasks the user dragged keep their order; the rest slot in by score. */
+  applyOrder(list) {
+    const ranks = Object.fromEntries(this.db.all('SELECT key, rank FROM task_order').map((r) => [r.key, r.rank]));
+    const ranked = list.filter((t) => ranks[t.key] != null).sort((a, b) => ranks[a.key] - ranks[b.key]);
+    if (!ranked.length) return list;
+    const rest = list.filter((t) => ranks[t.key] == null);
+    const out = [];
+    let i = 0; let j = 0;
+    while (i < ranked.length || j < rest.length) {
+      if (j < rest.length && (i >= ranked.length || rest[j].score > ranked[i].score)) out.push(rest[j++]);
+      else { ranked[i].ordered = true; out.push(ranked[i++]); }
+    }
+    return out;
+  }
+
+  /** Save the order the user dragged tasks into. keys: the list top to bottom; moved: the one dragged. */
+  reorder(keys, moved) {
+    const ks = (Array.isArray(keys) ? keys : []).map(String).filter(Boolean).slice(0, 500);
+    if (!ks.length) return true;
+    const before = this.all({ includeHidden: true }).filter((t) => ks.includes(t.key));
+    const oldAt = before.findIndex((t) => t.key === moved);
+    const t = now();
+    this.db.tx(() => {
+      ks.forEach((k, i) => this.db.run('INSERT INTO task_order(key,rank,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET rank=excluded.rank, updated_at=excluded.updated_at', [k, i + 1, t]));
+    });
+    const newAt = ks.indexOf(moved);
+    if (oldAt >= 0 && newAt >= 0 && oldAt !== newAt) this.log(before[oldAt], newAt < oldAt ? 'up' : 'down');
+    return true;
   }
 
   /** Mine and waiting on others, plus counts. */
