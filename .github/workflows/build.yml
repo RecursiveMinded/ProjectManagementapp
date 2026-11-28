@@ -1,10 +1,9 @@
 name: Build Windows app
 
+# Builds only for version tags (v*) or when run by hand, to save Windows (2x) Actions minutes.
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  pull_request:
   workflow_dispatch:
     inputs:
       release_tag:
